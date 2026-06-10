@@ -229,15 +229,121 @@ address.addEventListener('focus', () => {
 });
 address.addEventListener('blur', () => {
   addressFocused = false;
+  setTimeout(hideSuggestions, 120);
   const active = state.tabs.find((t) => t.id === state.activeTabId);
   if (active) address.value = active.url;
 });
+// ---------------------------------------------------------------------------
+// Omnibox suggestions
+// ---------------------------------------------------------------------------
+
+const sugEl = $('#suggestions');
+const icons = {
+  history: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
+  bookmark: `<svg viewBox="0 0 16 16"><path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11l-4.02 2.84a.3.3 0 0 1-.48-.24V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`,
+  search: `<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+};
+
+let sugItems = []; // [{ kind, label, sub, value }]  value = url or search text
+let sugIndex = -1;
+let sugTimer = null;
+let sugSeq = 0;
+
+function hideSuggestions() {
+  sugEl.classList.remove('show');
+  sugItems = [];
+  sugIndex = -1;
+}
+
+function renderSuggestions() {
+  sugEl.textContent = '';
+  if (!sugItems.length) {
+    hideSuggestions();
+    return;
+  }
+  sugItems.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'sug' + (i === sugIndex ? ' selected' : '');
+    el.innerHTML = icons[item.kind];
+    const label = document.createElement('span');
+    label.className = 's-label';
+    label.textContent = item.label;
+    el.appendChild(label);
+    if (item.sub) {
+      const sub = document.createElement('span');
+      sub.className = 's-sub';
+      sub.textContent = item.sub;
+      el.appendChild(sub);
+    }
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // keep focus so blur doesn't fire first
+      acceptSuggestion(item);
+    });
+    sugEl.appendChild(el);
+  });
+  sugEl.classList.add('show');
+}
+
+function acceptSuggestion(item) {
+  breeze.navigate(item.value);
+  hideSuggestions();
+  address.blur();
+}
+
+address.addEventListener('input', () => {
+  clearTimeout(sugTimer);
+  const q = address.value.trim();
+  if (!q) {
+    hideSuggestions();
+    return;
+  }
+  sugTimer = setTimeout(async () => {
+    const seq = ++sugSeq;
+    const r = await breeze.getSuggestions(q);
+    if (seq !== sugSeq) return; // stale response, a newer query is in flight
+    sugItems = [
+      ...r.history.map((h) => ({
+        kind: 'history',
+        label: h.title || h.url,
+        sub: h.url.replace(/^https?:\/\/(www\.)?/, ''),
+        value: h.url,
+      })),
+      ...r.bookmarks.map((b) => ({
+        kind: 'bookmark',
+        label: b.title,
+        sub: b.url.replace(/^https?:\/\/(www\.)?/, ''),
+        value: b.url,
+      })),
+      ...r.web.map((w) => ({ kind: 'search', label: w, value: w })),
+    ];
+    sugIndex = -1;
+    renderSuggestions();
+  }, 120);
+});
+
 address.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && address.value.trim()) {
-    breeze.navigate(address.value);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!sugItems.length) return;
+    e.preventDefault();
+    const dir = e.key === 'ArrowDown' ? 1 : -1;
+    sugIndex = (sugIndex + dir + sugItems.length + 1) % (sugItems.length + 1);
+    if (sugIndex === sugItems.length) sugIndex = -1;
+    renderSuggestions();
+    return;
+  }
+  if (e.key === 'Enter') {
+    if (sugIndex >= 0 && sugItems[sugIndex]) {
+      acceptSuggestion(sugItems[sugIndex]);
+    } else if (address.value.trim()) {
+      breeze.navigate(address.value);
+      hideSuggestions();
+      address.blur();
+    }
+  }
+  if (e.key === 'Escape') {
+    hideSuggestions();
     address.blur();
   }
-  if (e.key === 'Escape') address.blur();
 });
 
 breeze.onFocusAddress(() => {

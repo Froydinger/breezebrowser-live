@@ -63,6 +63,7 @@
     "files": [
       "main.js",
       "internal-preload.js",
+      "page-preload.js",
       "preload.js",
       "ui/**/*"
     ]

@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('breeze', {
   onDownloads: (cb) => ipcRenderer.on('downloads', (_e, d) => cb(d)),
   installUpdate: () => ipcRenderer.send('install-update'),
   getInit: () => ipcRenderer.invoke('get-init'),
+  getSuggestions: (q) => ipcRenderer.invoke('get-suggestions', q),
 
   aiAsk: (text, includePage) => ipcRenderer.send('ai-ask', { text, includePage }),
   aiStop: () => ipcRenderer.send('ai-stop'),

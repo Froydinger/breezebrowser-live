@@ -226,9 +226,10 @@ function createTab(url = NEWTAB_URL, activate = true) {
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
-      ...(isInternal
-        ? { preload: path.join(__dirname, 'internal-preload.js') }
-        : {}),
+      preload: path.join(
+        __dirname,
+        isInternal ? 'internal-preload.js' : 'page-preload.js'
+      ),
     },
   });
   const t = { id, view, favicon: null };
@@ -672,6 +673,98 @@ function setupDownloads() {
     broadcastDownloads();
   });
 }
+
+// ---------------------------------------------------------------------------
+// Speed: connection pre-warming + omnibox suggestions
+// ---------------------------------------------------------------------------
+
+const SUGGEST = {
+  google: 'https://suggestqueries.google.com/complete/search?client=firefox&q=%s',
+  bing: 'https://api.bing.com/osjson.aspx?query=%s',
+  duckduckgo: 'https://duckduckgo.com/ac/?q=%s&type=list',
+  brave: 'https://search.brave.com/api/suggest?q=%s',
+};
+
+const preconnected = new Map(); // origin -> last warm-up ts
+
+function preconnect(url) {
+  try {
+    const origin = new URL(url).origin;
+    if (Date.now() - (preconnected.get(origin) || 0) < 30000) return;
+    preconnected.set(origin, Date.now());
+    session.defaultSession.preconnect({ url: origin, numSockets: 1 });
+  } catch {}
+}
+
+ipcMain.on('link-hover', (_e, url) => preconnect(url));
+
+// warm the search engine + most-visited origins right after launch
+function warmConnections() {
+  const origins = new Set();
+  try {
+    origins.add(new URL(ENGINES[appSettings.searchEngine] || ENGINES.google).origin);
+  } catch {}
+  for (const h of history.slice(0, 80)) {
+    if (origins.size >= 6) break;
+    try {
+      origins.add(new URL(h.url).origin);
+    } catch {}
+  }
+  for (const o of origins) preconnect(o);
+}
+
+ipcMain.handle('get-suggestions', async (_e, q) => {
+  const query = String(q || '').trim();
+  if (!query) return { history: [], bookmarks: [], web: [] };
+  const lower = query.toLowerCase();
+
+  const seen = new Set();
+  const hist = [];
+  for (const h of history) {
+    if (hist.length >= 4) break;
+    if (seen.has(h.url)) continue;
+    if (
+      h.url.toLowerCase().includes(lower) ||
+      (h.title || '').toLowerCase().includes(lower)
+    ) {
+      seen.add(h.url);
+      hist.push({ title: h.title, url: h.url });
+    }
+  }
+
+  const bms = bookmarks
+    .filter(
+      (b) =>
+        b.url.toLowerCase().includes(lower) ||
+        b.title.toLowerCase().includes(lower)
+    )
+    .slice(0, 3);
+
+  let web = [];
+  try {
+    const tmpl = SUGGEST[appSettings.searchEngine] || SUGGEST.google;
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 700);
+    const res = await fetch(tmpl.replace('%s', encodeURIComponent(query)), {
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+    const data = await res.json();
+    if (Array.isArray(data) && Array.isArray(data[1])) {
+      web = data[1].slice(0, 4).map(String);
+    } else if (Array.isArray(data)) {
+      web = data
+        .filter((x) => x && x.phrase)
+        .map((x) => x.phrase)
+        .slice(0, 4);
+    }
+  } catch {} // offline or slow suggest endpoint — local results still show
+
+  // pre-warm the most likely destination while the user is still typing
+  if (hist[0]) preconnect(hist[0].url);
+
+  return { history: hist, bookmarks: bms, web };
+});
 
 // ---------------------------------------------------------------------------
 // Permission prompts (per-origin, remembered)
@@ -1257,6 +1350,7 @@ app.whenReady().then(async () => {
   buildMenu();
   createWindow();
   setupAutoUpdate();
+  warmConnections();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
