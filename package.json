@@ -1,7 +1,7 @@
 {
   "name": "breeze-browser",
   "productName": "Breeze",
-  "version": "1.0.0",
+  "version": "1.5.1",
   "description": "A hyper-simple Chromium browser with built-in ad blocking",
   "main": "main.js",
   "scripts": {

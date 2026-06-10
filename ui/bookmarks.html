@@ -140,7 +140,52 @@
   <main>
     <h1>Bookmarks</h1>
     <div class="subtitle">⌘D on any page to add it here</div>
-    <input id="search" type="text" placeholder="Search bookmarks…" autofocus />
+
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:center">
+      <input id="search" type="text" placeholder="Search bookmarks…" autofocus style="flex:1" />
+      <button id="import-toggle" class="imp-btn">Import…</button>
+    </div>
+
+    <div id="import-panel" style="display:none">
+      <div class="imp-card">
+        <div class="imp-row">
+          <span class="imp-label">Import into:</span>
+          <label><input type="radio" name="target" value="bookmarks" checked /> Bookmarks</label>
+          <label><input type="radio" name="target" value="pins" /> Pins</label>
+        </div>
+        <div class="imp-row" id="import-browsers"></div>
+        <div class="imp-row">
+          <button class="imp-btn" id="import-html-btn">From HTML file… (any browser's export)</button>
+          <input type="file" id="import-html-file" accept=".html,.htm" style="display:none" />
+        </div>
+        <div class="imp-hint">
+          Arc, Dia, Chrome, Edge &amp; Brave import directly. Safari too (may need
+          Full Disk Access — or use File → Export Bookmarks in Safari and pick the
+          HTML here). Passwords import lives on the Passwords page (CSV export).
+        </div>
+        <div id="import-result" class="imp-hint" style="color:var(--accent)"></div>
+      </div>
+    </div>
+
+    <style>
+      .imp-btn {
+        border: none; border-radius: 10px; padding: 10px 14px;
+        font-family: inherit; font-size: 12.5px; cursor: pointer;
+        background: var(--surface); color: var(--text);
+        transition: background 0.15s var(--ease);
+      }
+      .imp-btn:hover { background: var(--surface-hover); }
+      .imp-card {
+        background: var(--surface); border-radius: 14px;
+        padding: 14px 16px; margin-bottom: 16px;
+        display: flex; flex-direction: column; gap: 10px;
+      }
+      .imp-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+      .imp-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+      .imp-row input[type="radio"] { accent-color: var(--accent); }
+      .imp-label { color: var(--text-soft); font-size: 12px; }
+      .imp-hint { font-size: 11.5px; color: var(--text-soft); line-height: 1.5; }
+    </style>
     <div class="grid" id="list"></div>
     <div id="empty" style="display:none">No bookmarks yet.<br/>Hit ⌘D on a page you love.</div>
   </main>
@@ -201,6 +246,53 @@
     breezeInternal.getBookmarks().then((b) => { all = b; render(); });
     breezeInternal.onBookmarks((b) => { all = b; render(); });
     document.getElementById('search').addEventListener('input', render);
+
+    // ----- import from other browsers -----
+    const panel = document.getElementById('import-panel');
+    const resultEl = document.getElementById('import-result');
+    const target = () => document.querySelector('input[name="target"]:checked').value;
+
+    function report(r, name) {
+      resultEl.textContent = r.ok
+        ? `Imported ${r.added} new of ${r.found} found in ${name}.`
+        : `Couldn't import from ${name}: ${r.error}`;
+    }
+
+    document.getElementById('import-toggle').addEventListener('click', async () => {
+      panel.style.display = panel.style.display === 'none' ? '' : 'none';
+      if (panel.style.display === 'none') return;
+      const browsersEl = document.getElementById('import-browsers');
+      browsersEl.textContent = '';
+      const sources = await breezeInternal.importSources();
+      if (!sources.length) {
+        browsersEl.innerHTML = '<span class="imp-hint">No other browsers detected — use the HTML file option below.</span>';
+        return;
+      }
+      for (const s of sources) {
+        const b = document.createElement('button');
+        b.className = 'imp-btn';
+        b.textContent = `From ${s.name}`;
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          b.textContent = `Importing…`;
+          const r = await breezeInternal.importFromBrowser(s.path, s.kind, target());
+          report(r, s.name);
+          b.textContent = `From ${s.name}`;
+          b.disabled = false;
+        });
+        browsersEl.appendChild(b);
+      }
+    });
+
+    document.getElementById('import-html-btn').addEventListener('click', () =>
+      document.getElementById('import-html-file').click());
+    document.getElementById('import-html-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const r = await breezeInternal.importHTML(await file.text(), target());
+      report(r, file.name);
+      e.target.value = '';
+    });
   </script>
 </body>
 </html>

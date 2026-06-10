@@ -39,7 +39,7 @@ contextBridge.exposeInMainWorld('breeze', {
   getInit: () => ipcRenderer.invoke('get-init'),
   getSuggestions: (q) => ipcRenderer.invoke('get-suggestions', q),
 
-  aiAsk: (text, includePage) => ipcRenderer.send('ai-ask', { text, includePage }),
+  aiAsk: (text, useWeb) => ipcRenderer.send('ai-ask', { text, useWeb }),
   aiStop: () => ipcRenderer.send('ai-stop'),
   aiNewChat: () => ipcRenderer.send('ai-new-chat'),
 

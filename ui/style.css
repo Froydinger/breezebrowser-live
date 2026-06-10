@@ -1177,3 +1177,26 @@ body.urlbar-top #sidebar #nav-row { margin-bottom: 12px; }
 .tab.asleep .title { opacity: 0.5; }
 
 .tab.asleep .favicon { filter: grayscale(1); }
+
+#ai-web-toggle {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-soft);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: flex-end;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+#ai-web-toggle svg { width: 15px; height: 15px; }
+#ai-web-toggle:hover { background: var(--surface-hover); color: var(--text); }
+
+#ai-web-toggle.on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}

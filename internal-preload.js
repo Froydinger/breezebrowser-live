@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   showDownload: (id) => ipcRenderer.send('download-show', id),
   clearDownloads: () => ipcRenderer.send('downloads-clear'),
 
+  importSources: () => ipcRenderer.invoke('import-sources'),
+  importFromBrowser: (path, kind, target) =>
+    ipcRenderer.invoke('import-from-browser', { path, kind, target }),
+  importHTML: (html, target) => ipcRenderer.invoke('import-html', { html, target }),
+
   vaultList: () => ipcRenderer.invoke('vault-list'),
   vaultAdd: (site, username, password) =>
     ipcRenderer.send('vault-add', { site, username, password }),

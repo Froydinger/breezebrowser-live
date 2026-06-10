@@ -649,8 +649,20 @@ function sendAI() {
   aiGenerating = true;
   aiSend.classList.add('stop');
   aiSend.title = 'Stop';
-  breeze.aiAsk(text, true); // page context always included
+  breeze.aiAsk(text, aiWebEnabled);
 }
+
+// optional web lookup — the AI cross-references live sources when enabled
+let aiWebEnabled = false;
+const aiWebToggle = $('#ai-web-toggle');
+aiWebToggle.addEventListener('click', () => {
+  aiWebEnabled = !aiWebEnabled;
+  aiWebToggle.classList.toggle('on', aiWebEnabled);
+  aiInput.placeholder = aiWebEnabled
+    ? 'Ask with web sources…'
+    : 'Ask about this page…';
+  aiInput.focus();
+});
 
 aiSend.addEventListener('click', () => {
   if (aiGenerating) breeze.aiStop();
@@ -706,6 +718,9 @@ breeze.onAIStatus((s) => {
     }
     case 'loading':
       aiStatusbar.textContent = 'Loading model…';
+      break;
+    case 'searching':
+      aiStatusbar.textContent = 'Searching the web…';
       break;
     case 'generating':
       aiStatusbar.textContent = 'Thinking…';

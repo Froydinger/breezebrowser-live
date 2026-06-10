@@ -1280,6 +1280,123 @@ function setupPermissions(ses) {
 }
 
 // ---------------------------------------------------------------------------
+// Import bookmarks/pins from other browsers (Chrome, Arc, Dia, Safari, …)
+// ---------------------------------------------------------------------------
+
+const { execFile } = require('child_process');
+
+function importSources() {
+  const home = app.getPath('home');
+  const appSup = path.join(home, 'Library', 'Application Support');
+  const candidates = [
+    { name: 'Chrome', kind: 'chromium', path: path.join(appSup, 'Google/Chrome/Default/Bookmarks') },
+    { name: 'Arc', kind: 'chromium', path: path.join(appSup, 'Arc/User Data/Default/Bookmarks') },
+    { name: 'Dia', kind: 'chromium', path: path.join(appSup, 'Dia/User Data/Default/Bookmarks') },
+    { name: 'Edge', kind: 'chromium', path: path.join(appSup, 'Microsoft Edge/Default/Bookmarks') },
+    { name: 'Brave', kind: 'chromium', path: path.join(appSup, 'BraveSoftware/Brave-Browser/Default/Bookmarks') },
+    { name: 'Vivaldi', kind: 'chromium', path: path.join(appSup, 'Vivaldi/Default/Bookmarks') },
+    { name: 'Safari', kind: 'safari', path: path.join(home, 'Library/Safari/Bookmarks.plist') },
+  ];
+  return candidates.filter((c) => {
+    try {
+      fs.accessSync(c.path, fs.constants.R_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function parseChromiumBookmarks(file) {
+  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const out = [];
+  const walk = (n) => {
+    if (!n) return;
+    if (n.type === 'url' && /^https?:/.test(n.url)) {
+      out.push({ title: n.name || n.url, url: n.url });
+    }
+    (n.children || []).forEach(walk);
+  };
+  Object.values(json.roots || {}).forEach(walk);
+  return out;
+}
+
+function parseSafariBookmarks(file) {
+  return new Promise((resolve, reject) => {
+    execFile('plutil', ['-convert', 'json', '-o', '-', file], { maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
+      if (err) return reject(err);
+      const out = [];
+      const walk = (n) => {
+        if (!n) return;
+        if (n.WebBookmarkType === 'WebBookmarkTypeLeaf' && /^https?:/.test(n.URLString || '')) {
+          out.push({ title: n.URIDictionary?.title || n.URLString, url: n.URLString });
+        }
+        (n.Children || []).forEach(walk);
+      };
+      walk(JSON.parse(stdout));
+      resolve(out);
+    });
+  });
+}
+
+// Netscape bookmarks HTML — the export format every browser supports
+function parseBookmarksHTML(html) {
+  const out = [];
+  const re = /<a[^>]*href="(https?:[^"]+)"[^>]*>([^<]*)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const url = m[1].replace(/&amp;/g, '&');
+    out.push({ title: (m[2] || url).trim() || url, url });
+  }
+  return out;
+}
+
+function mergeImported(items, target) {
+  let added = 0;
+  if (target === 'pins') {
+    for (const it of items) {
+      if (!pins.some((p) => p.url === it.url)) {
+        pins.push({ title: it.title, url: it.url, favicon: null });
+        added++;
+      }
+    }
+    saveSettings({ pins });
+  } else {
+    for (const it of items) {
+      if (!bookmarks.some((b) => b.url === it.url)) {
+        bookmarks.push({ title: it.title, url: it.url });
+        added++;
+      }
+    }
+    saveSettings({ bookmarks });
+    broadcastBookmarks();
+  }
+  pushState();
+  return added;
+}
+
+ipcMain.handle('import-sources', () => importSources());
+ipcMain.handle('import-from-browser', async (_e, { path: file, kind, target }) => {
+  try {
+    const items =
+      kind === 'safari'
+        ? await parseSafariBookmarks(file)
+        : parseChromiumBookmarks(file);
+    return { ok: true, added: mergeImported(items, target), found: items.length };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+ipcMain.handle('import-html', (_e, { html, target }) => {
+  try {
+    const items = parseBookmarksHTML(html);
+    return { ok: true, added: mergeImported(items, target), found: items.length };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Ad blocking
 // ---------------------------------------------------------------------------
 
@@ -1301,6 +1418,51 @@ async function setupAdblock() {
     });
   } catch (err) {
     console.error('Adblock failed to initialize:', err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Web lookup for the AI (Tavily) — key lives in .env / env var, never in git
+// ---------------------------------------------------------------------------
+
+function getTavilyKey() {
+  if (process.env.TAVILY_API_KEY) return process.env.TAVILY_API_KEY;
+  for (const file of [
+    path.join(__dirname, '.env'),
+    path.join(app.getPath('userData'), '.env'),
+  ]) {
+    try {
+      const m = fs.readFileSync(file, 'utf8').match(/TAVILY_API_KEY\s*=\s*(\S+)/);
+      if (m) return m[1];
+    } catch {}
+  }
+  return null;
+}
+
+async function tavilySearch(query) {
+  const key = getTavilyKey();
+  if (!key) return null;
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 9000);
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ api_key: key, query, max_results: 5 }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+    const data = await res.json();
+    const results = data.results || [];
+    if (!results.length) return null;
+    return results
+      .map(
+        (r, i) =>
+          `[${i + 1}] ${r.title}\n${r.url}\n${(r.content || '').slice(0, 500)}`
+      )
+      .join('\n\n');
+  } catch {
+    return null;
   }
 }
 
@@ -1392,20 +1554,32 @@ async function getPageContext() {
   }
 }
 
-ipcMain.on('ai-ask', async (_e, { text }) => {
+ipcMain.on('ai-ask', async (_e, { text, useWeb }) => {
   if (ai.generating) return;
   if (!(await ensureAI())) return;
   ai.generating = true;
+
+  let prompt = text;
+
+  // optional: cross-reference with live web results
+  if (useWeb) {
+    sendAI({ state: 'searching' });
+    const sources = await tavilySearch(text);
+    if (sources) {
+      prompt =
+        `[Web search results — cite these by URL when you use them]\n` +
+        `${sources}\n[End web results]\n\n${prompt}`;
+    }
+  }
   sendAI({ state: 'generating' });
 
   // page context is always included (refreshed when the page changes)
-  let prompt = text;
   {
     const ctx = await getPageContext();
     if (ctx && ctx.url !== ai.lastCtxUrl) {
       prompt =
         `[Current page: "${ctx.title}" — ${ctx.url}]\n` +
-        `[Page content]\n${ctx.text}\n[End page content]\n\n${text}`;
+        `[Page content]\n${ctx.text}\n[End page content]\n\n${prompt}`;
       ai.lastCtxUrl = ctx.url;
     }
   }
