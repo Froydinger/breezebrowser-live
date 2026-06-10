@@ -997,3 +997,43 @@ html.dark #suggestions {
   flex-shrink: 1;
   max-width: 45%;
 }
+
+/* ------------------------------------------------------------------ */
+/* Window dragging: padding ring + sidebar gaps are all drag handles   */
+/* ------------------------------------------------------------------ */
+
+body { -webkit-app-region: drag; }
+
+button, input, textarea, select, label,
+.tab, .pin, .bookmark, .ai-chip,
+#tabs, #pins, #suggestions, #sidebar-resizer, #edge-handle,
+#ai-messages, #ai-input-wrap, #ai-ctx-toggle,
+#adblock-pill, #update-toast {
+  -webkit-app-region: no-drag;
+}
+
+/* ------------------------------------------------------------------ */
+/* Brand mark in sidebar                                               */
+/* ------------------------------------------------------------------ */
+
+#drag-strip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 2px;
+}
+
+#drag-strip img {
+  width: 22px;
+  height: 22px;
+  opacity: 0.9;
+}
+
+.ai-empty-logo {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  display: block;
+  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent));
+  animation: orb-float 4s ease-in-out infinite;
+}
