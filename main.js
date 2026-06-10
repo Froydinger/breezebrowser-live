@@ -206,6 +206,7 @@ function tabState(t) {
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),
     pinUrl: t.pinUrl || null,
+    incognito: !!t.incognito,
   };
 }
 
@@ -219,20 +220,37 @@ function pushState() {
   });
 }
 
-function createTab(url = NEWTAB_URL, activate = true) {
+// Incognito: an in-memory partition — cookies, storage, and cache are never
+// written to disk and are wiped when the last incognito tab closes.
+let incogSes = null;
+
+function getIncognitoSession() {
+  if (incogSes) return incogSes;
+  incogSes = session.fromPartition('incognito'); // no "persist:" → memory only
+  setupPermissions(incogSes);
+  setupDownloads(incogSes);
+  if (blocker && appSettings.adblockEnabled) {
+    blocker.enableBlockingInSession(incogSes);
+  }
+  return incogSes;
+}
+
+function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
   const id = nextTabId++;
   const isInternal = url.startsWith('file://');
+  if (incognito) getIncognitoSession();
   const view = new WebContentsView({
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
+      ...(incognito ? { partition: 'incognito' } : {}),
       preload: path.join(
         __dirname,
         isInternal ? 'internal-preload.js' : 'page-preload.js'
       ),
     },
   });
-  const t = { id, view, favicon: null };
+  const t = { id, view, favicon: null, incognito };
   tabs.set(id, t);
   tabOrder.push(id);
 
@@ -259,7 +277,7 @@ function createTab(url = NEWTAB_URL, activate = true) {
       details.disposition === 'foreground-tab' ||
       details.disposition === 'background-tab'
     ) {
-      createTab(details.url, details.disposition === 'foreground-tab');
+      createTab(details.url, details.disposition === 'foreground-tab', incognito);
       return { action: 'deny' };
     }
     return {
@@ -278,9 +296,12 @@ function createTab(url = NEWTAB_URL, activate = true) {
     view.setBounds({ x: 0, y: 0, width, height });
   });
   wc.on('leave-html-full-screen', applyBounds);
-  wc.on('did-navigate', (_e, navUrl) => recordHistory(wc, navUrl));
+  // incognito tabs never touch history
+  wc.on('did-navigate', (_e, navUrl) => {
+    if (!t.incognito) recordHistory(wc, navUrl);
+  });
   wc.on('did-navigate-in-page', (_e, navUrl, isMain) => {
-    if (isMain) recordHistory(wc, navUrl);
+    if (isMain && !t.incognito) recordHistory(wc, navUrl);
   });
   wc.on('context-menu', (_e, p) => showPageContextMenu(wc, p));
 
@@ -316,6 +337,11 @@ function closeTab(id) {
   }
   t.view.webContents.close();
   tabs.delete(id);
+  // last incognito tab gone → wipe the in-memory session like Chrome does
+  if (t.incognito && incogSes && ![...tabs.values()].some((x) => x.incognito)) {
+    incogSes.clearStorageData().catch(() => {});
+    incogSes.clearCache().catch(() => {});
+  }
   if (tabOrder.length === 0) createTab();
   pushState();
 }
@@ -390,7 +416,7 @@ const popupsBlocked = new Set(); // tab ids with popups disabled
 
 function pinTab(id) {
   const t = tabs.get(id);
-  if (!t) return;
+  if (!t || t.incognito) return; // incognito tabs leave no trace, including pins
   const url = t.view.webContents.getURL();
   if (!url || url.startsWith('file://')) return;
   if (pins.some((p) => p.url === url)) return;
@@ -444,7 +470,7 @@ function showTabContextMenu(id) {
   if (!t) return;
   const url = t.view.webContents.getURL();
   const isPinned = pins.some((p) => p.url === url);
-  const isWeb = url && !url.startsWith('file://');
+  const isWeb = url && !url.startsWith('file://') && !t.incognito;
   Menu.buildFromTemplate([
     {
       label: isPinned ? 'Unpin' : 'Pin Tab',
@@ -639,8 +665,8 @@ function uniqueSavePath(filename) {
   return candidate;
 }
 
-function setupDownloads() {
-  session.defaultSession.on('will-download', (_e, item) => {
+function setupDownloads(ses) {
+  ses.on('will-download', (_e, item) => {
     const id = downloadSeq++;
     const savePath = uniqueSavePath(item.getFilename());
     item.setSavePath(savePath);
@@ -778,8 +804,7 @@ const PERM_LABELS = {
   midi: 'use MIDI devices',
 };
 
-function setupPermissions() {
-  const ses = session.defaultSession;
+function setupPermissions(ses) {
   const autoAllow = new Set([
     'fullscreen',
     'clipboard-sanitized-write',
@@ -1019,8 +1044,11 @@ function applySetting(key, value) {
   saveSettings({ [key]: value });
   if (key === 'theme') applyTheme(value);
   if (key === 'adblockEnabled' && blocker) {
-    if (value) blocker.enableBlockingInSession(session.defaultSession);
-    else blocker.disableBlockingInSession(session.defaultSession);
+    const sessions = [session.defaultSession, ...(incogSes ? [incogSes] : [])];
+    for (const ses of sessions) {
+      if (value) blocker.enableBlockingInSession(ses);
+      else blocker.disableBlockingInSession(ses);
+    }
   }
   broadcastSettings();
 }
@@ -1090,6 +1118,11 @@ function buildMenu() {
             createTab();
             win?.webContents.send('focus-address');
           },
+        },
+        {
+          label: 'New Incognito Tab',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => createTab(NEWTAB_URL, true, true),
         },
         {
           label: 'Close Tab',
@@ -1344,8 +1377,8 @@ app.whenReady().then(async () => {
   appSettings = { ...DEFAULT_SETTINGS, ...loadSettings() };
   loadHistory();
   loadDownloads();
-  setupDownloads();
-  setupPermissions();
+  setupDownloads(session.defaultSession);
+  setupPermissions(session.defaultSession);
   await setupAdblock();
   buildMenu();
   createWindow();

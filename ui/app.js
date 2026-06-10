@@ -16,6 +16,7 @@ let addressFocused = false;
 
 const globeIcon = `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 8h12M8 2c-3.5 3.8-3.5 8.2 0 12 3.5-3.8 3.5-8.2 0-12z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
 const xIcon = `<svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+const incogIcon = `<svg viewBox="0 0 16 16"><path d="M2 7.5h12M4 7.5l1.2-3.6a.8.8 0 0 1 .76-.55h4.08a.8.8 0 0 1 .76.55L12 7.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4.8" cy="11" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11.2" cy="11" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6.9 11h2.2" stroke="currentColor" stroke-width="1.3"/></svg>`;
 
 // Safe favicon rendering — build DOM nodes, never inline event handlers.
 function setFavicon(el, src) {
@@ -110,6 +111,7 @@ function renderTabs() {
     existing.delete(t.id);
 
     el.classList.toggle('active', t.id === state.activeTabId);
+    el.classList.toggle('incognito', !!t.incognito);
     el.querySelector('.title').textContent = t.title;
 
     const fav = el.querySelector('.favicon');
@@ -117,6 +119,11 @@ function renderTabs() {
       if (!fav.querySelector('.spinner')) {
         fav.dataset.src = '~loading~';
         fav.innerHTML = `<span class="spinner"></span>`;
+      }
+    } else if (t.incognito && !t.favicon) {
+      if (fav.dataset.src !== '~incog~') {
+        fav.dataset.src = '~incog~';
+        fav.innerHTML = incogIcon;
       }
     } else {
       setFavicon(fav, t.favicon);
@@ -217,6 +224,9 @@ breeze.onState((s) => {
   const bookmarked =
     active && active.url && (s.bookmarks || []).some((b) => b.url === active.url);
   btnBookmark.classList.toggle('active', !!bookmarked);
+  $('#address-wrap').classList.toggle('incognito', !!active?.incognito);
+  if (active?.incognito) address.placeholder = 'Incognito — search privately';
+  else address.placeholder = 'Search or enter URL';
 });
 
 // ---------------------------------------------------------------------------

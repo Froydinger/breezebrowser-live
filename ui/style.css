@@ -1037,3 +1037,30 @@ button, input, textarea, select, label,
   filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent));
   animation: orb-float 4s ease-in-out infinite;
 }
+
+/* ------------------------------------------------------------------ */
+/* Incognito                                                           */
+/* ------------------------------------------------------------------ */
+
+.tab.incognito {
+  background: color-mix(in srgb, #8b5cf6 10%, transparent);
+}
+
+.tab.incognito:hover {
+  background: color-mix(in srgb, #8b5cf6 18%, transparent);
+}
+
+.tab.incognito.active {
+  background: color-mix(in srgb, #8b5cf6 24%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.tab.incognito .favicon { color: #8b5cf6; }
+
+#address-wrap.incognito {
+  box-shadow: 0 0 0 2px color-mix(in srgb, #8b5cf6 45%, transparent), var(--shadow);
+}
+
+#address-wrap.incognito:focus-within {
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, #8b5cf6 60%, transparent), var(--shadow);
+}
