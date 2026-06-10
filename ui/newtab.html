@@ -140,10 +140,11 @@
     const greeting = document.getElementById('greeting');
 
     const ENGINES = {
-      google: 'https://www.google.com/search?q=',
-      duckduckgo: 'https://duckduckgo.com/?q=',
-      bing: 'https://www.bing.com/search?q=',
-      brave: 'https://search.brave.com/search?q=',
+      google: 'https://www.google.com/search?q=%s',
+      duckduckgo: 'https://duckduckgo.com/?q=%s',
+      bing: 'https://www.bing.com/search?q=%s',
+      brave: 'https://search.brave.com/search?q=%s',
+      spectra: 'https://spectranews.us/s/new?q=%s&mode=lightning',
     };
 
     let settings = { clock24: false, showGreeting: true, searchEngine: 'google', theme: 'light', accent: '#5b7cfa' };
@@ -191,7 +192,7 @@
         (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' '));
       location.href = isURL
         ? (q.includes('://') ? q : 'https://' + q)
-        : (ENGINES[settings.searchEngine] || ENGINES.google) + encodeURIComponent(q);
+        : (ENGINES[settings.searchEngine] || ENGINES.google).replace('%s', encodeURIComponent(q));
     });
   </script>
 </body>

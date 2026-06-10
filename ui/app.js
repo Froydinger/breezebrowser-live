@@ -49,6 +49,9 @@ breeze.getInit().then(({ theme, sidebarVisible, settings }) => {
 
 function applySettings(s) {
   if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
+  if (s.sidebarWidth) {
+    document.documentElement.style.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
+  }
 }
 
 breeze.onSettings(applySettings);
@@ -87,6 +90,10 @@ function renderTabs() {
       });
       el.addEventListener('auxclick', (e) => {
         if (e.button === 1) breeze.closeTab(t.id);
+      });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        breeze.tabContextMenu(t.id);
       });
       tabsEl.appendChild(el);
     }
@@ -164,6 +171,53 @@ function renderBookmarks() {
 }
 
 // ---------------------------------------------------------------------------
+// Pinned apps
+// ---------------------------------------------------------------------------
+
+const pinsEl = $('#pins');
+
+function renderPins() {
+  const list = state.pins || [];
+  pinsEl.textContent = '';
+  const openUrls = new Set(state.tabs.map((t) => t.url));
+  for (const p of list) {
+    const el = document.createElement('div');
+    el.className = 'pin';
+    el.title = p.title;
+    el.classList.toggle('open', openUrls.has(p.url));
+
+    if (p.favicon) {
+      const img = document.createElement('img');
+      img.src = p.favicon;
+      img.onerror = () => {
+        img.replaceWith(pinLetter(p));
+      };
+      el.appendChild(img);
+    } else {
+      el.appendChild(pinLetter(p));
+    }
+
+    el.addEventListener('click', () => breeze.openPin(p.url));
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      breeze.pinContextMenu(p.url);
+    });
+    pinsEl.appendChild(el);
+  }
+}
+
+function pinLetter(p) {
+  const span = document.createElement('span');
+  span.className = 'pin-letter';
+  let letter = '•';
+  try {
+    letter = new URL(p.url).hostname.replace('www.', '')[0].toUpperCase();
+  } catch {}
+  span.textContent = letter;
+  return span;
+}
+
+// ---------------------------------------------------------------------------
 // State sync
 // ---------------------------------------------------------------------------
 
@@ -171,6 +225,7 @@ breeze.onState((s) => {
   state = s;
   renderTabs();
   renderBookmarks();
+  renderPins();
   const active = s.tabs.find((t) => t.id === s.activeTabId);
   if (active && !addressFocused) address.value = active.url;
   btnBack.disabled = !active?.canGoBack;
@@ -215,9 +270,55 @@ btnForward.addEventListener('click', () => breeze.goForward());
 $('#btn-reload').addEventListener('click', () => breeze.reload());
 $('#new-tab-btn').addEventListener('click', () => breeze.newTab());
 $('#btn-sidebar').addEventListener('click', () => breeze.toggleSidebar());
-$('#edge-handle').addEventListener('click', () => breeze.toggleSidebar());
 $('#settings-btn').addEventListener('click', () => breeze.openSettings());
+$('#downloads-btn').addEventListener('click', () => breeze.openDownloads());
+$('#history-btn').addEventListener('click', () => breeze.openHistory());
 $('#ai-btn').addEventListener('click', () => breeze.toggleAssistant());
+
+// edge handle: click or hover briefly to reveal the sidebar
+const edgeHandle = $('#edge-handle');
+let edgeTimer = null;
+edgeHandle.addEventListener('click', () => breeze.toggleSidebar());
+edgeHandle.addEventListener('mouseenter', () => {
+  edgeTimer = setTimeout(() => breeze.toggleSidebar(), 160);
+});
+edgeHandle.addEventListener('mouseleave', () => clearTimeout(edgeTimer));
+
+// ---------------------------------------------------------------------------
+// Sidebar resize
+// ---------------------------------------------------------------------------
+
+const resizer = $('#sidebar-resizer');
+let resizing = false;
+
+resizer.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  resizing = true;
+  document.body.classList.add('resizing');
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!resizing) return;
+  const w = Math.min(420, Math.max(220, e.clientX));
+  document.documentElement.style.setProperty('--sidebar-w', `${w}px`);
+  breeze.setSidebarWidth(w);
+});
+
+window.addEventListener('mouseup', () => {
+  if (!resizing) return;
+  resizing = false;
+  document.body.classList.remove('resizing');
+  breeze.saveSidebarWidth();
+});
+
+// ---------------------------------------------------------------------------
+// Downloads activity dot
+// ---------------------------------------------------------------------------
+
+breeze.onDownloads((list) => {
+  const active = list.some((d) => d.state === 'progressing');
+  $('#dl-dot').classList.toggle('active', active);
+});
 btnBookmark.addEventListener('click', () => {
   btnBookmark.classList.remove('pop');
   void btnBookmark.offsetWidth;
@@ -312,6 +413,13 @@ aiInput.addEventListener('keydown', (e) => {
     sendAI();
   }
 });
+
+document.querySelectorAll('.ai-chip').forEach((chip) =>
+  chip.addEventListener('click', () => {
+    aiInput.value = chip.textContent;
+    sendAI();
+  })
+);
 
 aiInput.addEventListener('input', () => {
   aiInput.style.height = 'auto';

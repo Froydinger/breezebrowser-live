@@ -48,7 +48,7 @@ html, body {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 280px;
+  width: var(--sidebar-w, 280px);
   display: flex;
   flex-direction: column;
   padding: 12px 10px 12px 14px;
@@ -486,7 +486,7 @@ html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
   top: 0;
   right: 0;
   bottom: 0;
-  width: 340px;
+  width: 360px;
   display: flex;
   flex-direction: column;
   padding: 14px 14px 14px 10px;
@@ -676,3 +676,243 @@ html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
 #ai-send:hover { filter: brightness(1.08); }
 #ai-send:active { transform: scale(0.92); }
 #ai-send.stop { background: #e5604c; }
+
+/* ------------------------------------------------------------------ */
+/* Sidebar resizer                                                     */
+/* ------------------------------------------------------------------ */
+
+#sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 6;
+}
+
+#sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+
+#sidebar-resizer:hover::after,
+body.resizing #sidebar-resizer::after { opacity: 0.5; }
+
+body.resizing { cursor: col-resize; }
+body.resizing #sidebar { transition: none; }
+
+/* ------------------------------------------------------------------ */
+/* Pinned apps                                                         */
+/* ------------------------------------------------------------------ */
+
+#pins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 7px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+#pins:empty { display: none; }
+
+.pin {
+  aspect-ratio: 1;
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s var(--ease), transform 0.15s var(--ease);
+  animation: tab-in 0.28s var(--ease);
+}
+
+.pin:hover { background: var(--surface-active); transform: translateY(-1px); }
+.pin:active { transform: scale(0.94); }
+.pin img { width: 22px; height: 22px; border-radius: 6px; }
+.pin .pin-letter {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.pin.open::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Downloads dot                                                       */
+/* ------------------------------------------------------------------ */
+
+#downloads-btn { position: relative; }
+
+#dl-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+#dl-dot.active { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
+
+/* ------------------------------------------------------------------ */
+/* Assistant — glass redesign                                          */
+/* ------------------------------------------------------------------ */
+
+#assistant {
+  padding: 10px 10px 10px 0;
+}
+
+#assistant > * {
+  position: relative;
+  z-index: 1;
+}
+
+#assistant::before {
+  content: '';
+  position: absolute;
+  inset: 10px 10px 10px 0;
+  border-radius: 18px;
+  background: linear-gradient(165deg,
+    color-mix(in srgb, var(--accent) 7%, rgba(255,255,255,0.5)) 0%,
+    rgba(255,255,255,0.35) 40%,
+    rgba(255,255,255,0.25) 100%);
+  backdrop-filter: blur(28px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.55);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.10),
+              inset 0 1px 0 rgba(255,255,255,0.7);
+  z-index: 0;
+}
+
+html.dark #assistant::before {
+  background: linear-gradient(165deg,
+    color-mix(in srgb, var(--accent) 10%, rgba(255,255,255,0.05)) 0%,
+    rgba(255,255,255,0.04) 40%,
+    rgba(255,255,255,0.02) 100%);
+  border-color: rgba(255,255,255,0.1);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+#assistant .ai-header { padding: 18px 16px 12px; }
+
+.ai-title {
+  font-size: 14px;
+  letter-spacing: -0.2px;
+  background: linear-gradient(90deg, var(--text), color-mix(in srgb, var(--accent) 70%, var(--text)));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+#ai-messages { padding: 2px 14px; }
+
+.ai-empty-orb {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%,
+    color-mix(in srgb, var(--accent) 80%, #fff),
+    var(--accent) 55%,
+    color-mix(in srgb, var(--accent) 60%, #000) 100%);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 45%, transparent),
+              inset 0 2px 6px rgba(255,255,255,0.5);
+  animation: orb-float 4s ease-in-out infinite;
+}
+
+@keyframes orb-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-6px) scale(1.04); }
+}
+
+#ai-empty h3 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 18px;
+}
+
+.ai-chip {
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 7px 13px;
+  border-radius: 99px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), transform 0.12s var(--ease);
+}
+
+.ai-chip:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.msg.user {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent) 92%, #fff),
+    var(--accent));
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.msg.ai {
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
+html.dark .msg.ai {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.1);
+}
+
+.ai-input-row { padding: 10px 14px 14px; }
+
+#ai-input-wrap {
+  border-radius: 14px;
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.65);
+}
+
+html.dark #ai-input-wrap {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.1);
+}
+
+#ai-statusbar { padding: 6px 16px 0; }
+#ai-progress { margin: 6px 16px 0; }

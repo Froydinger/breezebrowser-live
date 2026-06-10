@@ -35,6 +35,8 @@
       </button>
     </div>
 
+    <div id="pins"></div>
+
     <div id="bookmarks-section">
       <div class="section-label">Bookmarks</div>
       <div id="bookmarks"></div>
@@ -54,6 +56,13 @@
         <span id="adblock-count">0</span>
       </div>
       <div class="footer-btns">
+        <button class="nav-btn" id="downloads-btn" title="Downloads (⇧⌘J)">
+          <svg viewBox="0 0 16 16"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="dl-dot"></span>
+        </button>
+        <button class="nav-btn" id="history-btn" title="History (⌘Y)">
+          <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <button class="nav-btn" id="ai-btn" title="Assistant (⌘E)">
           <svg viewBox="0 0 16 16"><path d="M8 1.8l1.4 3.6a1 1 0 0 0 .58.58L13.6 7.4a.65.65 0 0 1 0 1.2l-3.62 1.42a1 1 0 0 0-.58.58L8 14.2a.65.65 0 0 1-1.2 0L5.4 10.6a1 1 0 0 0-.58-.58L1.2 8.6a.65.65 0 0 1 0-1.2l3.62-1.42a1 1 0 0 0 .58-.58L6.8 1.8a.65.65 0 0 1 1.2 0z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
         </button>
@@ -66,6 +75,8 @@
         </button>
       </div>
     </div>
+
+    <div id="sidebar-resizer" title="Drag to resize"></div>
   </div>
 
   <div id="assistant">
@@ -86,8 +97,14 @@
 
     <div id="ai-messages">
       <div id="ai-empty">
-        <div class="ai-empty-icon">✦</div>
-        <p>Ask anything about this page —<br/>runs 100% locally on your Mac.</p>
+        <div class="ai-empty-orb"></div>
+        <h3>Private intelligence</h3>
+        <p>Runs entirely on your Mac.<br/>Nothing ever leaves this device.</p>
+        <div class="ai-chips">
+          <button class="ai-chip">Summarize this page</button>
+          <button class="ai-chip">Key takeaways</button>
+          <button class="ai-chip">Explain this simply</button>
+        </div>
       </div>
     </div>
 

@@ -6,6 +6,9 @@ const {
   Menu,
   nativeTheme,
   session,
+  dialog,
+  clipboard,
+  shell,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -14,8 +17,8 @@ const fs = require('fs');
 // State
 // ---------------------------------------------------------------------------
 
-const SIDEBAR_WIDTH = 280;
-const ASSISTANT_WIDTH = 340;
+let sidebarWidth = 280; // user-resizable, persisted
+const ASSISTANT_WIDTH = 360;
 const CONTENT_PAD = 10; // breathing room around the page, Arc-style
 
 let win = null;
@@ -30,7 +33,7 @@ let nextTabId = 1;
 let sidebarVisible = true;
 let assistantVisible = false;
 let layoutAnim = null;
-let currentLeft = SIDEBAR_WIDTH;
+let currentLeft = sidebarWidth;
 let currentRight = 0;
 
 let bookmarks = []; // [{ title, url }]
@@ -39,10 +42,11 @@ const NEWTAB_URL = `file://${path.join(__dirname, 'ui', 'newtab.html')}`;
 const SETTINGS_URL = `file://${path.join(__dirname, 'ui', 'settings.html')}`;
 
 const ENGINES = {
-  google: 'https://www.google.com/search?q=',
-  duckduckgo: 'https://duckduckgo.com/?q=',
-  bing: 'https://www.bing.com/search?q=',
-  brave: 'https://search.brave.com/search?q=',
+  google: 'https://www.google.com/search?q=%s',
+  duckduckgo: 'https://duckduckgo.com/?q=%s',
+  bing: 'https://www.bing.com/search?q=%s',
+  brave: 'https://search.brave.com/search?q=%s',
+  spectra: 'https://spectranews.us/s/new?q=%s&mode=lightning',
 };
 
 const DEFAULT_SETTINGS = {
@@ -53,6 +57,8 @@ const DEFAULT_SETTINGS = {
   showGreeting: true,
   adblockEnabled: true,
   sidebarVisible: true,
+  sidebarWidth: 280,
+  permissions: {},
 };
 
 let appSettings = { ...DEFAULT_SETTINGS };
@@ -109,7 +115,7 @@ function applyBounds() {
 }
 
 function layout() {
-  currentLeft = sidebarVisible ? SIDEBAR_WIDTH : 0;
+  currentLeft = sidebarVisible ? sidebarWidth : 0;
   currentRight = assistantVisible ? ASSISTANT_WIDTH : 0;
   applyBounds();
 }
@@ -122,7 +128,7 @@ function animateLayout() {
   const DURATION = 240;
   const fromL = currentLeft;
   const fromR = currentRight;
-  const toL = sidebarVisible ? SIDEBAR_WIDTH : 0;
+  const toL = sidebarVisible ? sidebarWidth : 0;
   const toR = assistantVisible ? ASSISTANT_WIDTH : 0;
   const start = Date.now();
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -144,6 +150,11 @@ function setSidebar(show) {
   sidebarVisible = show;
   saveSettings({ sidebarVisible: show });
   win?.webContents.send('sidebar', show);
+  if (process.platform === 'darwin') {
+    try {
+      win?.setWindowButtonVisibility(show);
+    } catch {}
+  }
   animateLayout();
 }
 
@@ -179,6 +190,7 @@ function pushState() {
     tabs: tabOrder.map((id) => tabState(tabs.get(id))),
     activeTabId,
     bookmarks,
+    pins,
   });
 }
 
@@ -213,15 +225,38 @@ function createTab(url = NEWTAB_URL, activate = true) {
     t.favicon = icons[icons.length - 1] || null;
     pushState();
   });
-  wc.setWindowOpenHandler(({ url }) => {
-    createTab(url, true);
-    return { action: 'deny' };
+  // Popups: real windows for auth flows / window.open, tabs for link-opens.
+  // Per-tab blocking via right-click on the tab in the sidebar.
+  wc.setWindowOpenHandler((details) => {
+    if (popupsBlocked.has(id)) return { action: 'deny' };
+    if (
+      details.disposition === 'foreground-tab' ||
+      details.disposition === 'background-tab'
+    ) {
+      createTab(details.url, details.disposition === 'foreground-tab');
+      return { action: 'deny' };
+    }
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        autoHideMenuBar: true,
+        width: 560,
+        height: 720,
+        backgroundColor:
+          nativeTheme.themeSource === 'dark' ? '#16161a' : '#ffffff',
+      },
+    };
   });
   wc.on('enter-html-full-screen', () => {
     const [width, height] = win.getContentSize();
     view.setBounds({ x: 0, y: 0, width, height });
   });
   wc.on('leave-html-full-screen', applyBounds);
+  wc.on('did-navigate', (_e, navUrl) => recordHistory(wc, navUrl));
+  wc.on('did-navigate-in-page', (_e, navUrl, isMain) => {
+    if (isMain) recordHistory(wc, navUrl);
+  });
+  wc.on('context-menu', (_e, p) => showPageContextMenu(wc, p));
 
   wc.loadURL(url);
   if (activate) activateTab(id);
@@ -278,18 +313,20 @@ function toNavigableURL(input) {
   if (q === 'localhost' || q.startsWith('localhost:')) return `http://${q}`;
   if (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' ')) return `https://${q}`;
   const engine = ENGINES[appSettings.searchEngine] || ENGINES.google;
-  return engine + encodeURIComponent(q);
+  return engine.replace('%s', encodeURIComponent(q));
 }
 
-function openSettingsTab() {
+function openInternalTab(url) {
   for (const id of tabOrder) {
-    if (tabs.get(id).view.webContents.getURL() === SETTINGS_URL) {
+    if (tabs.get(id).view.webContents.getURL() === url) {
       activateTab(id);
       return;
     }
   }
-  createTab(SETTINGS_URL, true);
+  createTab(url, true);
 }
+
+const openSettingsTab = () => openInternalTab(SETTINGS_URL);
 
 // ---------------------------------------------------------------------------
 // Bookmarks
@@ -305,6 +342,329 @@ function toggleBookmark() {
   else bookmarks.push({ title: wc.getTitle() || url, url });
   saveSettings({ bookmarks });
   pushState();
+}
+
+// ---------------------------------------------------------------------------
+// Pinned tabs (square app launchers above the tab list; survive tab close)
+// ---------------------------------------------------------------------------
+
+let pins = []; // [{ title, url, favicon }]
+const popupsBlocked = new Set(); // tab ids with popups disabled
+
+function pinTab(id) {
+  const t = tabs.get(id);
+  if (!t) return;
+  const url = t.view.webContents.getURL();
+  if (!url || url.startsWith('file://')) return;
+  if (pins.some((p) => p.url === url)) return;
+  pins.push({ title: t.view.webContents.getTitle() || url, url, favicon: t.favicon });
+  saveSettings({ pins });
+  pushState();
+}
+
+function unpin(url) {
+  pins = pins.filter((p) => p.url !== url);
+  saveSettings({ pins });
+  pushState();
+}
+
+function openPin(url) {
+  // reuse an existing tab on the same page, else open a new one
+  for (const id of tabOrder) {
+    if (tabs.get(id).view.webContents.getURL() === url) {
+      activateTab(id);
+      return;
+    }
+  }
+  createTab(url, true);
+}
+
+// ---------------------------------------------------------------------------
+// Context menus (sidebar tabs + web pages)
+// ---------------------------------------------------------------------------
+
+function showTabContextMenu(id) {
+  const t = tabs.get(id);
+  if (!t) return;
+  const url = t.view.webContents.getURL();
+  const isPinned = pins.some((p) => p.url === url);
+  const isWeb = url && !url.startsWith('file://');
+  Menu.buildFromTemplate([
+    {
+      label: isPinned ? 'Unpin' : 'Pin Tab',
+      enabled: isWeb,
+      click: () => (isPinned ? unpin(url) : pinTab(id)),
+    },
+    {
+      label: 'Duplicate Tab',
+      enabled: isWeb,
+      click: () => createTab(url, true),
+    },
+    { type: 'separator' },
+    {
+      label: 'Allow Popups',
+      type: 'checkbox',
+      checked: !popupsBlocked.has(id),
+      click: () => {
+        if (popupsBlocked.has(id)) popupsBlocked.delete(id);
+        else popupsBlocked.add(id);
+      },
+    },
+    { type: 'separator' },
+    { label: 'Close Tab', click: () => closeTab(id) },
+  ]).popup({ window: win });
+}
+
+function showPageContextMenu(wc, p) {
+  const items = [];
+  if (p.linkURL) {
+    items.push(
+      { label: 'Open Link in New Tab', click: () => createTab(p.linkURL, true) },
+      {
+        label: 'Open Link in Background',
+        click: () => createTab(p.linkURL, false),
+      },
+      { label: 'Copy Link', click: () => clipboard.writeText(p.linkURL) },
+      { type: 'separator' }
+    );
+  }
+  if (p.mediaType === 'image' && p.srcURL) {
+    items.push(
+      { label: 'Copy Image', click: () => wc.copyImageAt(p.x, p.y) },
+      { label: 'Save Image…', click: () => wc.downloadURL(p.srcURL) },
+      {
+        label: 'Open Image in New Tab',
+        click: () => createTab(p.srcURL, true),
+      },
+      { type: 'separator' }
+    );
+  }
+  const sel = (p.selectionText || '').trim();
+  if (sel) {
+    const short = sel.length > 30 ? sel.slice(0, 30) + '…' : sel;
+    const engine = ENGINES[appSettings.searchEngine] || ENGINES.google;
+    items.push(
+      {
+        label: `Search for “${short}”`,
+        click: () => createTab(engine.replace('%s', encodeURIComponent(sel)), true),
+      },
+      { role: 'copy' },
+      { type: 'separator' }
+    );
+  }
+  if (p.isEditable) {
+    items.push(
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'selectAll' },
+      { type: 'separator' }
+    );
+  }
+  items.push(
+    {
+      label: 'Back',
+      enabled: wc.navigationHistory.canGoBack(),
+      click: () => wc.navigationHistory.goBack(),
+    },
+    {
+      label: 'Forward',
+      enabled: wc.navigationHistory.canGoForward(),
+      click: () => wc.navigationHistory.goForward(),
+    },
+    { label: 'Reload', click: () => wc.reload() },
+    { type: 'separator' },
+    {
+      label: 'Bookmark This Page',
+      click: () => toggleBookmark(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Inspect Element',
+      click: () => {
+        wc.inspectElement(p.x, p.y);
+      },
+    }
+  );
+  Menu.buildFromTemplate(items).popup({ window: win });
+}
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+const HISTORY_URL = `file://${path.join(__dirname, 'ui', 'history.html')}`;
+const historyPath = () => path.join(app.getPath('userData'), 'history.json');
+let history = [];
+let historySaveTimer = null;
+
+function loadHistory() {
+  try {
+    history = JSON.parse(fs.readFileSync(historyPath(), 'utf8'));
+  } catch {
+    history = [];
+  }
+}
+
+function saveHistorySoon() {
+  clearTimeout(historySaveTimer);
+  historySaveTimer = setTimeout(() => {
+    try {
+      fs.writeFileSync(historyPath(), JSON.stringify(history));
+    } catch {}
+  }, 1500);
+}
+
+function recordHistory(wc, url) {
+  if (!/^https?:\/\//.test(url)) return;
+  const last = history[0];
+  if (last && last.url === url && Date.now() - last.ts < 5000) return;
+  history.unshift({ url, title: wc.getTitle() || url, ts: Date.now() });
+  if (history.length > 5000) history.length = 5000;
+  saveHistorySoon();
+  // backfill the title once the page reports it
+  wc.once('page-title-updated', (_e, title) => {
+    const entry = history.find((h) => h.url === url);
+    if (entry && title) {
+      entry.title = title;
+      saveHistorySoon();
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Downloads
+// ---------------------------------------------------------------------------
+
+const DOWNLOADS_URL = `file://${path.join(__dirname, 'ui', 'downloads.html')}`;
+const downloadsPath = () => path.join(app.getPath('userData'), 'downloads.json');
+const downloadItems = new Map(); // id -> DownloadItem (live only)
+let downloadList = []; // [{ id, filename, path, url, totalBytes, receivedBytes, state, ts }]
+let downloadSeq = 1;
+
+function loadDownloads() {
+  try {
+    downloadList = JSON.parse(fs.readFileSync(downloadsPath(), 'utf8'));
+    downloadSeq = Math.max(0, ...downloadList.map((d) => d.id)) + 1;
+  } catch {
+    downloadList = [];
+  }
+}
+
+function saveDownloads() {
+  try {
+    fs.writeFileSync(
+      downloadsPath(),
+      JSON.stringify(downloadList.filter((d) => d.state !== 'progressing').slice(0, 200))
+    );
+  } catch {}
+}
+
+function broadcastDownloads() {
+  if (win) win.webContents.send('downloads', downloadList);
+  for (const { view } of tabs.values()) {
+    if (view.webContents.getURL().startsWith('file://')) {
+      view.webContents.send('downloads', downloadList);
+    }
+  }
+}
+
+function uniqueSavePath(filename) {
+  const dir = app.getPath('downloads');
+  const ext = path.extname(filename);
+  const base = path.basename(filename, ext);
+  let candidate = path.join(dir, filename);
+  for (let i = 1; fs.existsSync(candidate); i++) {
+    candidate = path.join(dir, `${base} (${i})${ext}`);
+  }
+  return candidate;
+}
+
+function setupDownloads() {
+  session.defaultSession.on('will-download', (_e, item) => {
+    const id = downloadSeq++;
+    const savePath = uniqueSavePath(item.getFilename());
+    item.setSavePath(savePath);
+    const entry = {
+      id,
+      filename: path.basename(savePath),
+      path: savePath,
+      url: item.getURL(),
+      totalBytes: item.getTotalBytes(),
+      receivedBytes: 0,
+      state: 'progressing',
+      ts: Date.now(),
+    };
+    downloadList.unshift(entry);
+    downloadItems.set(id, item);
+
+    item.on('updated', (_ev, state) => {
+      entry.receivedBytes = item.getReceivedBytes();
+      entry.totalBytes = item.getTotalBytes();
+      entry.state = state === 'interrupted' ? 'interrupted' : 'progressing';
+      broadcastDownloads();
+    });
+    item.once('done', (_ev, state) => {
+      entry.receivedBytes = item.getReceivedBytes();
+      entry.state = state; // 'completed' | 'cancelled' | 'interrupted'
+      downloadItems.delete(id);
+      saveDownloads();
+      broadcastDownloads();
+    });
+    broadcastDownloads();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Permission prompts (per-origin, remembered)
+// ---------------------------------------------------------------------------
+
+const PERM_LABELS = {
+  media: 'use your camera and/or microphone',
+  geolocation: 'know your location',
+  notifications: 'send you notifications',
+  'clipboard-read': 'read your clipboard',
+  midi: 'use MIDI devices',
+};
+
+function setupPermissions() {
+  const ses = session.defaultSession;
+  const autoAllow = new Set([
+    'fullscreen',
+    'clipboard-sanitized-write',
+    'pointerLock',
+    'keyboardLock',
+    'window-management',
+    'publickey-credentials-get', // WebAuthn / passkeys
+    'publickey-credentials-create',
+  ]);
+  ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
+    if (autoAllow.has(permission)) return callback(true);
+    if (!PERM_LABELS[permission]) return callback(false);
+    let origin;
+    try {
+      origin = new URL(details.requestingUrl || wc.getURL()).origin;
+    } catch {
+      return callback(false);
+    }
+    const saved = (appSettings.permissions || {})[origin]?.[permission];
+    if (saved !== undefined) return callback(saved);
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      message: `Allow ${origin.replace(/^https?:\/\//, '')} to ${PERM_LABELS[permission]}?`,
+      buttons: ['Allow', 'Block'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    const allow = response === 0;
+    const perms = appSettings.permissions || {};
+    perms[origin] = { ...perms[origin], [permission]: allow };
+    applySetting('permissions', perms);
+    callback(allow);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +876,8 @@ function createWindow() {
   appSettings = { ...DEFAULT_SETTINGS, ...settings };
   sidebarVisible = appSettings.sidebarVisible !== false;
   bookmarks = Array.isArray(settings.bookmarks) ? settings.bookmarks : [];
+  pins = Array.isArray(settings.pins) ? settings.pins : [];
+  sidebarWidth = Math.min(420, Math.max(220, appSettings.sidebarWidth || 280));
   const theme = appSettings.theme;
   nativeTheme.themeSource = theme;
 
@@ -535,6 +897,11 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
+  if (process.platform === 'darwin' && !sidebarVisible) {
+    try {
+      win.setWindowButtonVisibility(false);
+    } catch {}
+  }
   win.on('resize', applyBounds);
   win.on('closed', () => {
     win = null;
@@ -670,6 +1037,17 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+]',
           click: () => activeWC()?.navigationHistory.goForward(),
         },
+        { type: 'separator' },
+        {
+          label: 'Show History',
+          accelerator: 'CmdOrCtrl+Y',
+          click: () => openInternalTab(HISTORY_URL),
+        },
+        {
+          label: 'Show Downloads',
+          accelerator: 'CmdOrCtrl+Shift+J',
+          click: () => openInternalTab(DOWNLOADS_URL),
+        },
       ],
     },
     {
@@ -739,6 +1117,50 @@ ipcMain.handle('get-init', () => ({
   settings: appSettings,
 }));
 ipcMain.handle('get-settings', () => appSettings);
+ipcMain.on('set-sidebar-width', (_e, w) => {
+  sidebarWidth = Math.min(420, Math.max(220, Math.round(w)));
+  if (sidebarVisible) {
+    currentLeft = sidebarWidth;
+    applyBounds();
+  }
+});
+ipcMain.on('save-sidebar-width', () => applySetting('sidebarWidth', sidebarWidth));
+ipcMain.on('tab-context-menu', (_e, id) => showTabContextMenu(id));
+ipcMain.on('open-pin', (_e, url) => openPin(url));
+ipcMain.on('pin-context-menu', (_e, url) => {
+  Menu.buildFromTemplate([
+    { label: 'Open', click: () => openPin(url) },
+    { label: 'Open in New Tab', click: () => createTab(url, true) },
+    { type: 'separator' },
+    { label: 'Unpin', click: () => unpin(url) },
+  ]).popup({ window: win });
+});
+ipcMain.on('open-downloads', () => openInternalTab(DOWNLOADS_URL));
+ipcMain.on('open-history', () => openInternalTab(HISTORY_URL));
+ipcMain.handle('get-history', () => history.slice(0, 2000));
+ipcMain.on('clear-history', () => {
+  history = [];
+  saveHistorySoon();
+});
+ipcMain.on('delete-history-item', (_e, { url, ts }) => {
+  history = history.filter((h) => !(h.url === url && h.ts === ts));
+  saveHistorySoon();
+});
+ipcMain.handle('get-downloads', () => downloadList);
+ipcMain.on('download-cancel', (_e, id) => downloadItems.get(id)?.cancel());
+ipcMain.on('download-open', (_e, id) => {
+  const d = downloadList.find((x) => x.id === id);
+  if (d?.path) shell.openPath(d.path);
+});
+ipcMain.on('download-show', (_e, id) => {
+  const d = downloadList.find((x) => x.id === id);
+  if (d?.path) shell.showItemInFolder(d.path);
+});
+ipcMain.on('downloads-clear', () => {
+  downloadList = downloadList.filter((d) => d.state === 'progressing');
+  saveDownloads();
+  broadcastDownloads();
+});
 ipcMain.on('set-setting', (_e, { key, value }) => {
   if (key in DEFAULT_SETTINGS) applySetting(key, value);
 });
@@ -750,6 +1172,10 @@ ipcMain.on('open-settings', () => openSettingsTab());
 
 app.whenReady().then(async () => {
   appSettings = { ...DEFAULT_SETTINGS, ...loadSettings() };
+  loadHistory();
+  loadDownloads();
+  setupDownloads();
+  setupPermissions();
   await setupAdblock();
   buildMenu();
   createWindow();

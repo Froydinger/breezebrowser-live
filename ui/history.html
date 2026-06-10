@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>History</title>
+  <style>
+    :root {
+      --text: #2a2a2e;
+      --text-soft: rgba(42, 42, 46, 0.5);
+      --surface: rgba(255, 255, 255, 0.65);
+      --surface-hover: rgba(255, 255, 255, 0.9);
+      --border: rgba(0, 0, 0, 0.06);
+      --accent: #5b7cfa;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    html.dark {
+      --text: #ececf0;
+      --text-soft: rgba(236, 236, 240, 0.45);
+      --surface: rgba(255, 255, 255, 0.06);
+      --surface-hover: rgba(255, 255, 255, 0.1);
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #faf8f5 0%, #f1ede7 60%, #ece6dd 100%);
+      color: var(--text);
+      padding: 56px 24px;
+      display: flex;
+      justify-content: center;
+      transition: background 0.4s var(--ease);
+    }
+
+    html.dark body {
+      background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%);
+    }
+
+    main { width: min(720px, 100%); animation: rise 0.5s var(--ease); }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      gap: 16px;
+    }
+
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+
+    #clear {
+      border: none;
+      background: var(--surface);
+      color: var(--text-soft);
+      font-family: inherit;
+      font-size: 12.5px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s var(--ease), color 0.15s var(--ease);
+    }
+
+    #clear:hover { background: var(--surface-hover); color: #e5604c; }
+
+    #search {
+      width: 100%;
+      height: 44px;
+      border: none;
+      outline: none;
+      border-radius: 12px;
+      padding: 0 18px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+      transition: box-shadow 0.2s var(--ease);
+    }
+
+    #search:focus {
+      box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 40%, transparent);
+    }
+
+    #search::placeholder { color: var(--text-soft); }
+
+    .day-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+      margin: 22px 0 8px 2px;
+    }
+
+    .entry {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.13s var(--ease);
+    }
+
+    .entry:hover { background: var(--surface); }
+
+    .entry img { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
+
+    .entry .t {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .entry .title {
+      font-size: 13.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .entry .url {
+      font-size: 11.5px;
+      color: var(--text-soft);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .entry .time { font-size: 11.5px; color: var(--text-soft); flex-shrink: 0; }
+
+    .entry .del {
+      border: none;
+      background: transparent;
+      color: var(--text-soft);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      opacity: 0;
+      transition: opacity 0.12s;
+      flex-shrink: 0;
+    }
+
+    .entry:hover .del { opacity: 1; }
+    .entry .del:hover { color: #e5604c; }
+
+    #empty {
+      text-align: center;
+      color: var(--text-soft);
+      font-size: 14px;
+      padding: 80px 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>History</h1>
+      <button id="clear">Clear all history</button>
+    </header>
+    <input id="search" type="text" placeholder="Search history…" autofocus />
+    <div id="list"></div>
+    <div id="empty" style="display:none">Nothing here yet.</div>
+  </main>
+
+  <script>
+    let all = [];
+    const listEl = document.getElementById('list');
+    const emptyEl = document.getElementById('empty');
+
+    function dayLabel(ts) {
+      const d = new Date(ts);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const day = new Date(d); day.setHours(0,0,0,0);
+      const diff = (today - day) / 86400000;
+      if (diff === 0) return 'Today';
+      if (diff === 1) return 'Yesterday';
+      return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    }
+
+    function render() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const items = q
+        ? all.filter((h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q))
+        : all;
+      listEl.textContent = '';
+      emptyEl.style.display = items.length ? 'none' : '';
+      let lastDay = '';
+      for (const h of items.slice(0, 500)) {
+        const day = dayLabel(h.ts);
+        if (day !== lastDay) {
+          lastDay = day;
+          const lbl = document.createElement('div');
+          lbl.className = 'day-label';
+          lbl.textContent = day;
+          listEl.appendChild(lbl);
+        }
+        const el = document.createElement('div');
+        el.className = 'entry';
+
+        const img = document.createElement('img');
+        try { img.src = new URL(h.url).origin + '/favicon.ico'; } catch {}
+        img.onerror = () => { img.style.visibility = 'hidden'; };
+
+        const t = document.createElement('div');
+        t.className = 't';
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = h.title || h.url;
+        const url = document.createElement('div');
+        url.className = 'url';
+        url.textContent = h.url;
+        t.append(title, url);
+
+        const time = document.createElement('span');
+        time.className = 'time';
+        time.textContent = new Date(h.ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = '✕';
+        del.title = 'Remove from history';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          breezeInternal.deleteHistoryItem(h.url, h.ts);
+          all = all.filter((x) => !(x.url === h.url && x.ts === h.ts));
+          render();
+        });
+
+        el.append(img, t, time, del);
+        el.addEventListener('click', () => { location.href = h.url; });
+        listEl.appendChild(el);
+      }
+    }
+
+    breezeInternal.getSettings().then((s) => {
+      document.documentElement.classList.toggle('dark', s.theme === 'dark');
+      if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
+    });
+    breezeInternal.onTheme((t) =>
+      document.documentElement.classList.toggle('dark', t === 'dark'));
+
+    breezeInternal.getHistory().then((h) => { all = h; render(); });
+    document.getElementById('search').addEventListener('input', render);
+    document.getElementById('clear').addEventListener('click', () => {
+      if (!confirm('Clear all browsing history?')) return;
+      breezeInternal.clearHistory();
+      all = [];
+      render();
+    });
+  </script>
+</body>
+</html>
