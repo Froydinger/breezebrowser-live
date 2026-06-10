@@ -393,6 +393,7 @@ edgeHandle.addEventListener('mouseleave', () => clearTimeout(edgeTimer));
 
 breeze.onSidebarPeek((peek) => {
   peeking = peek;
+  document.body.classList.toggle('peeking', peek);
   if (peek) {
     sidebar.classList.remove('hidden');
     document.body.classList.remove('sidebar-hidden');
@@ -402,8 +403,17 @@ breeze.onSidebarPeek((peek) => {
   }
 });
 
-sidebar.addEventListener('mouseleave', () => {
-  if (peeking) breeze.endPeek();
+// only end the peek when the cursor genuinely exits the expanded sidebar —
+// not on stray leave events from child elements or context menus
+sidebar.addEventListener('mouseleave', (e) => {
+  if (!peeking) return;
+  const r = sidebar.getBoundingClientRect();
+  const inside =
+    e.clientX > r.left + 1 &&
+    e.clientX < r.right - 1 &&
+    e.clientY > r.top + 1 &&
+    e.clientY < r.bottom - 1;
+  if (!inside) breeze.endPeek();
 });
 
 // ---------------------------------------------------------------------------

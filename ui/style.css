@@ -1002,15 +1002,34 @@ html.dark #suggestions {
 /* Window dragging: padding ring + sidebar gaps are all drag handles   */
 /* ------------------------------------------------------------------ */
 
-body { -webkit-app-region: drag; }
+/* NOTE: never put a drag region on body — on macOS window-level drag
+   regions sit above the embedded page views and make every site
+   unclickable. Drag zones must only cover chrome that pages never occupy. */
+
+#sidebar, .ai-header { -webkit-app-region: drag; }
+
+/* while peeking, the sidebar must deliver real mouse events so it can
+   detect when you leave — drag regions swallow those events */
+body.peeking #sidebar { -webkit-app-region: no-drag; }
 
 button, input, textarea, select, label,
 .tab, .pin, .bookmark, .ai-chip,
-#tabs, #pins, #suggestions, #sidebar-resizer, #edge-handle,
+#tabs, #pins, #suggestions, #address-wrap, #sidebar-resizer, #edge-handle,
 #ai-messages, #ai-input-wrap, #ai-ctx-toggle,
 #adblock-pill, #update-toast {
   -webkit-app-region: no-drag;
 }
+
+/* thin drag strips along the window's padding ring (outside the page view) */
+.drag-edge {
+  position: fixed;
+  -webkit-app-region: drag;
+  z-index: 2;
+}
+
+#drag-top { top: 0; left: 0; right: 0; height: 10px; }
+#drag-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
+#drag-right { top: 0; right: 0; bottom: 0; width: 10px; }
 
 /* ------------------------------------------------------------------ */
 /* Brand mark in sidebar                                               */

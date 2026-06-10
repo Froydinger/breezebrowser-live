@@ -230,9 +230,23 @@ function getIncognitoSession() {
   setupPermissions(incogSes);
   setupDownloads(incogSes);
   if (blocker && appSettings.adblockEnabled) {
-    blocker.enableBlockingInSession(incogSes);
+    enableAdblockOn(incogSes);
   }
   return incogSes;
+}
+
+// Ghostery registers global ipcMain handlers on enable and throws if they
+// already exist (i.e. when enabling on a second session) — clear them first,
+// the re-registered handlers behave identically for every session.
+function enableAdblockOn(ses) {
+  if (!blocker) return;
+  ipcMain.removeHandler('@ghostery/adblocker/inject-cosmetic-filters');
+  ipcMain.removeHandler('@ghostery/adblocker/is-mutation-observer-enabled');
+  try {
+    blocker.enableBlockingInSession(ses);
+  } catch (err) {
+    console.error('Adblock enable failed:', err.message);
+  }
 }
 
 function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
@@ -1046,8 +1060,12 @@ function applySetting(key, value) {
   if (key === 'adblockEnabled' && blocker) {
     const sessions = [session.defaultSession, ...(incogSes ? [incogSes] : [])];
     for (const ses of sessions) {
-      if (value) blocker.enableBlockingInSession(ses);
-      else blocker.disableBlockingInSession(ses);
+      if (value) enableAdblockOn(ses);
+      else {
+        try {
+          blocker.disableBlockingInSession(ses);
+        } catch {}
+      }
     }
   }
   broadcastSettings();
