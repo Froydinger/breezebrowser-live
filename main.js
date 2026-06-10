@@ -59,15 +59,20 @@ const DEFAULT_SETTINGS = {
   adblockEnabled: true,
   sidebarVisible: true,
   sidebarWidth: 280,
+  urlBarPosition: 'top', // 'top' | 'sidebar'
+  autoPip: true,
+  tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
   permissions: {},
 };
+
+const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
 
 let appSettings = { ...DEFAULT_SETTINGS };
 
 function broadcastSettings() {
   if (win) win.webContents.send('settings', appSettings);
   for (const { view } of tabs.values()) {
-    if (view.webContents.getURL().startsWith('file://')) {
+    if (view && view.webContents.getURL().startsWith('file://')) {
       view.webContents.send('settings', appSettings);
     }
   }
@@ -101,18 +106,19 @@ function saveSettings(patch) {
 
 function contentBounds(left, right) {
   const [w, h] = win.getContentSize();
+  const top = appSettings.urlBarPosition === 'top' ? TOPBAR_HEIGHT : 0;
   return {
     x: Math.round(left) + CONTENT_PAD,
-    y: CONTENT_PAD,
+    y: CONTENT_PAD + top,
     width: Math.max(0, w - Math.round(left) - Math.round(right) - CONTENT_PAD * 2),
-    height: Math.max(0, h - CONTENT_PAD * 2),
+    height: Math.max(0, h - CONTENT_PAD * 2 - top),
   };
 }
 
 function applyBounds() {
   if (!win) return;
   const b = contentBounds(currentLeft, currentRight);
-  for (const { view } of tabs.values()) view.setBounds(b);
+  for (const { view } of tabs.values()) if (view) view.setBounds(b);
 }
 
 function layout() {
@@ -193,7 +199,27 @@ function setAssistant(show) {
 // Tabs
 // ---------------------------------------------------------------------------
 
+function tabURL(t) {
+  if (t.sleeping) return t.saved?.url || '';
+  return t.view ? t.view.webContents.getURL() : '';
+}
+
 function tabState(t) {
+  if (t.sleeping) {
+    return {
+      id: t.id,
+      title: t.saved?.title || 'Sleeping tab',
+      url: t.saved?.url || '',
+      favicon: t.favicon || null,
+      loading: false,
+      canGoBack: false,
+      canGoForward: false,
+      pinUrl: t.pinUrl || null,
+      incognito: !!t.incognito,
+      sleeping: true,
+      groupEid: t.groupEid || null,
+    };
+  }
   const wc = t.view.webContents;
   const url = wc.getURL();
   const isInternal = url.startsWith('file://');
@@ -207,16 +233,20 @@ function tabState(t) {
     canGoForward: wc.navigationHistory.canGoForward(),
     pinUrl: t.pinUrl || null,
     incognito: !!t.incognito,
+    sleeping: false,
+    groupEid: t.groupEid || null,
   };
 }
 
 function pushState() {
   if (!win) return;
+  syncGroupEntries();
   win.webContents.send('state', {
     tabs: tabOrder.map((id) => tabState(tabs.get(id))),
     activeTabId,
     bookmarks,
     pins,
+    groups,
   });
 }
 
@@ -249,24 +279,25 @@ function enableAdblockOn(ses) {
   }
 }
 
-function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
-  const id = nextTabId++;
+// Builds the live Chromium view for a tab. Called on create and on wake.
+function buildView(t, url) {
   const isInternal = url.startsWith('file://');
-  if (incognito) getIncognitoSession();
+  if (t.incognito) getIncognitoSession();
   const view = new WebContentsView({
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
-      ...(incognito ? { partition: 'incognito' } : {}),
+      ...(t.incognito ? { partition: 'incognito' } : {}),
       preload: path.join(
         __dirname,
         isInternal ? 'internal-preload.js' : 'page-preload.js'
       ),
     },
   });
-  const t = { id, view, favicon: null, incognito };
-  tabs.set(id, t);
-  tabOrder.push(id);
+  t.view = view;
+  t.sleeping = false;
+  const id = t.id;
+  const incognito = t.incognito;
 
   try {
     view.setBorderRadius(12);
@@ -320,21 +351,111 @@ function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
   wc.on('context-menu', (_e, p) => showPageContextMenu(wc, p));
 
   wc.loadURL(url);
+  return view;
+}
+
+function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
+  const id = nextTabId++;
+  const t = {
+    id,
+    view: null,
+    favicon: null,
+    incognito,
+    sleeping: false,
+    saved: null,
+    lastActive: Date.now(),
+    groupEid: null,
+  };
+  tabs.set(id, t);
+  tabOrder.push(id);
+  buildView(t, url);
   if (activate) activateTab(id);
   else pushState();
   return id;
 }
 
+// ---------------------------------------------------------------------------
+// Tab sleeping — purge memory of idle background tabs
+// ---------------------------------------------------------------------------
+
+function sleepTab(id) {
+  const t = tabs.get(id);
+  if (!t || t.sleeping || !t.view || id === activeTabId) return;
+  const wc = t.view.webContents;
+  const url = wc.getURL();
+  if (!url || url.startsWith('file://')) return; // internal pages are cheap
+  if (wc.isCurrentlyAudible()) return; // don't kill music
+  t.saved = { url, title: wc.getTitle() || url };
+  t.sleeping = true;
+  wc.close();
+  t.view = null;
+  pushState();
+}
+
+function wakeTab(t) {
+  if (!t.sleeping || t.view) return;
+  buildView(t, t.saved?.url || NEWTAB_URL);
+  t.saved = null;
+}
+
+setInterval(() => {
+  const hours = Number(appSettings.tabSleepHours);
+  if (!hours) return; // "never"
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  for (const t of tabs.values()) {
+    if (t.id !== activeTabId && !t.sleeping && t.lastActive < cutoff) {
+      sleepTab(t.id);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// Picture-in-picture: pops the largest playing video out (auto on tab switch,
+// or manually via the View menu). Runs with a synthetic user gesture.
+const PIP_ENTER = `(async () => {
+  const v = [...document.querySelectorAll('video')]
+    .filter((x) => !x.paused && !x.ended && x.readyState > 2)
+    .sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0];
+  if (v && document.pictureInPictureElement !== v) {
+    try { await v.requestPictureInPicture(); } catch {}
+  }
+})()`;
+const PIP_EXIT = `(async () => {
+  if (document.pictureInPictureElement) {
+    try { await document.exitPictureInPicture(); } catch {}
+  }
+})()`;
+const PIP_TOGGLE = `(async () => {
+  if (document.pictureInPictureElement) {
+    try { await document.exitPictureInPicture(); return; } catch {}
+  }
+  const v = [...document.querySelectorAll('video')]
+    .filter((x) => !x.paused && !x.ended && x.readyState > 2)
+    .sort((a, b) => b.videoWidth * b.videoHeight - a.videoWidth * a.videoHeight)[0];
+  if (v) { try { await v.requestPictureInPicture(); } catch {} }
+})()`;
+
+function runPiP(wc, code) {
+  if (!wc || wc.getURL().startsWith('file://')) return;
+  wc.executeJavaScript(code, true).catch(() => {});
+}
+
 function activateTab(id) {
   const t = tabs.get(id);
   if (!t || !win) return;
-  if (activeTabId && tabs.has(activeTabId)) {
-    win.contentView.removeChildView(tabs.get(activeTabId).view);
+  const prev = activeTabId && activeTabId !== id ? tabs.get(activeTabId) : null;
+  if (prev?.view) {
+    win.contentView.removeChildView(prev.view);
+    // leaving a tab with playing video → pop it out automatically
+    if (appSettings.autoPip) runPiP(prev.view.webContents, PIP_ENTER);
   }
   activeTabId = id;
+  wakeTab(t);
   win.contentView.addChildView(t.view);
+  t.lastActive = Date.now();
   applyBounds();
   t.view.webContents.focus();
+  // returning to the tab → bring its video back inline
+  if (appSettings.autoPip) runPiP(t.view.webContents, PIP_EXIT);
   pushState();
 }
 
@@ -344,12 +465,12 @@ function closeTab(id) {
   const idx = tabOrder.indexOf(id);
   tabOrder = tabOrder.filter((x) => x !== id);
   if (activeTabId === id) {
-    win.contentView.removeChildView(t.view);
+    if (t.view) win.contentView.removeChildView(t.view);
     activeTabId = null;
     const next = tabOrder[Math.min(idx, tabOrder.length - 1)];
     if (next) activateTab(next);
   }
-  t.view.webContents.close();
+  if (t.view) t.view.webContents.close();
   tabs.delete(id);
   // last incognito tab gone → wipe the in-memory session like Chrome does
   if (t.incognito && incogSes && ![...tabs.values()].some((x) => x.incognito)) {
@@ -384,7 +505,7 @@ function toNavigableURL(input) {
 
 function openInternalTab(url) {
   for (const id of tabOrder) {
-    if (tabs.get(id).view.webContents.getURL() === url) {
+    if (tabURL(tabs.get(id)) === url) {
       activateTab(id);
       return;
     }
@@ -402,7 +523,7 @@ const BOOKMARKS_URL = `file://${path.join(__dirname, 'ui', 'bookmarks.html')}`;
 
 function broadcastBookmarks() {
   for (const { view } of tabs.values()) {
-    if (view.webContents.getURL().startsWith('file://')) {
+    if (view && view.webContents.getURL().startsWith('file://')) {
       view.webContents.send('bookmarks', bookmarks);
     }
   }
@@ -431,10 +552,11 @@ const popupsBlocked = new Set(); // tab ids with popups disabled
 function pinTab(id) {
   const t = tabs.get(id);
   if (!t || t.incognito) return; // incognito tabs leave no trace, including pins
-  const url = t.view.webContents.getURL();
+  const url = tabURL(t);
   if (!url || url.startsWith('file://')) return;
   if (pins.some((p) => p.url === url)) return;
-  pins.push({ title: t.view.webContents.getTitle() || url, url, favicon: t.favicon });
+  const title = t.sleeping ? t.saved?.title : t.view.webContents.getTitle();
+  pins.push({ title: title || url, url, favicon: t.favicon });
   t.pinUrl = url; // the tab now lives inside the pin, not the tab list
   saveSettings({ pins });
   pushState();
@@ -452,7 +574,7 @@ function unpin(url) {
 function pinnedTab(url) {
   for (const id of tabOrder) {
     const t = tabs.get(id);
-    if (t.pinUrl === url || t.view.webContents.getURL() === url) return t;
+    if (t.pinUrl === url || tabURL(t) === url) return t;
   }
   return null;
 }
@@ -479,10 +601,134 @@ function closePin(url) {
 // Context menus (sidebar tabs + web pages)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Tab groups — named, persistent collections; entries survive tab close
+// ---------------------------------------------------------------------------
+
+let groups = []; // [{ id, name, entries: [{ eid, title, url, favicon }] }]
+let nextGroupId = 1;
+let nextEntryId = 1;
+
+function saveGroups() {
+  saveSettings({ groups });
+}
+
+function loadGroups(settings) {
+  groups = Array.isArray(settings.groups) ? settings.groups : [];
+  for (const g of groups) {
+    nextGroupId = Math.max(nextGroupId, g.id + 1);
+    for (const e of g.entries) nextEntryId = Math.max(nextEntryId, e.eid + 1);
+  }
+}
+
+function groupEntry(eid) {
+  for (const g of groups) {
+    const e = g.entries.find((x) => x.eid === eid);
+    if (e) return { group: g, entry: e };
+  }
+  return null;
+}
+
+function tabForEntry(eid) {
+  for (const t of tabs.values()) if (t.groupEid === eid) return t;
+  return null;
+}
+
+function addTabToGroup(tabId, groupId) {
+  const t = tabs.get(tabId);
+  if (!t || t.incognito) return;
+  const g = groups.find((x) => x.id === groupId);
+  if (!g) return;
+  const url = tabURL(t);
+  if (!url || url.startsWith('file://')) return;
+  const title =
+    (t.sleeping ? t.saved?.title : t.view.webContents.getTitle()) || url;
+  const eid = nextEntryId++;
+  g.entries.push({ eid, title, url, favicon: t.favicon });
+  t.groupEid = eid;
+  saveGroups();
+  pushState();
+}
+
+function createGroupWithTab(tabId) {
+  const g = { id: nextGroupId++, name: `Group ${groups.length + 1}`, entries: [] };
+  groups.push(g);
+  addTabToGroup(tabId, g.id);
+  win?.webContents.send('rename-group-start', g.id); // let the user name it now
+}
+
+function openGroupEntry(gid, eid) {
+  const live = tabForEntry(eid);
+  if (live) {
+    activateTab(live.id);
+    return;
+  }
+  const found = groupEntry(eid);
+  if (!found) return;
+  const id = createTab(found.entry.url, true);
+  tabs.get(id).groupEid = eid;
+  pushState();
+}
+
+function closeGroupEntry(eid) {
+  const live = tabForEntry(eid);
+  if (live) closeTab(live.id); // entry stays in the group, tab sleeps away
+}
+
+function removeGroupEntry(gid, eid) {
+  const g = groups.find((x) => x.id === gid);
+  if (!g) return;
+  g.entries = g.entries.filter((e) => e.eid !== eid);
+  const live = tabForEntry(eid);
+  if (live) live.groupEid = null; // back to the regular tab list
+  saveGroups();
+  pushState();
+}
+
+function deleteGroup(gid) {
+  const g = groups.find((x) => x.id === gid);
+  if (!g) return;
+  for (const e of g.entries) {
+    const live = tabForEntry(e.eid);
+    if (live) live.groupEid = null;
+  }
+  groups = groups.filter((x) => x.id !== gid);
+  saveGroups();
+  pushState();
+}
+
+// keep entry titles/urls in sync as their live tabs navigate
+function syncGroupEntries() {
+  let dirty = false;
+  for (const t of tabs.values()) {
+    if (!t.groupEid || t.sleeping || !t.view) continue;
+    const found = groupEntry(t.groupEid);
+    if (!found) {
+      t.groupEid = null;
+      continue;
+    }
+    const url = t.view.webContents.getURL();
+    const title = t.view.webContents.getTitle();
+    if (url && !url.startsWith('file://') && found.entry.url !== url) {
+      found.entry.url = url;
+      dirty = true;
+    }
+    if (title && found.entry.title !== title) {
+      found.entry.title = title;
+      dirty = true;
+    }
+    if (t.favicon && found.entry.favicon !== t.favicon) {
+      found.entry.favicon = t.favicon;
+      dirty = true;
+    }
+  }
+  if (dirty) saveGroups();
+}
+
 function showTabContextMenu(id) {
   const t = tabs.get(id);
   if (!t) return;
-  const url = t.view.webContents.getURL();
+  const url = tabURL(t);
   const isPinned = pins.some((p) => p.url === url);
   const isWeb = url && !url.startsWith('file://') && !t.incognito;
   Menu.buildFromTemplate([
@@ -492,9 +738,26 @@ function showTabContextMenu(id) {
       click: () => (isPinned ? unpin(url) : pinTab(id)),
     },
     {
+      label: 'Move to Group',
+      enabled: isWeb && !t.groupEid,
+      submenu: [
+        ...groups.map((g) => ({
+          label: g.name,
+          click: () => addTabToGroup(id, g.id),
+        })),
+        ...(groups.length ? [{ type: 'separator' }] : []),
+        { label: 'New Group…', click: () => createGroupWithTab(id) },
+      ],
+    },
+    {
       label: 'Duplicate Tab',
       enabled: isWeb,
       click: () => createTab(url, true),
+    },
+    {
+      label: 'Sleep Tab',
+      enabled: isWeb && !t.sleeping && id !== activeTabId,
+      click: () => sleepTab(id),
     },
     { type: 'separator' },
     {
@@ -549,6 +812,29 @@ function showPageContextMenu(wc, p) {
     );
   }
   if (p.isEditable) {
+    // offer saved credentials for this site on editable fields
+    const creds = credsForOrigin(wc.getURL());
+    if (creds.length) {
+      items.push(
+        {
+          label: 'Fill Password',
+          submenu: creds.map((c) => ({
+            label: c.username ? `${c.username}` : c.site,
+            click: () => wc.insertText(c.password),
+          })),
+        },
+        {
+          label: 'Fill Username',
+          submenu: creds
+            .filter((c) => c.username)
+            .map((c) => ({
+              label: c.username,
+              click: () => wc.insertText(c.username),
+            })),
+        },
+        { type: 'separator' }
+      );
+    }
     items.push(
       { role: 'undo' },
       { role: 'redo' },
@@ -592,26 +878,55 @@ function showPageContextMenu(wc, p) {
 // History
 // ---------------------------------------------------------------------------
 
+// History is encrypted at rest with safeStorage (Keychain-derived key on
+// macOS, DPAPI on Windows) — the file on disk is unreadable without the
+// user's OS account.
+const { safeStorage } = require('electron');
+
+function encryptToFile(file, data) {
+  const json = JSON.stringify(data);
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      fs.writeFileSync(file, safeStorage.encryptString(json));
+    } else {
+      fs.writeFileSync(file, json); // rare fallback: no OS keystore available
+    }
+  } catch {}
+}
+
+function decryptFromFile(file) {
+  const buf = fs.readFileSync(file);
+  try {
+    return JSON.parse(safeStorage.decryptString(buf));
+  } catch {
+    return JSON.parse(buf.toString('utf8')); // plaintext fallback / migration
+  }
+}
+
 const HISTORY_URL = `file://${path.join(__dirname, 'ui', 'history.html')}`;
-const historyPath = () => path.join(app.getPath('userData'), 'history.json');
+const historyPath = () => path.join(app.getPath('userData'), 'history.bin');
+const legacyHistoryPath = () => path.join(app.getPath('userData'), 'history.json');
 let history = [];
 let historySaveTimer = null;
 
 function loadHistory() {
   try {
-    history = JSON.parse(fs.readFileSync(historyPath(), 'utf8'));
+    history = decryptFromFile(historyPath());
   } catch {
-    history = [];
+    // migrate pre-encryption plaintext history, then remove it
+    try {
+      history = JSON.parse(fs.readFileSync(legacyHistoryPath(), 'utf8'));
+      encryptToFile(historyPath(), history);
+      fs.unlinkSync(legacyHistoryPath());
+    } catch {
+      history = [];
+    }
   }
 }
 
 function saveHistorySoon() {
   clearTimeout(historySaveTimer);
-  historySaveTimer = setTimeout(() => {
-    try {
-      fs.writeFileSync(historyPath(), JSON.stringify(history));
-    } catch {}
-  }, 1500);
+  historySaveTimer = setTimeout(() => encryptToFile(historyPath(), history), 1500);
 }
 
 function recordHistory(wc, url) {
@@ -632,6 +947,105 @@ function recordHistory(wc, url) {
 }
 
 // ---------------------------------------------------------------------------
+// Password vault — encrypted locally with safeStorage, never leaves the Mac
+// ---------------------------------------------------------------------------
+
+const PASSWORDS_URL = `file://${path.join(__dirname, 'ui', 'passwords.html')}`;
+const vaultPath = () => path.join(app.getPath('userData'), 'vault.bin');
+let vault = []; // [{ id, site, username, password }]
+let nextCredId = 1;
+
+function loadVault() {
+  try {
+    vault = decryptFromFile(vaultPath());
+    nextCredId = Math.max(0, ...vault.map((c) => c.id)) + 1;
+  } catch {
+    vault = [];
+  }
+}
+
+function saveVault() {
+  encryptToFile(vaultPath(), vault);
+}
+
+function credsForOrigin(url) {
+  let host;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return [];
+  }
+  return vault.filter((c) => {
+    try {
+      const ch = (c.site.includes('://') ? new URL(c.site).hostname : c.site)
+        .replace(/^www\./, '');
+      return ch === host || host.endsWith('.' + ch) || ch.endsWith('.' + host);
+    } catch {
+      return false;
+    }
+  });
+}
+
+// vault IPC is restricted to the passwords page itself
+function vaultSenderOk(e) {
+  return e.sender.getURL() === PASSWORDS_URL;
+}
+
+ipcMain.handle('vault-list', (e) => (vaultSenderOk(e) ? vault : []));
+ipcMain.on('vault-add', (e, { site, username, password }) => {
+  if (!vaultSenderOk(e) || !site || !password) return;
+  vault.push({ id: nextCredId++, site, username: username || '', password });
+  saveVault();
+  e.sender.send('vault', vault);
+});
+ipcMain.on('vault-delete', (e, id) => {
+  if (!vaultSenderOk(e)) return;
+  vault = vault.filter((c) => c.id !== id);
+  saveVault();
+  e.sender.send('vault', vault);
+});
+ipcMain.on('vault-import-csv', (e, csv) => {
+  if (!vaultSenderOk(e)) return;
+  // Chrome/Safari/Firefox export format: name/url/username/password columns
+  const lines = String(csv).split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return;
+  const header = lines[0].toLowerCase().split(',');
+  const idx = (names) => header.findIndex((h) => names.includes(h.trim().replace(/"/g, '')));
+  const urlIdx = idx(['url', 'website', 'origin']);
+  const userIdx = idx(['username', 'username field', 'login']);
+  const passIdx = idx(['password']);
+  if (passIdx < 0) return;
+  const parseLine = (line) => {
+    const out = [];
+    let cur = '';
+    let inQ = false;
+    for (const ch of line) {
+      if (ch === '"') inQ = !inQ;
+      else if (ch === ',' && !inQ) {
+        out.push(cur);
+        cur = '';
+      } else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  };
+  let added = 0;
+  for (const line of lines.slice(1)) {
+    const cols = parseLine(line);
+    const site = urlIdx >= 0 ? cols[urlIdx] : '';
+    const password = cols[passIdx];
+    if (!site || !password) continue;
+    const username = userIdx >= 0 ? cols[userIdx] : '';
+    if (vault.some((c) => c.site === site && c.username === username)) continue;
+    vault.push({ id: nextCredId++, site, username, password });
+    added++;
+  }
+  saveVault();
+  e.sender.send('vault', vault);
+  e.sender.send('vault-imported', added);
+});
+
+// ---------------------------------------------------------------------------
 // Downloads
 // ---------------------------------------------------------------------------
 
@@ -645,6 +1059,11 @@ function loadDownloads() {
   try {
     downloadList = JSON.parse(fs.readFileSync(downloadsPath(), 'utf8'));
     downloadSeq = Math.max(0, ...downloadList.map((d) => d.id)) + 1;
+    // a download can't still be running across a restart — anything stuck in
+    // 'progressing' is a ghost from a crash; mark it so the UI stops spinning
+    for (const d of downloadList) {
+      if (d.state === 'progressing') d.state = 'interrupted';
+    }
   } catch {
     downloadList = [];
   }
@@ -662,7 +1081,7 @@ function saveDownloads() {
 function broadcastDownloads() {
   if (win) win.webContents.send('downloads', downloadList);
   for (const { view } of tabs.values()) {
-    if (view.webContents.getURL().startsWith('file://')) {
+    if (view && view.webContents.getURL().startsWith('file://')) {
       view.webContents.send('downloads', downloadList);
     }
   }
@@ -973,14 +1392,15 @@ async function getPageContext() {
   }
 }
 
-ipcMain.on('ai-ask', async (_e, { text, includePage }) => {
+ipcMain.on('ai-ask', async (_e, { text }) => {
   if (ai.generating) return;
   if (!(await ensureAI())) return;
   ai.generating = true;
   sendAI({ state: 'generating' });
 
+  // page context is always included (refreshed when the page changes)
   let prompt = text;
-  if (includePage) {
+  {
     const ctx = await getPageContext();
     if (ctx && ctx.url !== ai.lastCtxUrl) {
       prompt =
@@ -1047,7 +1467,7 @@ function applyTheme(theme) {
   }
   // internal pages (new tab, settings) follow instantly via their preload
   for (const { view } of tabs.values()) {
-    if (view.webContents.getURL().startsWith('file://')) {
+    if (view && view.webContents.getURL().startsWith('file://')) {
       view.webContents.send('theme', theme);
     }
   }
@@ -1057,6 +1477,7 @@ function applySetting(key, value) {
   appSettings[key] = value;
   saveSettings({ [key]: value });
   if (key === 'theme') applyTheme(value);
+  if (key === 'urlBarPosition') layout();
   if (key === 'adblockEnabled' && blocker) {
     const sessions = [session.defaultSession, ...(incogSes ? [incogSes] : [])];
     for (const ses of sessions) {
@@ -1077,6 +1498,7 @@ function createWindow() {
   sidebarVisible = appSettings.sidebarVisible !== false;
   bookmarks = Array.isArray(settings.bookmarks) ? settings.bookmarks : [];
   pins = Array.isArray(settings.pins) ? settings.pins : [];
+  loadGroups(settings);
   sidebarWidth = Math.min(420, Math.max(220, appSettings.sidebarWidth || 280));
   const theme = appSettings.theme;
   nativeTheme.themeSource = theme;
@@ -1128,6 +1550,10 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+,',
           click: () => openSettingsTab(),
         },
+        {
+          label: 'Passwords…',
+          click: () => openInternalTab(PASSWORDS_URL),
+        },
         { type: 'separator' },
         {
           label: 'New Tab',
@@ -1177,6 +1603,14 @@ function buildMenu() {
           label: 'Bookmark This Page',
           accelerator: 'CmdOrCtrl+D',
           click: () => toggleBookmark(),
+        },
+        {
+          label: 'Picture in Picture',
+          accelerator: 'Alt+CmdOrCtrl+P',
+          click: () => {
+            const wc = activeWC();
+            if (wc) runPiP(wc, PIP_TOGGLE);
+          },
         },
         {
           label: 'Toggle Dark Mode',
@@ -1356,6 +1790,50 @@ ipcMain.on('pin-context-menu', (_e, url) => {
 });
 ipcMain.on('peek-sidebar', () => peekSidebar());
 ipcMain.on('end-peek', () => endPeek());
+
+// tab groups
+ipcMain.on('open-group-entry', (_e, { gid, eid }) => openGroupEntry(gid, eid));
+ipcMain.on('rename-group', (_e, { gid, name }) => {
+  const g = groups.find((x) => x.id === gid);
+  if (g && name.trim()) {
+    g.name = name.trim().slice(0, 40);
+    saveGroups();
+    pushState();
+  }
+});
+ipcMain.on('group-entry-menu', (_e, { gid, eid }) => {
+  const live = tabForEntry(eid);
+  Menu.buildFromTemplate([
+    { label: 'Open', click: () => openGroupEntry(gid, eid) },
+    {
+      label: 'Close',
+      enabled: !!live,
+      click: () => closeGroupEntry(eid), // tab closes, entry stays
+    },
+    { type: 'separator' },
+    { label: 'Remove from Group', click: () => removeGroupEntry(gid, eid) },
+  ]).popup({ window: win });
+});
+ipcMain.on('group-header-menu', (_e, gid) => {
+  const g = groups.find((x) => x.id === gid);
+  if (!g) return;
+  Menu.buildFromTemplate([
+    {
+      label: 'Open All',
+      click: () => g.entries.forEach((e) => openGroupEntry(gid, e.eid)),
+    },
+    {
+      label: 'Close All',
+      click: () => g.entries.forEach((e) => closeGroupEntry(e.eid)),
+    },
+    { type: 'separator' },
+    {
+      label: 'Rename…',
+      click: () => win?.webContents.send('rename-group-start', gid),
+    },
+    { label: 'Delete Group', click: () => deleteGroup(gid) },
+  ]).popup({ window: win });
+});
 ipcMain.on('open-downloads', () => openInternalTab(DOWNLOADS_URL));
 ipcMain.on('open-history', () => openInternalTab(HISTORY_URL));
 ipcMain.handle('get-history', () => history.slice(0, 2000));
@@ -1378,6 +1856,7 @@ ipcMain.on('download-show', (_e, id) => {
   if (d?.path) shell.showItemInFolder(d.path);
 });
 ipcMain.on('downloads-clear', () => {
+  // clears the LIST only — files in ~/Downloads are never touched
   downloadList = downloadList.filter((d) => d.state === 'progressing');
   saveDownloads();
   broadcastDownloads();
@@ -1394,6 +1873,7 @@ ipcMain.on('open-settings', () => openSettingsTab());
 app.whenReady().then(async () => {
   appSettings = { ...DEFAULT_SETTINGS, ...loadSettings() };
   loadHistory();
+  loadVault();
   loadDownloads();
   setupDownloads(session.defaultSession);
   setupPermissions(session.defaultSession);

@@ -51,6 +51,29 @@ function applySettings(s) {
   if (s.sidebarWidth) {
     document.documentElement.style.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
   }
+  if (s.urlBarPosition) applyUrlBarMode(s.urlBarPosition);
+}
+
+// The address bar + nav buttons are single DOM nodes that physically move
+// between the sidebar and the top bar, so all their logic stays in one place.
+function applyUrlBarMode(mode) {
+  const topbar = $('#topbar');
+  const navRow = $('#nav-row');
+  const addressWrap = $('#address-wrap');
+  const back = $('#btn-back');
+  const fwd = $('#btn-forward');
+  const reload = $('#btn-reload');
+  if (mode === 'top') {
+    topbar.append(back, fwd, reload, addressWrap);
+    document.body.classList.add('urlbar-top');
+  } else {
+    const newtabBtn = $('#btn-newtab');
+    navRow.insertBefore(back, newtabBtn);
+    navRow.insertBefore(fwd, newtabBtn);
+    navRow.insertBefore(reload, newtabBtn);
+    sidebar.insertBefore(addressWrap, $('#pins'));
+    document.body.classList.remove('urlbar-top');
+  }
 }
 
 breeze.onSettings(applySettings);
@@ -64,8 +87,8 @@ function renderTabs() {
     [...tabsEl.children].map((el) => [Number(el.dataset.id), el])
   );
 
-  // tabs that belong to a pin live in the pin grid, not the tab list
-  const listTabs = state.tabs.filter((t) => !t.pinUrl);
+  // tabs that belong to a pin or a group render elsewhere, not the tab list
+  const listTabs = state.tabs.filter((t) => !t.pinUrl && !t.groupEid);
 
   for (const t of listTabs) {
     let el = existing.get(t.id);
@@ -112,6 +135,7 @@ function renderTabs() {
 
     el.classList.toggle('active', t.id === state.activeTabId);
     el.classList.toggle('incognito', !!t.incognito);
+    el.classList.toggle('asleep', !!t.sleeping);
     el.querySelector('.title').textContent = t.title;
 
     const fav = el.querySelector('.favicon');
@@ -210,6 +234,97 @@ function pinLetter(p) {
 }
 
 // ---------------------------------------------------------------------------
+// Tab groups
+// ---------------------------------------------------------------------------
+
+const groupsEl = $('#groups');
+
+function renderGroups() {
+  const list = state.groups || [];
+  groupsEl.textContent = '';
+  const liveByEid = new Map(
+    state.tabs.filter((t) => t.groupEid).map((t) => [t.groupEid, t])
+  );
+
+  for (const g of list) {
+    const section = document.createElement('div');
+    section.className = 'group';
+    section.dataset.gid = g.id;
+
+    const header = document.createElement('div');
+    header.className = 'group-header';
+    const dot = document.createElement('span');
+    dot.className = 'group-dot';
+    const name = document.createElement('span');
+    name.className = 'group-name';
+    name.textContent = g.name;
+    header.append(dot, name);
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      breeze.groupHeaderMenu(g.id);
+    });
+    header.addEventListener('dblclick', () => startRename(g.id));
+    section.appendChild(header);
+
+    for (const entry of g.entries) {
+      const live = liveByEid.get(entry.eid);
+      const el = document.createElement('div');
+      el.className = 'tab';
+      if (!live || live.sleeping) el.classList.add('asleep');
+      if (live && live.id === state.activeTabId) el.classList.add('active');
+
+      const fav = document.createElement('span');
+      fav.className = 'favicon';
+      if (live?.loading) fav.innerHTML = `<span class="spinner"></span>`;
+      else setFavicon(fav, (live && live.favicon) || entry.favicon);
+
+      const title = document.createElement('span');
+      title.className = 'title';
+      title.textContent = (live && live.title) || entry.title;
+
+      const close = document.createElement('button');
+      close.className = 'close';
+      close.title = live ? 'Close (stays in group)' : 'Remove from group';
+      close.innerHTML = xIcon;
+      close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        breeze.groupEntryMenu(g.id, entry.eid);
+      });
+
+      el.append(fav, title, close);
+      el.addEventListener('click', () => breeze.openGroupEntry(g.id, entry.eid));
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        breeze.groupEntryMenu(g.id, entry.eid);
+      });
+      section.appendChild(el);
+    }
+    groupsEl.appendChild(section);
+  }
+}
+
+function startRename(gid) {
+  const name = groupsEl.querySelector(`[data-gid="${gid}"] .group-name`);
+  if (!name) return;
+  name.contentEditable = 'true';
+  name.focus();
+  document.execCommand('selectAll');
+  const done = () => {
+    name.contentEditable = 'false';
+    breeze.renameGroup(gid, name.textContent.trim());
+  };
+  name.addEventListener('blur', done, { once: true });
+  name.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      name.blur();
+    }
+  });
+}
+
+breeze.onRenameGroupStart((gid) => setTimeout(() => startRename(gid), 80));
+
+// ---------------------------------------------------------------------------
 // State sync
 // ---------------------------------------------------------------------------
 
@@ -217,6 +332,7 @@ breeze.onState((s) => {
   state = s;
   renderTabs();
   renderPins();
+  renderGroups();
   const active = s.tabs.find((t) => t.id === s.activeTabId);
   if (active && !addressFocused) address.value = active.url;
   btnBack.disabled = !active?.canGoBack;
@@ -368,7 +484,7 @@ breeze.onFocusAddress(() => {
 btnBack.addEventListener('click', () => breeze.goBack());
 btnForward.addEventListener('click', () => breeze.goForward());
 $('#btn-reload').addEventListener('click', () => breeze.reload());
-$('#new-tab-btn').addEventListener('click', () => breeze.newTab());
+$('#btn-newtab').addEventListener('click', () => breeze.newTab());
 $('#btn-sidebar').addEventListener('click', () => breeze.toggleSidebar());
 $('#settings-btn').addEventListener('click', () => breeze.openSettings());
 $('#bookmarks-btn').addEventListener('click', () => breeze.openBookmarks());
@@ -501,6 +617,7 @@ let currentAIMsg = null;
 
 breeze.onAssistant((open) => {
   assistant.classList.toggle('open', open);
+  document.body.classList.toggle('assistant-open', open);
   if (open) setTimeout(() => aiInput.focus(), 250);
 });
 
@@ -532,7 +649,7 @@ function sendAI() {
   aiGenerating = true;
   aiSend.classList.add('stop');
   aiSend.title = 'Stop';
-  breeze.aiAsk(text, $('#ai-include-page').checked);
+  breeze.aiAsk(text, true); // page context always included
 }
 
 aiSend.addEventListener('click', () => {

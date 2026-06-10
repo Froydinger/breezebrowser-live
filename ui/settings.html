@@ -206,6 +206,16 @@
           </div>
         </div>
         <div class="row">
+          <div>
+            <div class="row-label">Address bar</div>
+            <div class="row-hint">Top frees sidebar space; Sidebar frees page space</div>
+          </div>
+          <div class="seg" id="urlbar-seg">
+            <button data-v="top">Top</button>
+            <button data-v="sidebar">Sidebar</button>
+          </div>
+        </div>
+        <div class="row">
           <div><div class="row-label">Accent color</div></div>
           <div class="swatches" id="swatches">
             <button class="swatch" data-v="#5b7cfa" style="background:#5b7cfa"></button>
@@ -264,8 +274,43 @@
     </section>
 
     <section>
+      <h2>Performance &amp; Playback</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Sleep inactive tabs</div>
+            <div class="row-hint">Frees memory; tabs wake instantly when clicked</div>
+          </div>
+          <select id="tabSleepHours">
+            <option value="2">After 2 hours</option>
+            <option value="4">After 4 hours</option>
+            <option value="6">After 6 hours</option>
+            <option value="0">Never</option>
+          </select>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Auto picture-in-picture</div>
+            <div class="row-hint">Playing video pops out when you switch tabs</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="autoPip" />
+            <span class="knob"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>Privacy</h2>
       <div class="card">
+        <div class="row" id="passwords-row" style="cursor:pointer">
+          <div>
+            <div class="row-label">Passwords</div>
+            <div class="row-hint">Locally encrypted vault · import from other browsers</div>
+          </div>
+          <span style="color:var(--text-soft)">›</span>
+        </div>
         <div class="row">
           <div>
             <div class="row-label">Block ads &amp; trackers</div>
@@ -299,6 +344,10 @@
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
       document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
+      document.querySelectorAll('#urlbar-seg button').forEach((b) =>
+        b.classList.toggle('on', b.dataset.v === (settings.urlBarPosition || 'top')));
+      document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
+      document.getElementById('autoPip').checked = settings.autoPip !== false;
     }
 
     function set(key, value) {
@@ -319,6 +368,11 @@
     document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
     document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
+    document.querySelectorAll('#urlbar-seg button').forEach((b) =>
+      b.addEventListener('click', () => set('urlBarPosition', b.dataset.v)));
+    document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
+    document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
+    document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
   </script>
 </body>
 </html>

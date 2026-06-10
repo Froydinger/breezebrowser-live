@@ -11,6 +11,8 @@
   <div id="drag-bottom" class="drag-edge"></div>
   <div id="drag-right" class="drag-edge"></div>
 
+  <div id="topbar"></div>
+
   <div id="sidebar">
     <div id="drag-strip"><img src="icon.png" alt="" draggable="false" /></div>
 
@@ -28,6 +30,9 @@
       <button class="nav-btn" id="btn-reload" title="Reload (⌘R)">
         <svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
+      <button class="nav-btn" id="btn-newtab" title="New Tab (⌘T)">
+        <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
     </div>
 
     <div id="address-wrap">
@@ -41,13 +46,9 @@
 
     <div id="pins"></div>
 
-    <div id="tabs"></div>
+    <div id="groups"></div>
 
-    <button id="new-tab-btn">
-      <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      <span>New Tab</span>
-      <kbd>⌘T</kbd>
-    </button>
+    <div id="tabs"></div>
 
     <div id="sidebar-footer">
       <div id="adblock-pill" title="Ads & trackers blocked this session">
@@ -115,10 +116,6 @@
     <div id="ai-progress"><div id="ai-progress-fill"></div></div>
 
     <div class="ai-input-row">
-      <label id="ai-ctx-toggle" title="Send the current page's content along with your question">
-        <input type="checkbox" id="ai-include-page" checked />
-        <span>Page context</span>
-      </label>
       <div id="ai-input-wrap">
         <textarea id="ai-input" rows="1" placeholder="Ask about this page…"></textarea>
         <button id="ai-send" title="Send">

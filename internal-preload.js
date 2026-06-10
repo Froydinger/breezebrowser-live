@@ -22,4 +22,12 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   openDownload: (id) => ipcRenderer.send('download-open', id),
   showDownload: (id) => ipcRenderer.send('download-show', id),
   clearDownloads: () => ipcRenderer.send('downloads-clear'),
+
+  vaultList: () => ipcRenderer.invoke('vault-list'),
+  vaultAdd: (site, username, password) =>
+    ipcRenderer.send('vault-add', { site, username, password }),
+  vaultDelete: (id) => ipcRenderer.send('vault-delete', id),
+  vaultImportCSV: (csv) => ipcRenderer.send('vault-import-csv', csv),
+  onVault: (cb) => ipcRenderer.on('vault', (_e, v) => cb(v)),
+  onVaultImported: (cb) => ipcRenderer.on('vault-imported', (_e, n) => cb(n)),
 });

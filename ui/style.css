@@ -1083,3 +1083,97 @@ button, input, textarea, select, label,
 #address-wrap.incognito:focus-within {
   box-shadow: 0 0 0 2.5px color-mix(in srgb, #8b5cf6 60%, transparent), var(--shadow);
 }
+
+/* ------------------------------------------------------------------ */
+/* Top URL bar mode                                                    */
+/* ------------------------------------------------------------------ */
+
+#topbar {
+  position: fixed;
+  top: 9px;
+  left: calc(var(--sidebar-w, 280px) + 10px);
+  right: 14px;
+  height: 40px;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  z-index: 4;
+  -webkit-app-region: drag;
+  transition: left 0.24s var(--ease), right 0.24s var(--ease);
+}
+
+body.urlbar-top #topbar { display: flex; }
+body.sidebar-hidden #topbar { left: 14px; }
+body.assistant-open #topbar { right: 370px; }
+
+#topbar #address-wrap {
+  flex: 1;
+  margin-bottom: 0;
+  height: 36px;
+}
+
+#topbar .nav-btn { flex-shrink: 0; }
+
+/* in top mode the sidebar shouldn't reserve space for the moved bar */
+body.urlbar-top #sidebar #nav-row { margin-bottom: 12px; }
+
+/* ------------------------------------------------------------------ */
+/* Tab groups                                                          */
+/* ------------------------------------------------------------------ */
+
+#groups { flex-shrink: 0; max-height: 38vh; overflow-y: auto; }
+#groups:empty { display: none; }
+#groups::-webkit-scrollbar { width: 4px; }
+#groups::-webkit-scrollbar-thumb { background: var(--surface-hover); border-radius: 2px; }
+
+.group { margin-bottom: 10px; }
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 11px 5px;
+  cursor: default;
+}
+
+.group-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.group-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-name[contenteditable="true"] {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12.5px;
+  background: var(--surface-active);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+.group .tab { height: 34px; }
+.group .tab.asleep .title { opacity: 0.55; }
+
+/* ------------------------------------------------------------------ */
+/* Sleeping tabs                                                       */
+/* ------------------------------------------------------------------ */
+
+.tab.asleep .favicon,
+.tab.asleep .title { opacity: 0.5; }
+
+.tab.asleep .favicon { filter: grayscale(1); }
