@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>New Tab</title>
+  <style>
+    :root {
+      --text: #2a2a2e;
+      --text-soft: rgba(42, 42, 46, 0.45);
+      --surface: rgba(255, 255, 255, 0.65);
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --text: #ececf0;
+        --text-soft: rgba(236, 236, 240, 0.4);
+        --surface: rgba(255, 255, 255, 0.08);
+      }
+      body { background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%); }
+      .orb1 { background: radial-gradient(circle, rgba(91, 124, 250, 0.18), transparent 70%); }
+      .orb2 { background: radial-gradient(circle, rgba(214, 134, 255, 0.12), transparent 70%); }
+      .orb3 { background: radial-gradient(circle, rgba(96, 220, 200, 0.1), transparent 70%); }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #faf8f5 0%, #f1ede7 60%, #ece6dd 100%);
+      color: var(--text);
+      position: relative;
+    }
+
+    /* floating ambient orbs */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(2px);
+      pointer-events: none;
+      animation: drift 18s ease-in-out infinite alternate;
+    }
+    .orb1 {
+      width: 480px; height: 480px; top: -10%; left: 8%;
+      background: radial-gradient(circle, rgba(91, 124, 250, 0.13), transparent 70%);
+    }
+    .orb2 {
+      width: 380px; height: 380px; bottom: -8%; right: 10%;
+      background: radial-gradient(circle, rgba(255, 158, 100, 0.13), transparent 70%);
+      animation-delay: -6s;
+      animation-duration: 22s;
+    }
+    .orb3 {
+      width: 300px; height: 300px; top: 40%; right: 30%;
+      background: radial-gradient(circle, rgba(120, 200, 170, 0.1), transparent 70%);
+      animation-delay: -12s;
+      animation-duration: 26s;
+    }
+
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, -30px) scale(1.08); }
+    }
+
+    #clock {
+      font-size: 72px;
+      font-weight: 200;
+      letter-spacing: -2px;
+      font-variant-numeric: tabular-nums;
+      animation: rise 0.6s var(--ease);
+    }
+
+    #greeting {
+      font-size: 15px;
+      color: var(--text-soft);
+      margin-top: -18px;
+      animation: rise 0.6s var(--ease) 0.08s backwards;
+    }
+
+    form {
+      width: min(560px, 80vw);
+      animation: rise 0.6s var(--ease) 0.16s backwards;
+    }
+
+    #q {
+      width: 100%;
+      height: 54px;
+      border: none;
+      outline: none;
+      border-radius: 16px;
+      padding: 0 22px;
+      font-size: 16px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.06);
+      transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease);
+    }
+
+    #q::placeholder { color: var(--text-soft); }
+
+    #q:focus {
+      box-shadow: 0 0 0 3px rgba(91, 124, 250, 0.35), 0 10px 30px rgba(0,0,0,0.08);
+      transform: translateY(-1px);
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+
+  <div id="clock">--:--</div>
+  <div id="greeting"></div>
+
+  <form id="form">
+    <input id="q" type="text" placeholder="Search or enter URL" autofocus spellcheck="false" autocomplete="off" />
+  </form>
+
+  <script>
+    const clock = document.getElementById('clock');
+    const greeting = document.getElementById('greeting');
+
+    function tick() {
+      const d = new Date();
+      let h = d.getHours();
+      const m = String(d.getMinutes()).padStart(2, '0');
+      const h12 = h % 12 || 12;
+      clock.textContent = `${h12}:${m}`;
+      greeting.textContent =
+        h < 5 ? 'Up late.' :
+        h < 12 ? 'Good morning.' :
+        h < 17 ? 'Good afternoon.' :
+        'Good evening.';
+    }
+    tick();
+    setInterval(tick, 1000);
+
+    document.getElementById('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = document.getElementById('q').value.trim();
+      if (!q) return;
+      const isURL = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(q) ||
+        (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' '));
+      location.href = isURL
+        ? (q.includes('://') ? q : 'https://' + q)
+        : 'https://www.google.com/search?q=' + encodeURIComponent(q);
+    });
+  </script>
+</body>
+</html>
