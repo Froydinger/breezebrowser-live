@@ -332,6 +332,16 @@ const openSettingsTab = () => openInternalTab(SETTINGS_URL);
 // Bookmarks
 // ---------------------------------------------------------------------------
 
+const BOOKMARKS_URL = `file://${path.join(__dirname, 'ui', 'bookmarks.html')}`;
+
+function broadcastBookmarks() {
+  for (const { view } of tabs.values()) {
+    if (view.webContents.getURL().startsWith('file://')) {
+      view.webContents.send('bookmarks', bookmarks);
+    }
+  }
+}
+
 function toggleBookmark() {
   const wc = activeWC();
   if (!wc) return;
@@ -342,6 +352,7 @@ function toggleBookmark() {
   else bookmarks.push({ title: wc.getTitle() || url, url });
   saveSettings({ bookmarks });
   pushState();
+  broadcastBookmarks();
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,6 +1050,11 @@ function buildMenu() {
         },
         { type: 'separator' },
         {
+          label: 'Show Bookmarks',
+          accelerator: 'CmdOrCtrl+Alt+B',
+          click: () => openInternalTab(BOOKMARKS_URL),
+        },
+        {
           label: 'Show History',
           accelerator: 'CmdOrCtrl+Y',
           click: () => openInternalTab(HISTORY_URL),
@@ -1101,7 +1117,11 @@ ipcMain.on('remove-bookmark', (_e, url) => {
   bookmarks = bookmarks.filter((b) => b.url !== url);
   saveSettings({ bookmarks });
   pushState();
+  broadcastBookmarks();
 });
+ipcMain.handle('get-bookmarks', () => bookmarks);
+ipcMain.on('open-bookmarks', () => openInternalTab(BOOKMARKS_URL));
+ipcMain.on('pin-tab', (_e, id) => pinTab(id));
 ipcMain.on('set-theme', (_e, theme) => {
   saveSettings({ theme });
   applyTheme(theme);

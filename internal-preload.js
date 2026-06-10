@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   onSettings: (cb) => ipcRenderer.on('settings', (_e, s) => cb(s)),
   onTheme: (cb) => ipcRenderer.on('theme', (_e, t) => cb(t)),
 
+  getBookmarks: () => ipcRenderer.invoke('get-bookmarks'),
+  removeBookmark: (url) => ipcRenderer.send('remove-bookmark', url),
+  onBookmarks: (cb) => ipcRenderer.on('bookmarks', (_e, b) => cb(b)),
+
   getHistory: () => ipcRenderer.invoke('get-history'),
   clearHistory: () => ipcRenderer.send('clear-history'),
   deleteHistoryItem: (url, ts) => ipcRenderer.send('delete-history-item', { url, ts }),

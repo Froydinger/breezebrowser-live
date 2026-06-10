@@ -2,8 +2,6 @@ const $ = (s) => document.querySelector(s);
 
 const sidebar = $('#sidebar');
 const tabsEl = $('#tabs');
-const bookmarksEl = $('#bookmarks');
-const bookmarksSection = $('#bookmarks-section');
 const address = $('#address');
 const btnBack = $('#btn-back');
 const btnForward = $('#btn-forward');
@@ -76,12 +74,21 @@ function renderTabs() {
       fav.className = 'favicon';
       const title = document.createElement('span');
       title.className = 'title';
+      const pinBtn = document.createElement('button');
+      pinBtn.className = 'close pin-tab-btn';
+      pinBtn.title = 'Pin as app';
+      pinBtn.innerHTML = `<svg viewBox="0 0 12 12"><path d="M7.2 1.2 10.8 4.8 9.3 5.1 7.5 6.9 7.2 9.6 5.4 7.8 2.4 10.8 1.2 9.6 4.2 6.6 2.4 4.8 5.1 4.5 6.9 2.7z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
       const close = document.createElement('button');
       close.className = 'close';
       close.title = 'Close tab';
       close.innerHTML = xIcon;
 
-      el.append(fav, title, close);
+      pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        breeze.pinTab(t.id);
+      });
+
+      el.append(fav, title, pinBtn, close);
       el.addEventListener('click', () => breeze.activateTab(t.id));
       close.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -124,50 +131,6 @@ function renderTabs() {
     const el = tabsEl.querySelector(`[data-id="${t.id}"]`);
     if (el && tabsEl.children[i] !== el) tabsEl.insertBefore(el, tabsEl.children[i]);
   });
-}
-
-// ---------------------------------------------------------------------------
-// Bookmarks
-// ---------------------------------------------------------------------------
-
-function renderBookmarks() {
-  const list = state.bookmarks || [];
-  bookmarksSection.classList.toggle('empty', list.length === 0);
-  bookmarksEl.textContent = '';
-  for (const b of list) {
-    const el = document.createElement('div');
-    el.className = 'bookmark';
-    el.title = b.url;
-
-    const fav = document.createElement('span');
-    fav.className = 'favicon';
-    try {
-      const origin = new URL(b.url).origin;
-      setFavicon(fav, `${origin}/favicon.ico`);
-    } catch {
-      fav.innerHTML = globeIcon;
-    }
-
-    const title = document.createElement('span');
-    title.className = 'title';
-    title.textContent = b.title;
-
-    const close = document.createElement('button');
-    close.className = 'close';
-    close.title = 'Remove bookmark';
-    close.innerHTML = xIcon;
-    close.addEventListener('click', (e) => {
-      e.stopPropagation();
-      breeze.removeBookmark(b.url);
-    });
-
-    el.append(fav, title, close);
-    el.addEventListener('click', () => breeze.openURL(b.url));
-    el.addEventListener('auxclick', (e) => {
-      if (e.button === 1) breeze.openURLNewTab(b.url);
-    });
-    bookmarksEl.appendChild(el);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +187,6 @@ function pinLetter(p) {
 breeze.onState((s) => {
   state = s;
   renderTabs();
-  renderBookmarks();
   renderPins();
   const active = s.tabs.find((t) => t.id === s.activeTabId);
   if (active && !addressFocused) address.value = active.url;
@@ -271,6 +233,7 @@ $('#btn-reload').addEventListener('click', () => breeze.reload());
 $('#new-tab-btn').addEventListener('click', () => breeze.newTab());
 $('#btn-sidebar').addEventListener('click', () => breeze.toggleSidebar());
 $('#settings-btn').addEventListener('click', () => breeze.openSettings());
+$('#bookmarks-btn').addEventListener('click', () => breeze.openBookmarks());
 $('#downloads-btn').addEventListener('click', () => breeze.openDownloads());
 $('#history-btn').addEventListener('click', () => breeze.openHistory());
 $('#ai-btn').addEventListener('click', () => breeze.toggleAssistant());

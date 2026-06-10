@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('breeze', {
   setTheme: (theme) => ipcRenderer.send('set-theme', theme),
   openSettings: () => ipcRenderer.send('open-settings'),
   openDownloads: () => ipcRenderer.send('open-downloads'),
+  openBookmarks: () => ipcRenderer.send('open-bookmarks'),
+  pinTab: (id) => ipcRenderer.send('pin-tab', id),
   openHistory: () => ipcRenderer.send('open-history'),
   onSettings: (cb) => ipcRenderer.on('settings', (_e, s) => cb(s)),
   setSidebarWidth: (w) => ipcRenderer.send('set-sidebar-width', w),
