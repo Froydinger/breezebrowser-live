@@ -503,7 +503,7 @@ edgeHandle.addEventListener('click', () => {
   breeze.toggleSidebar();
 });
 edgeHandle.addEventListener('mouseenter', () => {
-  edgeTimer = setTimeout(() => breeze.peekSidebar(), 150);
+  edgeTimer = setTimeout(() => breeze.peekSidebar(), 70);
 });
 edgeHandle.addEventListener('mouseleave', () => clearTimeout(edgeTimer));
 
@@ -740,6 +740,32 @@ breeze.onAIStatus((s) => {
       break;
   }
 });
+
+// ---------------------------------------------------------------------------
+// Now Playing
+// ---------------------------------------------------------------------------
+
+const npEl = $('#now-playing');
+let npTabId = null;
+
+breeze.onNowPlaying((p) => {
+  npEl.classList.toggle('show', !!p);
+  if (!p) {
+    npTabId = null;
+    return;
+  }
+  npTabId = p.id;
+  npEl.classList.toggle('playing', p.playing);
+  npEl.querySelector('.np-title').textContent = p.title;
+  setFavicon(npEl.querySelector('.np-favicon'), p.favicon);
+  $('#np-icon-pause').style.display = p.playing ? 'block' : 'none';
+  $('#np-icon-play').style.display = p.playing ? 'none' : 'block';
+});
+
+$('#np-play').addEventListener('click', () => npTabId && breeze.mediaToggle(npTabId));
+$('#np-pip').addEventListener('click', () => npTabId && breeze.mediaPiP(npTabId));
+$('#np-back').addEventListener('click', () => npTabId && breeze.mediaBackToTab(npTabId));
+npEl.querySelector('.np-title').addEventListener('click', () => npTabId && breeze.mediaBackToTab(npTabId));
 
 // ---------------------------------------------------------------------------
 // Adblock counter + updates

@@ -13,6 +13,16 @@ const {
 const path = require('path');
 const fs = require('fs');
 
+// Media can start without a user gesture (fixes YouTube needing a refresh
+// before the video plays on first load).
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+// Sites sniff the UA; "Electron/x breeze-browser/x" makes Google & co. serve
+// degraded or broken experiences. Present as plain Chrome.
+app.userAgentFallback = app.userAgentFallback
+  .replace(/Electron\/\S+\s*/, '')
+  .replace(/breeze-browser\/\S+\s*/, '');
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -188,6 +198,30 @@ function endPeek() {
   }
 }
 
+// Edge-hover detection via cursor polling: the DOM strip only covers the
+// 10px chrome ring, so poll the real cursor for a generous hit zone that
+// works across the whole left edge.
+const { screen } = require('electron');
+
+setInterval(() => {
+  if (!win || sidebarVisible || win.isDestroyed() || !win.isFocused()) return;
+  try {
+    const cur = screen.getCursorScreenPoint();
+    const b = win.getBounds();
+    const insideY = cur.y >= b.y && cur.y <= b.y + b.height;
+    if (!sidebarPeek) {
+      if (insideY && cur.x >= b.x && cur.x <= b.x + 12) peekSidebar();
+    } else {
+      // close the peek if the cursor wanders well clear of the open sidebar
+      const out =
+        !insideY ||
+        cur.x < b.x - 40 ||
+        cur.x > b.x + sidebarWidth + 60;
+      if (out) endPeek();
+    }
+  } catch {}
+}, 120);
+
 function setAssistant(show) {
   assistantVisible = show;
   win?.webContents.send('assistant', show);
@@ -241,6 +275,9 @@ function tabState(t) {
 function pushState() {
   if (!win) return;
   syncGroupEntries();
+  try {
+    updateNowPlaying();
+  } catch {}
   win.webContents.send('state', {
     tabs: tabOrder.map((id) => tabState(tabs.get(id))),
     activeTabId,
@@ -349,10 +386,79 @@ function buildView(t, url) {
     if (isMain && !t.incognito) recordHistory(wc, navUrl);
   });
   wc.on('context-menu', (_e, p) => showPageContextMenu(wc, p));
+  wc.on('media-started-playing', () => {
+    t.mediaPlaying = true;
+    t.mediaTs = Date.now();
+    updateNowPlaying();
+  });
+  wc.on('media-paused', () => {
+    t.mediaPlaying = false;
+    updateNowPlaying();
+  });
 
   wc.loadURL(url);
   return view;
 }
+
+// ---------------------------------------------------------------------------
+// Now Playing — sidebar media controls for whichever tab has sound
+// ---------------------------------------------------------------------------
+
+let lastNowPlaying = '';
+
+function nowPlayingTab() {
+  let best = null;
+  for (const t of tabs.values()) {
+    if (!t.view) continue;
+    const playing = t.mediaPlaying || t.view.webContents.isCurrentlyAudible();
+    if (!playing && !t.mediaTs) continue;
+    if (!playing) continue;
+    if (!best || (t.mediaTs || 0) > (best.mediaTs || 0)) best = t;
+  }
+  // keep showing a paused widget for the most recent media tab
+  if (!best) {
+    for (const t of tabs.values()) {
+      if (!t.view || !t.mediaTs) continue;
+      if (!best || t.mediaTs > best.mediaTs) best = t;
+    }
+  }
+  return best;
+}
+
+function updateNowPlaying() {
+  if (!win) return;
+  const t = nowPlayingTab();
+  const payload = t
+    ? {
+        id: t.id,
+        title: t.view.webContents.getTitle() || 'Media',
+        favicon: t.favicon || null,
+        playing: !!(t.mediaPlaying || t.view.webContents.isCurrentlyAudible()),
+      }
+    : null;
+  const key = JSON.stringify(payload);
+  if (key === lastNowPlaying) return;
+  lastNowPlaying = key;
+  win.webContents.send('now-playing', payload);
+}
+
+const MEDIA_TOGGLE = `(() => {
+  const els = [...document.querySelectorAll('video,audio')];
+  const m = els.find((x) => !x.paused) || els[0];
+  if (m) m.paused ? m.play() : m.pause();
+})()`;
+
+ipcMain.on('media-toggle', (_e, id) => {
+  const t = tabs.get(id);
+  if (t?.view) t.view.webContents.executeJavaScript(MEDIA_TOGGLE, true).catch(() => {});
+});
+ipcMain.on('media-back-to-tab', (_e, id) => {
+  if (tabs.has(id)) activateTab(id); // activateTab already exits PiP
+});
+ipcMain.on('media-pip', (_e, id) => {
+  const t = tabs.get(id);
+  if (t?.view) runPiP(t.view.webContents, PIP_TOGGLE);
+});
 
 function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
   const id = nextTabId++;

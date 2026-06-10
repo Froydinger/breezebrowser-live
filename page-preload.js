@@ -6,6 +6,20 @@ const { ipcRenderer } = require('electron');
 let lastHref = '';
 let lastTime = 0;
 
+// When the PiP window closes, keep the video playing in its tab instead of
+// letting Chromium pause it. (Closing the tab kills the document, which
+// closes PiP automatically — that direction needs no code.)
+window.addEventListener(
+  'leavepictureinpicture',
+  (e) => {
+    const v = e.target;
+    if (v && v.tagName === 'VIDEO' && v.paused && !v.ended) {
+      setTimeout(() => v.play().catch(() => {}), 0);
+    }
+  },
+  { capture: true }
+);
+
 window.addEventListener(
   'mouseover',
   (e) => {

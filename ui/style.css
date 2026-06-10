@@ -1200,3 +1200,52 @@ body.urlbar-top #sidebar #nav-row { margin-bottom: 12px; }
   background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
 }
+
+/* ------------------------------------------------------------------ */
+/* Now Playing                                                         */
+/* ------------------------------------------------------------------ */
+
+#now-playing {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 7px 9px;
+  margin-top: 8px;
+  box-shadow: var(--shadow);
+  flex-shrink: 0;
+  animation: rise-msg 0.25s var(--ease);
+  -webkit-app-region: no-drag;
+}
+
+#now-playing.show { display: flex; }
+
+#now-playing .np-favicon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+#now-playing .np-favicon img { width: 16px; height: 16px; border-radius: 4px; }
+
+#now-playing .np-title {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+#now-playing .np-title:hover { color: var(--accent); }
+
+#now-playing .np-btn { width: 26px; height: 26px; }
+#now-playing .np-btn svg { width: 13px; height: 13px; }
+
+#now-playing.playing .np-favicon {
+  animation: pulse 1.6s ease-in-out infinite;
+}
