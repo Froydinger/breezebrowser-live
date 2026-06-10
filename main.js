@@ -31,6 +31,7 @@ let activeTabId = null;
 let nextTabId = 1;
 
 let sidebarVisible = true;
+let sidebarPeek = false; // temporarily shown via edge-hover, not docked
 let assistantVisible = false;
 let layoutAnim = null;
 let currentLeft = sidebarWidth;
@@ -115,7 +116,7 @@ function applyBounds() {
 }
 
 function layout() {
-  currentLeft = sidebarVisible ? sidebarWidth : 0;
+  currentLeft = sidebarVisible || sidebarPeek ? sidebarWidth : 0;
   currentRight = assistantVisible ? ASSISTANT_WIDTH : 0;
   applyBounds();
 }
@@ -128,7 +129,7 @@ function animateLayout() {
   const DURATION = 240;
   const fromL = currentLeft;
   const fromR = currentRight;
-  const toL = sidebarVisible ? sidebarWidth : 0;
+  const toL = sidebarVisible || sidebarPeek ? sidebarWidth : 0;
   const toR = assistantVisible ? ASSISTANT_WIDTH : 0;
   const start = Date.now();
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -146,16 +147,39 @@ function animateLayout() {
   }, 1000 / 60);
 }
 
-function setSidebar(show) {
-  sidebarVisible = show;
-  saveSettings({ sidebarVisible: show });
-  win?.webContents.send('sidebar', show);
+function setTrafficLights(show) {
   if (process.platform === 'darwin') {
     try {
       win?.setWindowButtonVisibility(show);
     } catch {}
   }
+}
+
+function setSidebar(show) {
+  sidebarVisible = show;
+  sidebarPeek = false;
+  saveSettings({ sidebarVisible: show });
+  win?.webContents.send('sidebar', show);
+  setTrafficLights(show);
   animateLayout();
+}
+
+function peekSidebar() {
+  if (sidebarVisible || sidebarPeek) return;
+  sidebarPeek = true;
+  win?.webContents.send('sidebar-peek', true);
+  setTrafficLights(true);
+  animateLayout();
+}
+
+function endPeek() {
+  if (!sidebarPeek) return;
+  sidebarPeek = false;
+  win?.webContents.send('sidebar-peek', false);
+  if (!sidebarVisible) {
+    setTrafficLights(false);
+    animateLayout();
+  }
 }
 
 function setAssistant(show) {
@@ -181,6 +205,7 @@ function tabState(t) {
     loading: wc.isLoading(),
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),
+    pinUrl: t.pinUrl || null,
   };
 }
 
@@ -369,25 +394,44 @@ function pinTab(id) {
   if (!url || url.startsWith('file://')) return;
   if (pins.some((p) => p.url === url)) return;
   pins.push({ title: t.view.webContents.getTitle() || url, url, favicon: t.favicon });
+  t.pinUrl = url; // the tab now lives inside the pin, not the tab list
   saveSettings({ pins });
   pushState();
 }
 
 function unpin(url) {
   pins = pins.filter((p) => p.url !== url);
+  for (const t of tabs.values()) {
+    if (t.pinUrl === url) t.pinUrl = null; // back to the regular tab list
+  }
   saveSettings({ pins });
   pushState();
 }
 
-function openPin(url) {
-  // reuse an existing tab on the same page, else open a new one
+function pinnedTab(url) {
   for (const id of tabOrder) {
-    if (tabs.get(id).view.webContents.getURL() === url) {
-      activateTab(id);
-      return;
-    }
+    const t = tabs.get(id);
+    if (t.pinUrl === url || t.view.webContents.getURL() === url) return t;
   }
-  createTab(url, true);
+  return null;
+}
+
+function openPin(url) {
+  const t = pinnedTab(url);
+  if (t) {
+    t.pinUrl = url;
+    activateTab(t.id);
+    return;
+  }
+  const id = createTab(url, true);
+  const created = tabs.get(id);
+  if (created) created.pinUrl = url;
+  pushState();
+}
+
+function closePin(url) {
+  const t = pinnedTab(url);
+  if (t) closeTab(t.id); // closeTab lands on a neighbor or a fresh new tab
 }
 
 // ---------------------------------------------------------------------------
@@ -652,6 +696,12 @@ function setupPermissions() {
     'publickey-credentials-get', // WebAuthn / passkeys
     'publickey-credentials-create',
   ]);
+  // synchronous probes (e.g. WebAuthn availability checks)
+  ses.setPermissionCheckHandler((_wc, permission, origin) => {
+    if (autoAllow.has(permission)) return true;
+    const saved = (appSettings.permissions || {})[origin]?.[permission];
+    return saved === true;
+  });
   ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
     if (autoAllow.has(permission)) return callback(true);
     if (!PERM_LABELS[permission]) return callback(false);
@@ -1148,13 +1198,20 @@ ipcMain.on('save-sidebar-width', () => applySetting('sidebarWidth', sidebarWidth
 ipcMain.on('tab-context-menu', (_e, id) => showTabContextMenu(id));
 ipcMain.on('open-pin', (_e, url) => openPin(url));
 ipcMain.on('pin-context-menu', (_e, url) => {
+  const open = !!pinnedTab(url);
   Menu.buildFromTemplate([
     { label: 'Open', click: () => openPin(url) },
-    { label: 'Open in New Tab', click: () => createTab(url, true) },
+    {
+      label: 'Close',
+      enabled: open,
+      click: () => closePin(url), // closes the tab, keeps the pin
+    },
     { type: 'separator' },
     { label: 'Unpin', click: () => unpin(url) },
   ]).popup({ window: win });
 });
+ipcMain.on('peek-sidebar', () => peekSidebar());
+ipcMain.on('end-peek', () => endPeek());
 ipcMain.on('open-downloads', () => openInternalTab(DOWNLOADS_URL));
 ipcMain.on('open-history', () => openInternalTab(HISTORY_URL));
 ipcMain.handle('get-history', () => history.slice(0, 2000));

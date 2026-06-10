@@ -63,7 +63,10 @@ function renderTabs() {
     [...tabsEl.children].map((el) => [Number(el.dataset.id), el])
   );
 
-  for (const t of state.tabs) {
+  // tabs that belong to a pin live in the pin grid, not the tab list
+  const listTabs = state.tabs.filter((t) => !t.pinUrl);
+
+  for (const t of listTabs) {
     let el = existing.get(t.id);
     if (!el) {
       el = document.createElement('div');
@@ -127,7 +130,7 @@ function renderTabs() {
   }
 
   // keep DOM order matching tab order
-  state.tabs.forEach((t, i) => {
+  listTabs.forEach((t, i) => {
     const el = tabsEl.querySelector(`[data-id="${t.id}"]`);
     if (el && tabsEl.children[i] !== el) tabsEl.insertBefore(el, tabsEl.children[i]);
   });
@@ -139,34 +142,53 @@ function renderTabs() {
 
 const pinsEl = $('#pins');
 
+// Keyed reconciliation — pins are only created/removed when the pin set
+// changes, so state pushes don't replay the entry animation (no flicker).
 function renderPins() {
   const list = state.pins || [];
-  pinsEl.textContent = '';
-  const openUrls = new Set(state.tabs.map((t) => t.url));
+  const existing = new Map(
+    [...pinsEl.children].map((el) => [el.dataset.url, el])
+  );
+
   for (const p of list) {
-    const el = document.createElement('div');
-    el.className = 'pin';
-    el.title = p.title;
-    el.classList.toggle('open', openUrls.has(p.url));
+    let el = existing.get(p.url);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'pin';
+      el.dataset.url = p.url;
+      el.title = p.title;
 
-    if (p.favicon) {
-      const img = document.createElement('img');
-      img.src = p.favicon;
-      img.onerror = () => {
-        img.replaceWith(pinLetter(p));
-      };
-      el.appendChild(img);
-    } else {
-      el.appendChild(pinLetter(p));
+      if (p.favicon) {
+        const img = document.createElement('img');
+        img.src = p.favicon;
+        img.onerror = () => {
+          img.replaceWith(pinLetter(p));
+        };
+        el.appendChild(img);
+      } else {
+        el.appendChild(pinLetter(p));
+      }
+
+      el.addEventListener('click', () => breeze.openPin(p.url));
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        breeze.pinContextMenu(p.url);
+      });
+      pinsEl.appendChild(el);
     }
+    existing.delete(p.url);
 
-    el.addEventListener('click', () => breeze.openPin(p.url));
-    el.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      breeze.pinContextMenu(p.url);
-    });
-    pinsEl.appendChild(el);
+    const tab = state.tabs.find((t) => t.pinUrl === p.url || t.url === p.url);
+    el.classList.toggle('open', !!tab);
+    el.classList.toggle('active', !!tab && tab.id === state.activeTabId);
   }
+
+  for (const [, el] of existing) el.remove();
+
+  list.forEach((p, i) => {
+    const el = pinsEl.querySelector(`[data-url="${CSS.escape(p.url)}"]`);
+    if (el && pinsEl.children[i] !== el) pinsEl.insertBefore(el, pinsEl.children[i]);
+  });
 }
 
 function pinLetter(p) {
@@ -238,14 +260,35 @@ $('#downloads-btn').addEventListener('click', () => breeze.openDownloads());
 $('#history-btn').addEventListener('click', () => breeze.openHistory());
 $('#ai-btn').addEventListener('click', () => breeze.toggleAssistant());
 
-// edge handle: click or hover briefly to reveal the sidebar
+// edge handle: hover to peek (auto-hides when the mouse leaves the sidebar),
+// click to dock it for good
 const edgeHandle = $('#edge-handle');
 let edgeTimer = null;
-edgeHandle.addEventListener('click', () => breeze.toggleSidebar());
+let peeking = false;
+
+edgeHandle.addEventListener('click', () => {
+  clearTimeout(edgeTimer);
+  breeze.toggleSidebar();
+});
 edgeHandle.addEventListener('mouseenter', () => {
-  edgeTimer = setTimeout(() => breeze.toggleSidebar(), 160);
+  edgeTimer = setTimeout(() => breeze.peekSidebar(), 150);
 });
 edgeHandle.addEventListener('mouseleave', () => clearTimeout(edgeTimer));
+
+breeze.onSidebarPeek((peek) => {
+  peeking = peek;
+  if (peek) {
+    sidebar.classList.remove('hidden');
+    document.body.classList.remove('sidebar-hidden');
+  } else {
+    sidebar.classList.add('hidden');
+    document.body.classList.add('sidebar-hidden');
+  }
+});
+
+sidebar.addEventListener('mouseleave', () => {
+  if (peeking) breeze.endPeek();
+});
 
 // ---------------------------------------------------------------------------
 // Sidebar resize
@@ -294,6 +337,7 @@ btnBookmark.addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 
 function setSidebarVisible(visible) {
+  peeking = false;
   sidebar.classList.toggle('hidden', !visible);
   document.body.classList.toggle('sidebar-hidden', !visible);
 }

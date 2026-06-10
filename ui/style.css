@@ -916,3 +916,8 @@ html.dark #ai-input-wrap {
 
 #ai-statusbar { padding: 6px 16px 0; }
 #ai-progress { margin: 6px 16px 0; }
+
+.pin.active {
+  background: var(--surface-active);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), var(--shadow);
+}
