@@ -2,28 +2,60 @@ const $ = (s) => document.querySelector(s);
 
 const sidebar = $('#sidebar');
 const tabsEl = $('#tabs');
+const bookmarksEl = $('#bookmarks');
+const bookmarksSection = $('#bookmarks-section');
 const address = $('#address');
 const btnBack = $('#btn-back');
 const btnForward = $('#btn-forward');
+const btnBookmark = $('#btn-bookmark');
 
-let state = { tabs: [], activeTabId: null };
+let state = { tabs: [], activeTabId: null, bookmarks: [] };
 let addressFocused = false;
+
+// ---------------------------------------------------------------------------
+// Icons
+// ---------------------------------------------------------------------------
+
+const globeIcon = `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 8h12M8 2c-3.5 3.8-3.5 8.2 0 12 3.5-3.8 3.5-8.2 0-12z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
+const xIcon = `<svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+
+// Safe favicon rendering — build DOM nodes, never inline event handlers.
+function setFavicon(el, src) {
+  if (el.dataset.src === (src || '')) return; // unchanged, avoid flicker
+  el.dataset.src = src || '';
+  el.textContent = '';
+  if (!src) {
+    el.innerHTML = globeIcon;
+    return;
+  }
+  const img = document.createElement('img');
+  img.src = src;
+  img.onerror = () => {
+    el.dataset.src = '';
+    el.innerHTML = globeIcon;
+  };
+  el.appendChild(img);
+}
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
-breeze.getInit().then(({ theme, sidebarVisible }) => {
+breeze.getInit().then(({ theme, sidebarVisible, settings }) => {
   applyTheme(theme);
-  sidebar.classList.toggle('hidden', !sidebarVisible);
+  setSidebarVisible(sidebarVisible);
+  if (settings) applySettings(settings);
 });
+
+function applySettings(s) {
+  if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
+}
+
+breeze.onSettings(applySettings);
 
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
-
-const globeIcon = `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2 8h12M8 2c-3.5 3.8-3.5 8.2 0 12 3.5-3.8 3.5-8.2 0-12z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`;
-const xIcon = `<svg viewBox="0 0 10 10"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
 
 function renderTabs() {
   const existing = new Map(
@@ -36,12 +68,19 @@ function renderTabs() {
       el = document.createElement('div');
       el.className = 'tab';
       el.dataset.id = t.id;
-      el.innerHTML = `
-        <span class="favicon"></span>
-        <span class="title"></span>
-        <button class="close" title="Close tab">${xIcon}</button>`;
+
+      const fav = document.createElement('span');
+      fav.className = 'favicon';
+      const title = document.createElement('span');
+      title.className = 'title';
+      const close = document.createElement('button');
+      close.className = 'close';
+      close.title = 'Close tab';
+      close.innerHTML = xIcon;
+
+      el.append(fav, title, close);
       el.addEventListener('click', () => breeze.activateTab(t.id));
-      el.querySelector('.close').addEventListener('click', (e) => {
+      close.addEventListener('click', (e) => {
         e.stopPropagation();
         el.classList.add('closing');
         setTimeout(() => breeze.closeTab(t.id), 150);
@@ -58,11 +97,12 @@ function renderTabs() {
 
     const fav = el.querySelector('.favicon');
     if (t.loading) {
-      fav.innerHTML = `<span class="spinner"></span>`;
-    } else if (t.favicon) {
-      fav.innerHTML = `<img src="${t.favicon}" onerror="this.outerHTML='${globeIcon.replace(/'/g, '&#39;')}'" />`;
+      if (!fav.querySelector('.spinner')) {
+        fav.dataset.src = '~loading~';
+        fav.innerHTML = `<span class="spinner"></span>`;
+      }
     } else {
-      fav.innerHTML = globeIcon;
+      setFavicon(fav, t.favicon);
     }
   }
 
@@ -79,13 +119,65 @@ function renderTabs() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+function renderBookmarks() {
+  const list = state.bookmarks || [];
+  bookmarksSection.classList.toggle('empty', list.length === 0);
+  bookmarksEl.textContent = '';
+  for (const b of list) {
+    const el = document.createElement('div');
+    el.className = 'bookmark';
+    el.title = b.url;
+
+    const fav = document.createElement('span');
+    fav.className = 'favicon';
+    try {
+      const origin = new URL(b.url).origin;
+      setFavicon(fav, `${origin}/favicon.ico`);
+    } catch {
+      fav.innerHTML = globeIcon;
+    }
+
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = b.title;
+
+    const close = document.createElement('button');
+    close.className = 'close';
+    close.title = 'Remove bookmark';
+    close.innerHTML = xIcon;
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      breeze.removeBookmark(b.url);
+    });
+
+    el.append(fav, title, close);
+    el.addEventListener('click', () => breeze.openURL(b.url));
+    el.addEventListener('auxclick', (e) => {
+      if (e.button === 1) breeze.openURLNewTab(b.url);
+    });
+    bookmarksEl.appendChild(el);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// State sync
+// ---------------------------------------------------------------------------
+
 breeze.onState((s) => {
   state = s;
   renderTabs();
+  renderBookmarks();
   const active = s.tabs.find((t) => t.id === s.activeTabId);
   if (active && !addressFocused) address.value = active.url;
   btnBack.disabled = !active?.canGoBack;
   btnForward.disabled = !active?.canGoForward;
+  const bookmarked =
+    active && active.url && (s.bookmarks || []).some((b) => b.url === active.url);
+  btnBookmark.classList.toggle('active', !!bookmarked);
 });
 
 // ---------------------------------------------------------------------------
@@ -115,19 +207,34 @@ breeze.onFocusAddress(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Nav buttons
+// Buttons
 // ---------------------------------------------------------------------------
 
 btnBack.addEventListener('click', () => breeze.goBack());
 btnForward.addEventListener('click', () => breeze.goForward());
 $('#btn-reload').addEventListener('click', () => breeze.reload());
 $('#new-tab-btn').addEventListener('click', () => breeze.newTab());
+$('#btn-sidebar').addEventListener('click', () => breeze.toggleSidebar());
+$('#edge-handle').addEventListener('click', () => breeze.toggleSidebar());
+$('#settings-btn').addEventListener('click', () => breeze.openSettings());
+$('#ai-btn').addEventListener('click', () => breeze.toggleAssistant());
+btnBookmark.addEventListener('click', () => {
+  btnBookmark.classList.remove('pop');
+  void btnBookmark.offsetWidth;
+  btnBookmark.classList.add('pop');
+  breeze.toggleBookmark();
+});
 
 // ---------------------------------------------------------------------------
 // Sidebar + theme
 // ---------------------------------------------------------------------------
 
-breeze.onSidebar((visible) => sidebar.classList.toggle('hidden', !visible));
+function setSidebarVisible(visible) {
+  sidebar.classList.toggle('hidden', !visible);
+  document.body.classList.toggle('sidebar-hidden', !visible);
+}
+
+breeze.onSidebar(setSidebarVisible);
 
 function applyTheme(theme) {
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -140,6 +247,125 @@ breeze.onTheme(applyTheme);
 $('#theme-btn').addEventListener('click', () => {
   const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
   breeze.setTheme(next);
+});
+
+// ---------------------------------------------------------------------------
+// Assistant
+// ---------------------------------------------------------------------------
+
+const assistant = $('#assistant');
+const aiMessages = $('#ai-messages');
+const aiEmpty = $('#ai-empty');
+const aiInput = $('#ai-input');
+const aiSend = $('#ai-send');
+const aiStatusbar = $('#ai-statusbar');
+const aiProgress = $('#ai-progress');
+const aiProgressFill = $('#ai-progress-fill');
+
+let aiGenerating = false;
+let currentAIMsg = null;
+
+breeze.onAssistant((open) => {
+  assistant.classList.toggle('open', open);
+  if (open) setTimeout(() => aiInput.focus(), 250);
+});
+
+$('#ai-close').addEventListener('click', () => breeze.toggleAssistant());
+$('#ai-new-chat').addEventListener('click', () => breeze.aiNewChat());
+
+breeze.onAICleared(() => {
+  aiMessages.querySelectorAll('.msg').forEach((m) => m.remove());
+  aiEmpty.style.display = '';
+});
+
+function addMsg(cls, text) {
+  aiEmpty.style.display = 'none';
+  const el = document.createElement('div');
+  el.className = `msg ${cls}`;
+  el.textContent = text;
+  aiMessages.appendChild(el);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+  return el;
+}
+
+function sendAI() {
+  const text = aiInput.value.trim();
+  if (!text || aiGenerating) return;
+  addMsg('user', text);
+  aiInput.value = '';
+  aiInput.style.height = 'auto';
+  currentAIMsg = addMsg('ai thinking', '');
+  aiGenerating = true;
+  aiSend.classList.add('stop');
+  aiSend.title = 'Stop';
+  breeze.aiAsk(text, $('#ai-include-page').checked);
+}
+
+aiSend.addEventListener('click', () => {
+  if (aiGenerating) breeze.aiStop();
+  else sendAI();
+});
+
+aiInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAI();
+  }
+});
+
+aiInput.addEventListener('input', () => {
+  aiInput.style.height = 'auto';
+  aiInput.style.height = Math.min(aiInput.scrollHeight, 120) + 'px';
+});
+
+breeze.onAIChunk((chunk) => {
+  if (!currentAIMsg) currentAIMsg = addMsg('ai', '');
+  currentAIMsg.classList.remove('thinking');
+  currentAIMsg.textContent += chunk;
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+});
+
+breeze.onAIDone(() => {
+  if (currentAIMsg) {
+    currentAIMsg.classList.remove('thinking');
+    if (!currentAIMsg.textContent) currentAIMsg.textContent = '(stopped)';
+  }
+  currentAIMsg = null;
+  aiGenerating = false;
+  aiSend.classList.remove('stop');
+  aiSend.title = 'Send';
+});
+
+breeze.onAIStatus((s) => {
+  aiProgress.classList.remove('show');
+  switch (s.state) {
+    case 'downloading': {
+      const pct = Math.round((s.progress || 0) * 100);
+      aiStatusbar.textContent = `Downloading model (one time) — ${pct}%`;
+      aiProgress.classList.add('show');
+      aiProgressFill.style.width = `${pct}%`;
+      break;
+    }
+    case 'loading':
+      aiStatusbar.textContent = 'Loading model…';
+      break;
+    case 'generating':
+      aiStatusbar.textContent = 'Thinking…';
+      break;
+    case 'ready':
+      aiStatusbar.textContent = 'Llama 3.2 · local · private';
+      break;
+    case 'error':
+      aiStatusbar.textContent = `Error: ${s.message}`;
+      if (currentAIMsg) {
+        currentAIMsg.classList.remove('thinking');
+        currentAIMsg.textContent = `Something went wrong: ${s.message}`;
+        currentAIMsg = null;
+        aiGenerating = false;
+        aiSend.classList.remove('stop');
+      }
+      break;
+  }
 });
 
 // ---------------------------------------------------------------------------

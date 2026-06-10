@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required for Electron/Chromium JIT -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- WebAuthn / passkeys: lets the browser use iCloud Keychain platform
+       credentials. Only takes effect when signed with a real Apple
+       Developer ID (the web-browser entitlement also needs Apple's
+       approval for distribution builds). -->
+  <key>com.apple.developer.web-browser.public-key-credential</key>
+  <true/>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)com.jakefreudinger.breeze</string>
+  </array>
+</dict>
+</plist>

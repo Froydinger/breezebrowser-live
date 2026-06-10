@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Settings</title>
+  <style>
+    :root {
+      --text: #2a2a2e;
+      --text-soft: rgba(42, 42, 46, 0.5);
+      --surface: rgba(255, 255, 255, 0.65);
+      --surface-active: rgba(255, 255, 255, 0.95);
+      --border: rgba(0, 0, 0, 0.06);
+      --accent: #5b7cfa;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    html.dark {
+      --text: #ececf0;
+      --text-soft: rgba(236, 236, 240, 0.45);
+      --surface: rgba(255, 255, 255, 0.06);
+      --surface-active: rgba(255, 255, 255, 0.12);
+      --border: rgba(255, 255, 255, 0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #faf8f5 0%, #f1ede7 60%, #ece6dd 100%);
+      color: var(--text);
+      transition: background 0.4s var(--ease);
+      padding: 56px 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    html.dark body {
+      background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%);
+    }
+
+    main { width: min(620px, 100%); animation: rise 0.5s var(--ease); }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+    .subtitle { color: var(--text-soft); font-size: 14px; margin-bottom: 36px; }
+
+    section { margin-bottom: 32px; }
+
+    h2 {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+      margin-bottom: 10px;
+      padding-left: 2px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 15px 18px;
+    }
+
+    .row + .row { border-top: 1px solid var(--border); }
+
+    .row-label { font-size: 14px; }
+    .row-hint { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+
+    /* segmented control */
+    .seg {
+      display: inline-flex;
+      background: var(--surface-active);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+
+    .seg button {
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 12.5px;
+      color: var(--text-soft);
+      padding: 6px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.18s var(--ease), color 0.18s var(--ease);
+    }
+
+    .seg button.on {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* color swatches */
+    .swatches { display: flex; gap: 8px; }
+
+    .swatch {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.15s var(--ease);
+    }
+
+    .swatch:hover { transform: scale(1.12); }
+
+    .swatch.on::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+    }
+
+    /* toggle switch */
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 25px;
+      flex-shrink: 0;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .toggle .knob {
+      position: absolute;
+      inset: 0;
+      border-radius: 99px;
+      background: var(--surface-active);
+      cursor: pointer;
+      transition: background 0.2s var(--ease);
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .toggle .knob::before {
+      content: '';
+      position: absolute;
+      width: 19px;
+      height: 19px;
+      left: 3px;
+      top: 3px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.2s var(--ease);
+    }
+
+    .toggle input:checked + .knob { background: var(--accent); }
+    .toggle input:checked + .knob::before { transform: translateX(17px); }
+
+    select {
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--surface-active);
+      border: none;
+      border-radius: 9px;
+      padding: 7px 12px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .footer-note {
+      font-size: 12px;
+      color: var(--text-soft);
+      line-height: 1.6;
+      padding: 0 2px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Settings</h1>
+    <div class="subtitle">Breeze · everything saves instantly</div>
+
+    <section>
+      <h2>Appearance</h2>
+      <div class="card">
+        <div class="row">
+          <div><div class="row-label">Theme</div></div>
+          <div class="seg" id="theme-seg">
+            <button data-v="light">Light</button>
+            <button data-v="dark">Dark</button>
+          </div>
+        </div>
+        <div class="row">
+          <div><div class="row-label">Accent color</div></div>
+          <div class="swatches" id="swatches">
+            <button class="swatch" data-v="#5b7cfa" style="background:#5b7cfa"></button>
+            <button class="swatch" data-v="#e5604c" style="background:#e5604c"></button>
+            <button class="swatch" data-v="#34a853" style="background:#34a853"></button>
+            <button class="swatch" data-v="#b65cd6" style="background:#b65cd6"></button>
+            <button class="swatch" data-v="#e8a13c" style="background:#e8a13c"></button>
+            <button class="swatch" data-v="#3aa6b9" style="background:#3aa6b9"></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>New Tab</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">24-hour clock</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="clock24" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Show greeting</div>
+            <div class="row-hint">"Good morning." under the clock</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="showGreeting" />
+            <span class="knob"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Search</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Search engine</div>
+            <div class="row-hint">Used by the address bar and new tab</div>
+          </div>
+          <select id="searchEngine">
+            <option value="google">Google</option>
+            <option value="duckduckgo">DuckDuckGo</option>
+            <option value="bing">Bing</option>
+            <option value="brave">Brave</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Privacy</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Block ads &amp; trackers</div>
+            <div class="row-hint">EasyList + tracking filters, applied to every tab</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="adblockEnabled" />
+            <span class="knob"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      The AI assistant (⌘E) runs Llama 3.2 entirely on this Mac — nothing you ask it ever leaves your machine.
+      Passkey support with iCloud Keychain requires a code-signed build; USB security keys work everywhere.
+    </p>
+  </main>
+
+  <script>
+    let settings = {};
+
+    function render() {
+      document.documentElement.classList.toggle('dark', settings.theme === 'dark');
+      if (settings.accent) document.documentElement.style.setProperty('--accent', settings.accent);
+      document.querySelectorAll('#theme-seg button').forEach((b) =>
+        b.classList.toggle('on', b.dataset.v === settings.theme));
+      document.querySelectorAll('.swatch').forEach((b) =>
+        b.classList.toggle('on', b.dataset.v === settings.accent));
+      document.getElementById('clock24').checked = !!settings.clock24;
+      document.getElementById('showGreeting').checked = settings.showGreeting !== false;
+      document.getElementById('searchEngine').value = settings.searchEngine || 'google';
+      document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
+    }
+
+    function set(key, value) {
+      settings[key] = value;
+      breezeInternal.setSetting(key, value);
+      render();
+    }
+
+    breezeInternal.getSettings().then((s) => { settings = s; render(); });
+    breezeInternal.onSettings((s) => { settings = s; render(); });
+    breezeInternal.onTheme((t) => { settings.theme = t; render(); });
+
+    document.querySelectorAll('#theme-seg button').forEach((b) =>
+      b.addEventListener('click', () => set('theme', b.dataset.v)));
+    document.querySelectorAll('.swatch').forEach((b) =>
+      b.addEventListener('click', () => set('accent', b.dataset.v)));
+    document.getElementById('clock24').addEventListener('change', (e) => set('clock24', e.target.checked));
+    document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
+    document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
+    document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
+  </script>
+</body>
+</html>

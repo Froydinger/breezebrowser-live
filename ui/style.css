@@ -354,3 +354,325 @@ html.dark .tab .close:hover { background: rgba(255, 255, 255, 0.12); }
 
 #update-btn:hover { filter: brightness(1.08); }
 #update-btn:active { transform: scale(0.95); }
+
+/* ------------------------------------------------------------------ */
+/* Nav row extras                                                      */
+/* ------------------------------------------------------------------ */
+
+.nav-spacer { flex: 1; -webkit-app-region: drag; }
+
+#edge-handle {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 5;
+  cursor: pointer;
+  display: none;
+}
+
+body.sidebar-hidden #edge-handle { display: block; }
+
+#edge-handle::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 56px;
+  border-radius: 2px;
+  background: var(--text-soft);
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+
+#edge-handle:hover::after { opacity: 0.7; }
+
+/* ------------------------------------------------------------------ */
+/* Bookmark button + bookmarks list                                    */
+/* ------------------------------------------------------------------ */
+
+#btn-bookmark {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+#btn-bookmark svg { width: 14px; height: 14px; }
+#btn-bookmark:hover { background: var(--surface-hover); color: var(--text); }
+#btn-bookmark.active { color: var(--accent); }
+#btn-bookmark.active svg path { fill: var(--accent); stroke: var(--accent); }
+#btn-bookmark.pop { animation: bump 0.3s var(--ease); }
+
+#bookmarks-section { flex-shrink: 0; }
+#bookmarks-section.empty { display: none; }
+
+.section-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  padding: 2px 11px 6px;
+}
+
+#bookmarks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.bookmark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 8px 0 11px;
+  border-radius: 9px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s var(--ease);
+  animation: tab-in 0.28s var(--ease);
+}
+
+.bookmark:hover { background: var(--surface-hover); }
+.bookmark .favicon { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-soft); display: grid; place-items: center; }
+.bookmark .favicon img { width: 14px; height: 14px; border-radius: 3px; }
+.bookmark .favicon svg { width: 13px; height: 13px; }
+.bookmark .title {
+  flex: 1;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.bookmark .close {
+  width: 18px; height: 18px;
+  border: none; border-radius: 5px;
+  background: transparent;
+  color: var(--text-soft);
+  display: grid; place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.bookmark:hover .close { opacity: 1; }
+.bookmark .close:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
+.bookmark .close svg { width: 9px; height: 9px; }
+
+.footer-btns { display: flex; gap: 2px; }
+
+/* ------------------------------------------------------------------ */
+/* Assistant panel                                                     */
+/* ------------------------------------------------------------------ */
+
+#assistant {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 14px 14px 10px;
+  transform: translateX(40px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.24s var(--ease), opacity 0.24s var(--ease);
+}
+
+#assistant.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 12px;
+  flex-shrink: 0;
+}
+
+.ai-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ai-title svg { width: 15px; height: 15px; color: var(--accent); }
+.ai-header-btns { display: flex; gap: 2px; }
+
+#ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px;
+}
+
+#ai-messages::-webkit-scrollbar { width: 4px; }
+#ai-messages::-webkit-scrollbar-thumb { background: var(--surface-hover); border-radius: 2px; }
+
+#ai-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ai-empty-icon { font-size: 26px; margin-bottom: 10px; color: var(--accent); }
+
+.msg {
+  max-width: 92%;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  user-select: text;
+  animation: rise-msg 0.25s var(--ease);
+}
+
+@keyframes rise-msg {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+
+.msg.ai {
+  align-self: flex-start;
+  background: var(--surface-active);
+  box-shadow: var(--shadow);
+  border-bottom-left-radius: 5px;
+}
+
+.msg.ai.thinking::after {
+  content: '●';
+  animation: pulse 1s ease-in-out infinite;
+  color: var(--text-soft);
+}
+
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+#ai-statusbar {
+  font-size: 11.5px;
+  color: var(--text-soft);
+  padding: 6px 4px 0;
+  min-height: 16px;
+  flex-shrink: 0;
+}
+
+#ai-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface);
+  margin: 6px 2px 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+#ai-progress.show { opacity: 1; }
+
+#ai-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s var(--ease);
+}
+
+.ai-input-row { flex-shrink: 0; padding-top: 10px; }
+
+#ai-ctx-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-soft);
+  cursor: pointer;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+#ai-ctx-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+#ai-input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 8px 8px 8px 13px;
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+#ai-input-wrap:focus-within {
+  background: var(--surface-active);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 40%, transparent), var(--shadow);
+}
+
+#ai-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  max-height: 120px;
+  line-height: 1.5;
+  user-select: text;
+}
+
+#ai-input::placeholder { color: var(--text-soft); }
+
+#ai-send {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.15s, transform 0.1s var(--ease);
+}
+
+#ai-send svg { width: 14px; height: 14px; }
+#ai-send:hover { filter: brightness(1.08); }
+#ai-send:active { transform: scale(0.92); }
+#ai-send.stop { background: #e5604c; }

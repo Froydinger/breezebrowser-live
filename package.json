@@ -18,28 +18,51 @@
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.5.2",
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "node-llama-cpp": "^3.18.1"
   },
   "build": {
     "appId": "com.jakefreudinger.breeze",
     "productName": "Breeze",
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ]
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "publish": {
       "provider": "github",
       "owner": "Froydinger",
       "repo": "breeze-browser"
     },
+    "asarUnpack": [
+      "node_modules/node-llama-cpp/**",
+      "node_modules/@node-llama-cpp/**"
+    ],
     "files": [
       "main.js",
+      "internal-preload.js",
       "preload.js",
       "ui/**/*"
     ]

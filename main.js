@@ -6,7 +6,6 @@ const {
   Menu,
   nativeTheme,
   session,
-  shell,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -16,21 +15,56 @@ const fs = require('fs');
 // ---------------------------------------------------------------------------
 
 const SIDEBAR_WIDTH = 280;
+const ASSISTANT_WIDTH = 340;
 const CONTENT_PAD = 10; // breathing room around the page, Arc-style
 
 let win = null;
 let blocker = null;
 let updateDownloaded = false;
 
-const tabs = new Map(); // id -> { id, view }
+const tabs = new Map(); // id -> { id, view, favicon }
 let tabOrder = [];
 let activeTabId = null;
 let nextTabId = 1;
 
 let sidebarVisible = true;
-let sidebarAnim = null; // running animation handle
+let assistantVisible = false;
+let layoutAnim = null;
+let currentLeft = SIDEBAR_WIDTH;
+let currentRight = 0;
+
+let bookmarks = []; // [{ title, url }]
 
 const NEWTAB_URL = `file://${path.join(__dirname, 'ui', 'newtab.html')}`;
+const SETTINGS_URL = `file://${path.join(__dirname, 'ui', 'settings.html')}`;
+
+const ENGINES = {
+  google: 'https://www.google.com/search?q=',
+  duckduckgo: 'https://duckduckgo.com/?q=',
+  bing: 'https://www.bing.com/search?q=',
+  brave: 'https://search.brave.com/search?q=',
+};
+
+const DEFAULT_SETTINGS = {
+  theme: 'light',
+  accent: '#5b7cfa',
+  searchEngine: 'google',
+  clock24: false,
+  showGreeting: true,
+  adblockEnabled: true,
+  sidebarVisible: true,
+};
+
+let appSettings = { ...DEFAULT_SETTINGS };
+
+function broadcastSettings() {
+  if (win) win.webContents.send('settings', appSettings);
+  for (const { view } of tabs.values()) {
+    if (view.webContents.getURL().startsWith('file://')) {
+      view.webContents.send('settings', appSettings);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Settings (tiny JSON persistence)
@@ -55,52 +89,69 @@ function saveSettings(patch) {
 }
 
 // ---------------------------------------------------------------------------
-// Layout
+// Layout (sidebar on the left, assistant on the right, page in the middle)
 // ---------------------------------------------------------------------------
 
-function contentBounds(sidebarOffset) {
-  // sidebarOffset: current visible width of the sidebar (animates 0..SIDEBAR_WIDTH)
+function contentBounds(left, right) {
   const [w, h] = win.getContentSize();
   return {
-    x: Math.round(sidebarOffset) + CONTENT_PAD,
+    x: Math.round(left) + CONTENT_PAD,
     y: CONTENT_PAD,
-    width: Math.max(0, w - Math.round(sidebarOffset) - CONTENT_PAD * 2),
+    width: Math.max(0, w - Math.round(left) - Math.round(right) - CONTENT_PAD * 2),
     height: Math.max(0, h - CONTENT_PAD * 2),
   };
 }
 
-function layout() {
+function applyBounds() {
   if (!win) return;
-  const offset = sidebarVisible ? SIDEBAR_WIDTH : 0;
-  const b = contentBounds(offset);
+  const b = contentBounds(currentLeft, currentRight);
   for (const { view } of tabs.values()) view.setBounds(b);
 }
 
-function animateSidebar(show) {
-  if (sidebarAnim) {
-    clearInterval(sidebarAnim);
-    sidebarAnim = null;
-  }
-  sidebarVisible = show;
-  saveSettings({ sidebarVisible: show });
-  win.webContents.send('sidebar', show);
+function layout() {
+  currentLeft = sidebarVisible ? SIDEBAR_WIDTH : 0;
+  currentRight = assistantVisible ? ASSISTANT_WIDTH : 0;
+  applyBounds();
+}
 
+function animateLayout() {
+  if (layoutAnim) {
+    clearInterval(layoutAnim);
+    layoutAnim = null;
+  }
   const DURATION = 240;
-  const from = show ? 0 : SIDEBAR_WIDTH;
-  const to = show ? SIDEBAR_WIDTH : 0;
+  const fromL = currentLeft;
+  const fromR = currentRight;
+  const toL = sidebarVisible ? SIDEBAR_WIDTH : 0;
+  const toR = assistantVisible ? ASSISTANT_WIDTH : 0;
   const start = Date.now();
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
-  sidebarAnim = setInterval(() => {
+  layoutAnim = setInterval(() => {
     const t = Math.min(1, (Date.now() - start) / DURATION);
-    const offset = from + (to - from) * easeOutCubic(t);
-    const b = contentBounds(offset);
-    for (const { view } of tabs.values()) view.setBounds(b);
+    const k = easeOutCubic(t);
+    currentLeft = fromL + (toL - fromL) * k;
+    currentRight = fromR + (toR - fromR) * k;
+    applyBounds();
     if (t >= 1) {
-      clearInterval(sidebarAnim);
-      sidebarAnim = null;
+      clearInterval(layoutAnim);
+      layoutAnim = null;
     }
   }, 1000 / 60);
+}
+
+function setSidebar(show) {
+  sidebarVisible = show;
+  saveSettings({ sidebarVisible: show });
+  win?.webContents.send('sidebar', show);
+  animateLayout();
+}
+
+function setAssistant(show) {
+  assistantVisible = show;
+  win?.webContents.send('assistant', show);
+  animateLayout();
+  if (show) ensureAI(); // kick off model download/load in the background
 }
 
 // ---------------------------------------------------------------------------
@@ -110,11 +161,11 @@ function animateSidebar(show) {
 function tabState(t) {
   const wc = t.view.webContents;
   const url = wc.getURL();
-  const isNewTab = url.startsWith('file://');
+  const isInternal = url.startsWith('file://');
   return {
     id: t.id,
-    title: isNewTab ? 'New Tab' : wc.getTitle() || 'Loading…',
-    url: isNewTab ? '' : url,
+    title: isInternal ? wc.getTitle() || 'New Tab' : wc.getTitle() || 'Loading…',
+    url: isInternal ? '' : url,
     favicon: t.favicon || null,
     loading: wc.isLoading(),
     canGoBack: wc.navigationHistory.canGoBack(),
@@ -127,15 +178,20 @@ function pushState() {
   win.webContents.send('state', {
     tabs: tabOrder.map((id) => tabState(tabs.get(id))),
     activeTabId,
+    bookmarks,
   });
 }
 
 function createTab(url = NEWTAB_URL, activate = true) {
   const id = nextTabId++;
+  const isInternal = url.startsWith('file://');
   const view = new WebContentsView({
     webPreferences: {
       sandbox: true,
       contextIsolation: true,
+      ...(isInternal
+        ? { preload: path.join(__dirname, 'internal-preload.js') }
+        : {}),
     },
   });
   const t = { id, view, favicon: null };
@@ -162,19 +218,15 @@ function createTab(url = NEWTAB_URL, activate = true) {
     return { action: 'deny' };
   });
   wc.on('enter-html-full-screen', () => {
-    view.setBounds({ x: 0, y: 0, ...sizeOf(win) });
+    const [width, height] = win.getContentSize();
+    view.setBounds({ x: 0, y: 0, width, height });
   });
-  wc.on('leave-html-full-screen', layout);
+  wc.on('leave-html-full-screen', applyBounds);
 
   wc.loadURL(url);
   if (activate) activateTab(id);
   else pushState();
   return id;
-}
-
-function sizeOf(w) {
-  const [width, height] = w.getContentSize();
-  return { width, height };
 }
 
 function activateTab(id) {
@@ -185,7 +237,7 @@ function activateTab(id) {
   }
   activeTabId = id;
   win.contentView.addChildView(t.view);
-  layout();
+  applyBounds();
   t.view.webContents.focus();
   pushState();
 }
@@ -203,14 +255,9 @@ function closeTab(id) {
   }
   t.view.webContents.close();
   tabs.delete(id);
-  if (tabOrder.length === 0) {
-    if (tabs.size === 0 && winShouldClose) win.close();
-    else createTab();
-  }
+  if (tabOrder.length === 0) createTab();
   pushState();
 }
-
-let winShouldClose = false;
 
 function cycleTab(dir) {
   if (tabOrder.length < 2) return;
@@ -230,7 +277,34 @@ function toNavigableURL(input) {
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(q)) return q;
   if (q === 'localhost' || q.startsWith('localhost:')) return `http://${q}`;
   if (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' ')) return `https://${q}`;
-  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  const engine = ENGINES[appSettings.searchEngine] || ENGINES.google;
+  return engine + encodeURIComponent(q);
+}
+
+function openSettingsTab() {
+  for (const id of tabOrder) {
+    if (tabs.get(id).view.webContents.getURL() === SETTINGS_URL) {
+      activateTab(id);
+      return;
+    }
+  }
+  createTab(SETTINGS_URL, true);
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+function toggleBookmark() {
+  const wc = activeWC();
+  if (!wc) return;
+  const url = wc.getURL();
+  if (!url || url.startsWith('file://')) return;
+  const idx = bookmarks.findIndex((b) => b.url === url);
+  if (idx >= 0) bookmarks.splice(idx, 1);
+  else bookmarks.push({ title: wc.getTitle() || url, url });
+  saveSettings({ bookmarks });
+  pushState();
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +319,9 @@ async function setupAdblock() {
       read: fs.promises.readFile,
       write: fs.promises.writeFile,
     });
-    blocker.enableBlockingInSession(session.defaultSession);
+    if (appSettings.adblockEnabled) {
+      blocker.enableBlockingInSession(session.defaultSession);
+    }
     let blocked = 0;
     blocker.on('request-blocked', () => {
       blocked++;
@@ -255,6 +331,135 @@ async function setupAdblock() {
     console.error('Adblock failed to initialize:', err.message);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Local AI assistant (llama.cpp via node-llama-cpp, Metal-accelerated)
+// ---------------------------------------------------------------------------
+
+const MODEL_URI =
+  'hf:bartowski/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf';
+
+const ai = {
+  ready: false,
+  loading: false,
+  generating: false,
+  session: null,
+  context: null,
+  sequence: null,
+  LlamaChatSession: null,
+  abort: null,
+  lastCtxUrl: null,
+};
+
+function sendAI(status) {
+  win?.webContents.send('ai-status', status);
+}
+
+async function ensureAI() {
+  if (ai.ready || ai.loading) return ai.ready;
+  ai.loading = true;
+  try {
+    const { getLlama, LlamaChatSession, resolveModelFile } = await import(
+      'node-llama-cpp'
+    );
+    ai.LlamaChatSession = LlamaChatSession;
+
+    sendAI({ state: 'downloading', progress: 0 });
+    const modelPath = await resolveModelFile(MODEL_URI, {
+      directory: path.join(app.getPath('userData'), 'models'),
+      onProgress: ({ downloadedSize, totalSize }) =>
+        sendAI({
+          state: 'downloading',
+          progress: totalSize ? downloadedSize / totalSize : 0,
+        }),
+    });
+
+    sendAI({ state: 'loading' });
+    const llama = await getLlama();
+    const model = await llama.loadModel({ modelPath });
+    ai.context = await model.createContext({ contextSize: { max: 8192 } });
+    newChat();
+    ai.ready = true;
+    sendAI({ state: 'ready' });
+  } catch (err) {
+    console.error('AI init failed:', err);
+    sendAI({ state: 'error', message: err.message });
+  }
+  ai.loading = false;
+  return ai.ready;
+}
+
+function newChat() {
+  try {
+    ai.session?.dispose();
+    ai.sequence?.dispose();
+  } catch {}
+  ai.sequence = ai.context.getSequence();
+  ai.session = new ai.LlamaChatSession({
+    contextSequence: ai.sequence,
+    systemPrompt:
+      'You are Breeze, a helpful assistant built into a web browser. ' +
+      'Answer concisely. When page content is provided, ground your answers in it.',
+  });
+  ai.lastCtxUrl = null;
+}
+
+async function getPageContext() {
+  const wc = activeWC();
+  if (!wc) return null;
+  const url = wc.getURL();
+  if (!url || url.startsWith('file://')) return null;
+  try {
+    const text = await wc.executeJavaScript(
+      'document.body ? document.body.innerText : ""',
+      true
+    );
+    return { title: wc.getTitle(), url, text: String(text).slice(0, 6000) };
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.on('ai-ask', async (_e, { text, includePage }) => {
+  if (ai.generating) return;
+  if (!(await ensureAI())) return;
+  ai.generating = true;
+  sendAI({ state: 'generating' });
+
+  let prompt = text;
+  if (includePage) {
+    const ctx = await getPageContext();
+    if (ctx && ctx.url !== ai.lastCtxUrl) {
+      prompt =
+        `[Current page: "${ctx.title}" — ${ctx.url}]\n` +
+        `[Page content]\n${ctx.text}\n[End page content]\n\n${text}`;
+      ai.lastCtxUrl = ctx.url;
+    }
+  }
+
+  ai.abort = new AbortController();
+  try {
+    await ai.session.prompt(prompt, {
+      signal: ai.abort.signal,
+      onTextChunk: (chunk) => win?.webContents.send('ai-chunk', chunk),
+    });
+  } catch (err) {
+    if (!ai.abort.signal.aborted) {
+      sendAI({ state: 'error', message: err.message });
+    }
+  }
+  ai.generating = false;
+  win?.webContents.send('ai-done');
+  sendAI({ state: 'ready' });
+});
+
+ipcMain.on('ai-stop', () => ai.abort?.abort());
+ipcMain.on('ai-new-chat', () => {
+  if (ai.ready && !ai.generating) {
+    newChat();
+    win?.webContents.send('ai-cleared');
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Auto update
@@ -287,12 +492,31 @@ function applyTheme(theme) {
     win.setBackgroundColor(theme === 'dark' ? '#16161a' : '#f2f0ed');
     win.webContents.send('theme', theme);
   }
+  // internal pages (new tab, settings) follow instantly via their preload
+  for (const { view } of tabs.values()) {
+    if (view.webContents.getURL().startsWith('file://')) {
+      view.webContents.send('theme', theme);
+    }
+  }
+}
+
+function applySetting(key, value) {
+  appSettings[key] = value;
+  saveSettings({ [key]: value });
+  if (key === 'theme') applyTheme(value);
+  if (key === 'adblockEnabled' && blocker) {
+    if (value) blocker.enableBlockingInSession(session.defaultSession);
+    else blocker.disableBlockingInSession(session.defaultSession);
+  }
+  broadcastSettings();
 }
 
 function createWindow() {
   const settings = loadSettings();
-  sidebarVisible = settings.sidebarVisible !== false;
-  const theme = settings.theme || 'light';
+  appSettings = { ...DEFAULT_SETTINGS, ...settings };
+  sidebarVisible = appSettings.sidebarVisible !== false;
+  bookmarks = Array.isArray(settings.bookmarks) ? settings.bookmarks : [];
+  const theme = appSettings.theme;
   nativeTheme.themeSource = theme;
 
   win = new BrowserWindow({
@@ -311,17 +535,16 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
-  win.on('resize', layout);
+  win.on('resize', applyBounds);
   win.on('closed', () => {
     win = null;
-  });
-  win.on('close', () => {
-    winShouldClose = true;
   });
 
   win.webContents.once('did-finish-load', () => {
     win.webContents.send('theme', theme);
     win.webContents.send('sidebar', sidebarVisible);
+    win.webContents.send('settings', appSettings);
+    layout();
     createTab();
   });
 }
@@ -333,6 +556,12 @@ function buildMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Settings…',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => openSettingsTab(),
+        },
+        { type: 'separator' },
         {
           label: 'New Tab',
           accelerator: 'CmdOrCtrl+T',
@@ -357,15 +586,25 @@ function buildMenu() {
         {
           label: 'Toggle Sidebar',
           accelerator: 'CmdOrCtrl+S',
-          click: () => animateSidebar(!sidebarVisible),
+          click: () => setSidebar(!sidebarVisible),
+        },
+        {
+          label: 'Toggle Assistant',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => setAssistant(!assistantVisible),
         },
         {
           label: 'Focus Address Bar',
           accelerator: 'CmdOrCtrl+L',
           click: () => {
-            if (!sidebarVisible) animateSidebar(true);
+            if (!sidebarVisible) setSidebar(true);
             win?.webContents.send('focus-address');
           },
+        },
+        {
+          label: 'Bookmark This Page',
+          accelerator: 'CmdOrCtrl+D',
+          click: () => toggleBookmark(),
         },
         {
           label: 'Toggle Dark Mode',
@@ -472,10 +711,19 @@ ipcMain.on('navigate', (_e, input) => {
   const url = toNavigableURL(input);
   if (url) activeWC()?.loadURL(url);
 });
+ipcMain.on('open-url', (_e, url) => activeWC()?.loadURL(url));
+ipcMain.on('open-url-new-tab', (_e, url) => createTab(url, true));
 ipcMain.on('go-back', () => activeWC()?.navigationHistory.goBack());
 ipcMain.on('go-forward', () => activeWC()?.navigationHistory.goForward());
 ipcMain.on('reload', () => activeWC()?.reload());
-ipcMain.on('toggle-sidebar', () => animateSidebar(!sidebarVisible));
+ipcMain.on('toggle-sidebar', () => setSidebar(!sidebarVisible));
+ipcMain.on('toggle-assistant', () => setAssistant(!assistantVisible));
+ipcMain.on('toggle-bookmark', () => toggleBookmark());
+ipcMain.on('remove-bookmark', (_e, url) => {
+  bookmarks = bookmarks.filter((b) => b.url !== url);
+  saveSettings({ bookmarks });
+  pushState();
+});
 ipcMain.on('set-theme', (_e, theme) => {
   saveSettings({ theme });
   applyTheme(theme);
@@ -488,13 +736,20 @@ ipcMain.on('install-update', () => {
 ipcMain.handle('get-init', () => ({
   theme: nativeTheme.themeSource === 'dark' ? 'dark' : 'light',
   sidebarVisible,
+  settings: appSettings,
 }));
+ipcMain.handle('get-settings', () => appSettings);
+ipcMain.on('set-setting', (_e, { key, value }) => {
+  if (key in DEFAULT_SETTINGS) applySetting(key, value);
+});
+ipcMain.on('open-settings', () => openSettingsTab());
 
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  appSettings = { ...DEFAULT_SETTINGS, ...loadSettings() };
   await setupAdblock();
   buildMenu();
   createWindow();

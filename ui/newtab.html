@@ -8,19 +8,14 @@
       --text: #2a2a2e;
       --text-soft: rgba(42, 42, 46, 0.45);
       --surface: rgba(255, 255, 255, 0.65);
+      --accent: #5b7cfa;
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
     }
 
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --text: #ececf0;
-        --text-soft: rgba(236, 236, 240, 0.4);
-        --surface: rgba(255, 255, 255, 0.08);
-      }
-      body { background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%); }
-      .orb1 { background: radial-gradient(circle, rgba(91, 124, 250, 0.18), transparent 70%); }
-      .orb2 { background: radial-gradient(circle, rgba(214, 134, 255, 0.12), transparent 70%); }
-      .orb3 { background: radial-gradient(circle, rgba(96, 220, 200, 0.1), transparent 70%); }
+    html.dark {
+      --text: #ececf0;
+      --text-soft: rgba(236, 236, 240, 0.4);
+      --surface: rgba(255, 255, 255, 0.08);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -37,6 +32,11 @@
       background: linear-gradient(160deg, #faf8f5 0%, #f1ede7 60%, #ece6dd 100%);
       color: var(--text);
       position: relative;
+      transition: background 0.4s var(--ease);
+    }
+
+    html.dark body {
+      background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%);
     }
 
     /* floating ambient orbs */
@@ -64,6 +64,10 @@
       animation-duration: 26s;
     }
 
+    html.dark .orb1 { background: radial-gradient(circle, rgba(91, 124, 250, 0.18), transparent 70%); }
+    html.dark .orb2 { background: radial-gradient(circle, rgba(214, 134, 255, 0.12), transparent 70%); }
+    html.dark .orb3 { background: radial-gradient(circle, rgba(96, 220, 200, 0.1), transparent 70%); }
+
     @keyframes drift {
       from { transform: translate(0, 0) scale(1); }
       to   { transform: translate(40px, -30px) scale(1.08); }
@@ -75,6 +79,7 @@
       letter-spacing: -2px;
       font-variant-numeric: tabular-nums;
       animation: rise 0.6s var(--ease);
+      transition: color 0.4s var(--ease);
     }
 
     #greeting {
@@ -102,13 +107,13 @@
       background: var(--surface);
       backdrop-filter: blur(20px);
       box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.06);
-      transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease);
+      transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease), background 0.4s var(--ease);
     }
 
     #q::placeholder { color: var(--text-soft); }
 
     #q:focus {
-      box-shadow: 0 0 0 3px rgba(91, 124, 250, 0.35), 0 10px 30px rgba(0,0,0,0.08);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 30px rgba(0,0,0,0.08);
       transform: translateY(-1px);
     }
 
@@ -134,12 +139,41 @@
     const clock = document.getElementById('clock');
     const greeting = document.getElementById('greeting');
 
+    const ENGINES = {
+      google: 'https://www.google.com/search?q=',
+      duckduckgo: 'https://duckduckgo.com/?q=',
+      bing: 'https://www.bing.com/search?q=',
+      brave: 'https://search.brave.com/search?q=',
+    };
+
+    let settings = { clock24: false, showGreeting: true, searchEngine: 'google', theme: 'light', accent: '#5b7cfa' };
+
+    function applySettings(s) {
+      settings = { ...settings, ...s };
+      applyTheme(settings.theme);
+      if (settings.accent) document.documentElement.style.setProperty('--accent', settings.accent);
+      greeting.style.display = settings.showGreeting ? '' : 'none';
+      tick();
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    }
+
+    // theme + settings pushed live from the browser
+    if (window.breezeInternal) {
+      breezeInternal.getSettings().then(applySettings);
+      breezeInternal.onSettings(applySettings);
+      breezeInternal.onTheme(applyTheme);
+    }
+
     function tick() {
       const d = new Date();
-      let h = d.getHours();
+      const h = d.getHours();
       const m = String(d.getMinutes()).padStart(2, '0');
-      const h12 = h % 12 || 12;
-      clock.textContent = `${h12}:${m}`;
+      clock.textContent = settings.clock24
+        ? `${String(h).padStart(2, '0')}:${m}`
+        : `${h % 12 || 12}:${m}`;
       greeting.textContent =
         h < 5 ? 'Up late.' :
         h < 12 ? 'Good morning.' :
@@ -157,7 +191,7 @@
         (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' '));
       location.href = isURL
         ? (q.includes('://') ? q : 'https://' + q)
-        : 'https://www.google.com/search?q=' + encodeURIComponent(q);
+        : (ENGINES[settings.searchEngine] || ENGINES.google) + encodeURIComponent(q);
     });
   </script>
 </body>
