@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>New Tab</title>
+  <style>
+    :root {
+      --text: #2a2a2e;
+      --text-soft: rgba(42, 42, 46, 0.45);
+      --surface: rgba(255, 255, 255, 0.65);
+      --accent: #5b7cfa;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    html.dark {
+      --text: #ececf0;
+      --text-soft: rgba(236, 236, 240, 0.4);
+      --surface: rgba(255, 255, 255, 0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(160deg, #faf8f5 0%, #f1ede7 60%, #ece6dd 100%);
+      color: var(--text);
+      position: relative;
+      transition: background 0.4s var(--ease);
+    }
+
+    html.dark body {
+      background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%);
+    }
+
+    /* floating ambient orbs */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(2px);
+      pointer-events: none;
+      animation: drift 18s ease-in-out infinite alternate;
+    }
+    .orb1 {
+      width: 480px; height: 480px; top: -10%; left: 8%;
+      background: radial-gradient(circle, rgba(91, 124, 250, 0.13), transparent 70%);
+    }
+    .orb2 {
+      width: 380px; height: 380px; bottom: -8%; right: 10%;
+      background: radial-gradient(circle, rgba(255, 158, 100, 0.13), transparent 70%);
+      animation-delay: -6s;
+      animation-duration: 22s;
+    }
+    .orb3 {
+      width: 300px; height: 300px; top: 40%; right: 30%;
+      background: radial-gradient(circle, rgba(120, 200, 170, 0.1), transparent 70%);
+      animation-delay: -12s;
+      animation-duration: 26s;
+    }
+
+    html.dark .orb1 { background: radial-gradient(circle, rgba(91, 124, 250, 0.18), transparent 70%); }
+    html.dark .orb2 { background: radial-gradient(circle, rgba(214, 134, 255, 0.12), transparent 70%); }
+    html.dark .orb3 { background: radial-gradient(circle, rgba(96, 220, 200, 0.1), transparent 70%); }
+
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, -30px) scale(1.08); }
+    }
+
+    #clock {
+      font-size: 72px;
+      font-weight: 200;
+      letter-spacing: -2px;
+      font-variant-numeric: tabular-nums;
+      animation: rise 0.6s var(--ease);
+      transition: color 0.4s var(--ease);
+    }
+
+    #greeting {
+      font-size: 15px;
+      color: var(--text-soft);
+      margin-top: -18px;
+      animation: rise 0.6s var(--ease) 0.08s backwards;
+    }
+
+    form {
+      width: min(560px, 80vw);
+      animation: rise 0.6s var(--ease) 0.16s backwards;
+    }
+
+    #q {
+      width: 100%;
+      height: 54px;
+      border: none;
+      outline: none;
+      border-radius: 16px;
+      padding: 0 22px;
+      font-size: 16px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 30px rgba(0,0,0,0.06);
+      transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease), background 0.4s var(--ease);
+    }
+
+    #q::placeholder { color: var(--text-soft); }
+
+    #q:focus {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 30px rgba(0,0,0,0.08);
+      transform: translateY(-1px);
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    #logo {
+      width: 64px;
+      height: 64px;
+      margin-bottom: -6px;
+      filter: drop-shadow(0 8px 24px color-mix(in srgb, var(--accent) 35%, transparent));
+      animation: rise 0.6s var(--ease);
+    }
+
+    form { position: relative; }
+
+    #sug {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      border-radius: 16px;
+      background: var(--surface);
+      backdrop-filter: blur(24px) saturate(1.3);
+      border: 1px solid rgba(255,255,255,0.5);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05), 0 20px 60px rgba(0,0,0,0.12);
+      padding: 7px;
+      display: none;
+      z-index: 5;
+      animation: rise 0.18s var(--ease);
+    }
+
+    html.dark #sug {
+      background: rgba(35, 35, 41, 0.92);
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    #sug.show { display: block; }
+
+    .sug-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 13px;
+      border-radius: 11px;
+      cursor: pointer;
+      font-size: 14px;
+      min-width: 0;
+    }
+
+    .sug-item.selected,
+    .sug-item:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+
+    .sug-item .ic { font-size: 12px; color: var(--text-soft); flex-shrink: 0; width: 14px; text-align: center; }
+    .sug-item.selected .ic { color: var(--accent); }
+
+    .sug-item .lb {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sug-item .sb {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--text-soft);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 40%;
+      flex-shrink: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+
+  <img id="logo" src="icon.png" alt="" draggable="false" />
+  <div id="clock">--:--</div>
+  <div id="greeting"></div>
+
+  <form id="form">
+    <input id="q" type="text" placeholder="Search or enter URL" autofocus spellcheck="false" autocomplete="off" />
+    <div id="sug"></div>
+  </form>
+
+  <script>
+    const clock = document.getElementById('clock');
+    const greeting = document.getElementById('greeting');
+
+    const ENGINES = {
+      google: 'https://www.google.com/search?q=%s',
+      duckduckgo: 'https://duckduckgo.com/?q=%s',
+      bing: 'https://www.bing.com/search?q=%s',
+      brave: 'https://search.brave.com/search?q=%s',
+      spectra: 'https://spectranews.us/s/new?q=%s&mode=lightning',
+    };
+
+    let settings = { clock24: false, showGreeting: true, searchEngine: 'google', theme: 'light', accent: '#5b7cfa' };
+
+    function applySettings(s) {
+      settings = { ...settings, ...s };
+      applyTheme(settings.theme);
+      if (settings.accent) document.documentElement.style.setProperty('--accent', settings.accent);
+      greeting.style.display = settings.showGreeting ? '' : 'none';
+      tick();
+    }
+
+    function applyTheme(theme) {
+      const dark = theme === 'dark' ||
+        (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', dark);
+    }
+
+    // theme + settings pushed live from the browser
+    if (window.breezeInternal) {
+      breezeInternal.getSettings().then(applySettings);
+      breezeInternal.onSettings(applySettings);
+      breezeInternal.onTheme(applyTheme);
+    }
+
+    function tick() {
+      const d = new Date();
+      const h = d.getHours();
+      const m = String(d.getMinutes()).padStart(2, '0');
+      clock.textContent = settings.clock24
+        ? `${String(h).padStart(2, '0')}:${m}`
+        : `${h % 12 || 12}:${m}`;
+      greeting.textContent =
+        h < 5 ? 'Up late.' :
+        h < 12 ? 'Good morning.' :
+        h < 17 ? 'Good afternoon.' :
+        'Good evening.';
+    }
+    tick();
+    setInterval(tick, 1000);
+
+    const input = document.getElementById('q');
+    const sugEl = document.getElementById('sug');
+
+    function go(q) {
+      if (!q) return;
+      const isURL = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(q) ||
+        (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' '));
+      location.href = isURL
+        ? (q.includes('://') ? q : 'https://' + q)
+        : (ENGINES[settings.searchEngine] || ENGINES.google).replace('%s', encodeURIComponent(q));
+    }
+
+    // ----- smart suggestions (history + bookmarks + live web) -----
+    let items = [];
+    let idx = -1;
+    let timer = null;
+    let seq = 0;
+
+    function hideSug() {
+      sugEl.classList.remove('show');
+      items = [];
+      idx = -1;
+    }
+
+    function renderSug() {
+      sugEl.textContent = '';
+      if (!items.length) { hideSug(); return; }
+      items.forEach((item, i) => {
+        const el = document.createElement('div');
+        el.className = 'sug-item' + (i === idx ? ' selected' : '');
+        const ic = document.createElement('span');
+        ic.className = 'ic';
+        ic.textContent = item.kind === 'tab' ? '⇄' : item.kind === 'history' ? '◷' : item.kind === 'bookmark' ? '☆' : '⌕';
+        const lb = document.createElement('span');
+        lb.className = 'lb';
+        lb.textContent = item.label;
+        el.append(ic, lb);
+        if (item.sub) {
+          const sb = document.createElement('span');
+          sb.className = 'sb';
+          sb.textContent = item.sub;
+          el.appendChild(sb);
+        }
+        el.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          accept(item);
+        });
+        sugEl.appendChild(el);
+      });
+      sugEl.classList.add('show');
+    }
+
+    function accept(item) {
+      hideSug();
+      if (item.kind === 'tab') breezeInternal.switchToTab(item.tabId);
+      else if (item.kind === 'search') go(item.value);
+      else location.href = item.value;
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (!q || !window.breezeInternal) { hideSug(); return; }
+      timer = setTimeout(async () => {
+        const mySeq = ++seq;
+        const r = await breezeInternal.getSuggestions(q);
+        if (mySeq !== seq) return;
+        items = [
+          ...(r.openTabs || []).map((t) => ({ kind: 'tab', label: t.title, sub: 'Switch to tab', value: t.url, tabId: t.id })),
+          ...r.history.map((h) => ({ kind: 'history', label: h.title || h.url, sub: h.url.replace(/^https?:\/\/(www\.)?/, ''), value: h.url })),
+          ...r.bookmarks.map((b) => ({ kind: 'bookmark', label: b.title, sub: b.url.replace(/^https?:\/\/(www\.)?/, ''), value: b.url })),
+          ...r.web.map((w) => ({ kind: 'search', label: w, value: w })),
+        ];
+        idx = -1;
+        renderSug();
+      }, 120);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+        e.preventDefault();
+        const dir = e.key === 'ArrowDown' ? 1 : -1;
+        idx = (idx + dir + items.length + 1) % (items.length + 1);
+        if (idx === items.length) idx = -1;
+        renderSug();
+      }
+      if (e.key === 'Escape') hideSug();
+    });
+
+    input.addEventListener('blur', () => setTimeout(hideSug, 120));
+
+    document.getElementById('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (idx >= 0 && items[idx]) accept(items[idx]);
+      else go(input.value.trim());
+    });
+  </script>
+</body>
+</html>

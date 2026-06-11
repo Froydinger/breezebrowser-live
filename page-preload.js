@@ -42,7 +42,9 @@ window.addEventListener(
   { capture: true }
 );
 
-// Report highlighted text so the AI panel can offer to act on it.
+// Report highlighted text so the AI panel can offer to act on it. We listen
+// only on mouseup/keyup (not selectionchange, which fires on every caret move
+// and pegs the CPU) and bail instantly when nothing is selected.
 let selTimer = null;
 let lastSel = '';
 function reportSelection() {
@@ -55,10 +57,13 @@ function reportSelection() {
     if (s === lastSel) return;
     lastSel = s;
     ipcRenderer.send('page-selection', s.slice(0, 2000));
-  }, 200);
+  }, 250);
 }
-document.addEventListener('selectionchange', reportSelection, { passive: true });
 document.addEventListener('mouseup', reportSelection, { passive: true });
+document.addEventListener('keyup', (e) => {
+  // only when the selection could have changed via keyboard
+  if (e.shiftKey || e.key === 'ArrowLeft' || e.key === 'ArrowRight') reportSelection();
+}, { passive: true });
 
 window.addEventListener(
   'mouseover',

@@ -352,6 +352,16 @@
         </div>
         <div class="row">
           <div>
+            <div class="row-label">Allow website notifications</div>
+            <div class="row-hint">Let sites show native notifications (you can block individual sites below)</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="webNotifications" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
             <div class="row-label">Block ads &amp; trackers</div>
             <div class="row-hint">EasyList + tracking filters, applied to every tab</div>
           </div>
@@ -406,6 +416,7 @@
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
       document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
+      document.getElementById('webNotifications').checked = settings.webNotifications !== false;
       document.querySelectorAll('#urlbar-seg button').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === (settings.urlBarPosition || 'top')));
       document.querySelectorAll('#pinsize-seg button').forEach((b) =>
@@ -439,6 +450,7 @@
     document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
     document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
+    document.getElementById('webNotifications').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.querySelectorAll('#urlbar-seg button').forEach((b) =>
       b.addEventListener('click', () => set('urlBarPosition', b.dataset.v)));
     document.querySelectorAll('#pinsize-seg button').forEach((b) =>

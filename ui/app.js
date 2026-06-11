@@ -66,6 +66,7 @@ function startOnboarding() {
     if (inp) setTimeout(() => inp.focus(), 300);
   };
 
+  breeze.onboardingActive(true); // detach page view so the dialog is visible
   ob.classList.remove('hidden');
   requestAnimationFrame(() => ob.classList.add('visible'));
   show(0);
@@ -85,10 +86,9 @@ function startOnboarding() {
 
   function finishOnboarding() {
     breeze.setSetting('onboarded', true);
+    breeze.onboardingActive(false); // re-attach the page view
     ob.classList.remove('visible');
     setTimeout(() => ob.classList.add('hidden'), 450);
-    // nudge them to try the AI
-    setTimeout(() => breeze.toggleAssistant(), 600);
   }
 }
 

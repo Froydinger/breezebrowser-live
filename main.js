@@ -82,6 +82,7 @@ const DEFAULT_SETTINGS = {
   aiInstructions: '', // standing custom instructions for the AI
   openaiKey: '', // optional, for image generation
   onboarded: false, // first-run setup dialog shown
+  webNotifications: true, // sites may show notifications (browser-wide)
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
   pinSize: 'large', // 'small' | 'medium' | 'large'
   neverSavePasswords: [], // origins the user said "never" for
@@ -193,6 +194,8 @@ function setSidebar(show) {
   win?.webContents.send('sidebar', show);
   setTrafficLights(show);
   animateLayout();
+  if (show) stopEdgePoll();
+  else startEdgePoll(); // only poll the cursor while the sidebar is hidden
 }
 
 function peekSidebar() {
@@ -215,33 +218,47 @@ function endPeek() {
 
 // Edge-hover detection via cursor polling: the DOM strip only covers the
 // 10px chrome ring, so poll the real cursor for a generous hit zone that
-// works across the whole left edge.
+// works across the whole left edge. Only runs WHILE the sidebar is hidden —
+// otherwise a constant timer keeps the CPU awake (fans/battery).
 const { screen } = require('electron');
+let edgePoll = null;
 
-setInterval(() => {
-  if (!win || sidebarVisible || win.isDestroyed() || !win.isFocused()) return;
-  try {
-    const cur = screen.getCursorScreenPoint();
-    const b = win.getBounds();
-    const insideY = cur.y >= b.y && cur.y <= b.y + b.height;
-    if (!sidebarPeek) {
-      if (insideY && cur.x >= b.x && cur.x <= b.x + 12) peekSidebar();
-    } else {
-      // close the peek if the cursor wanders well clear of the open sidebar
-      const out =
-        !insideY ||
-        cur.x < b.x - 40 ||
-        cur.x > b.x + sidebarWidth + 60;
-      if (out) endPeek();
-    }
-  } catch {}
-}, 120);
+function startEdgePoll() {
+  if (edgePoll) return;
+  edgePoll = setInterval(() => {
+    if (!win || sidebarVisible || win.isDestroyed() || !win.isFocused()) return;
+    try {
+      const cur = screen.getCursorScreenPoint();
+      const b = win.getBounds();
+      const insideY = cur.y >= b.y && cur.y <= b.y + b.height;
+      if (!sidebarPeek) {
+        if (insideY && cur.x >= b.x && cur.x <= b.x + 12) peekSidebar();
+      } else {
+        const out =
+          !insideY || cur.x < b.x - 40 || cur.x > b.x + sidebarWidth + 60;
+        if (out) endPeek();
+      }
+    } catch {}
+  }, 200);
+}
+
+function stopEdgePoll() {
+  if (edgePoll) {
+    clearInterval(edgePoll);
+    edgePoll = null;
+  }
+}
 
 function setAssistant(show) {
   assistantVisible = show;
   win?.webContents.send('assistant', show);
   animateLayout();
-  if (show) ensureAI(); // kick off model download/load in the background
+  if (show) {
+    clearTimeout(ai.idleTimer);
+    ensureAI(); // kick off model download/load in the background
+  } else {
+    scheduleAIIdleUnload(); // free the model after the panel's been closed a while
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1484,9 +1501,21 @@ function setupPermissions(ses) {
     'publickey-credentials-get', // WebAuthn / passkeys
     'publickey-credentials-create',
   ]);
-  // synchronous probes (e.g. WebAuthn availability checks)
+  // Notifications: a site calls Notification.permission FIRST (sync check) and
+  // if it sees 'denied' it shows "blocked, enable in settings" and never asks.
+  // So we report notifications as allowed browser-wide by default (toggle in
+  // Settings), unless the site is explicitly blocked. Then native notifications
+  // just work, exactly like a normal browser.
+  function notifAllowed(origin) {
+    const saved = (appSettings.permissions || {})[origin]?.notifications;
+    if (saved !== undefined) return saved;
+    return appSettings.webNotifications !== false;
+  }
+
+  // synchronous probes (e.g. WebAuthn availability checks, Notification.permission)
   ses.setPermissionCheckHandler((_wc, permission, origin) => {
     if (autoAllow.has(permission)) return true;
+    if (permission === 'notifications') return notifAllowed(origin);
     const saved = (appSettings.permissions || {})[origin]?.[permission];
     return saved === true;
   });
@@ -1499,6 +1528,9 @@ function setupPermissions(ses) {
     } catch {
       return callback(false);
     }
+    // notifications follow the browser-wide setting (+ per-site override),
+    // no per-request dialog — matches how Chrome/Safari behave once allowed
+    if (permission === 'notifications') return callback(notifAllowed(origin));
     const saved = (appSettings.permissions || {})[origin]?.[permission];
     if (saved !== undefined) return callback(saved);
     const { response } = await dialog.showMessageBox(win, {
@@ -1747,11 +1779,40 @@ const ai = {
   generating: false,
   session: null,
   context: null,
+  model: null,
+  llama: null,
   sequence: null,
   LlamaChatSession: null,
   abort: null,
   lastCtxUrl: null,
+  idleTimer: null,
 };
+
+// The 3B model holds ~2GB resident and the Metal backend spins the GPU/fans.
+// Unload it after the assistant has been idle/closed for a while; it reloads
+// transparently on next use.
+const AI_IDLE_MS = 4 * 60 * 1000;
+
+function disposeAI() {
+  clearTimeout(ai.idleTimer);
+  if (ai.generating || ai.loading) return;
+  try {
+    ai.session?.dispose();
+    ai.sequence?.dispose();
+    ai.context?.dispose();
+    ai.model?.dispose();
+  } catch {}
+  ai.session = ai.sequence = ai.context = ai.model = null;
+  ai.ready = false;
+  ai.lastCtxUrl = null;
+}
+
+function scheduleAIIdleUnload() {
+  clearTimeout(ai.idleTimer);
+  // only unload while the assistant panel is closed
+  if (assistantVisible) return;
+  ai.idleTimer = setTimeout(disposeAI, AI_IDLE_MS);
+}
 
 function sendAI(status) {
   win?.webContents.send('ai-status', status);
@@ -1777,9 +1838,10 @@ async function ensureAI() {
     });
 
     sendAI({ state: 'loading' });
-    const llama = await getLlama();
-    const model = await llama.loadModel({ modelPath });
-    ai.context = await model.createContext({ contextSize: { max: 8192 } });
+    ai.llama = ai.llama || (await getLlama());
+    ai.model = await ai.llama.loadModel({ modelPath });
+    // smaller context = much less RAM; plenty for page Q&A
+    ai.context = await ai.model.createContext({ contextSize: { max: 4096 } });
     newChat();
     ai.ready = true;
     sendAI({ state: 'ready' });
@@ -2170,12 +2232,17 @@ function createWindow() {
     win = null;
   });
 
+  if (process.env.BREEZE_DEBUG) win.webContents.openDevTools({ mode: 'bottom' });
   win.webContents.once('did-finish-load', () => {
     win.webContents.send('theme', effectiveTheme());
     win.webContents.send('sidebar', sidebarVisible);
+    if (!sidebarVisible) startEdgePoll();
     win.webContents.send('settings', appSettings);
     layout();
-    createTab();
+    // On first run the onboarding overlay (DOM) must be visible — but a native
+    // page view would paint over it. So defer the first tab until onboarding
+    // finishes (see the 'onboarding-active' handler).
+    if (appSettings.onboarded) createTab();
   });
 }
 
@@ -2511,6 +2578,34 @@ ipcMain.on('set-setting', (_e, { key, value }) => {
   if (key in DEFAULT_SETTINGS) applySetting(key, value);
 });
 ipcMain.on('open-settings', () => openSettingsTab());
+
+// Onboarding is a DOM overlay in the chrome, but native page views always
+// paint ABOVE the DOM — so while onboarding shows we must detach the active
+// page view, otherwise it hides the dialog and blanks the sidebar.
+let onboardingActive = false;
+ipcMain.on('onboarding-active', (_e, active) => {
+  onboardingActive = active;
+  if (active) {
+    // hide any existing page view so the onboarding overlay is fully visible
+    const t = tabs.get(activeTabId);
+    if (t?.view) {
+      try {
+        win.contentView.removeChildView(t.view);
+      } catch {}
+    }
+  } else {
+    // onboarding finished — create the first tab now (or re-show the existing)
+    if (tabOrder.length === 0) {
+      createTab();
+    } else {
+      const t = tabs.get(activeTabId);
+      if (t?.view) {
+        win.contentView.addChildView(t.view);
+        applyBounds();
+      }
+    }
+  }
+});
 
 // Omnibox dropdown overlaps the native page view in top-bar mode. Native
 // views always paint above DOM, so we push the active view down by the

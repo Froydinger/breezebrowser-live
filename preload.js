@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('breeze', {
   removeBookmark: (url) => ipcRenderer.send('remove-bookmark', url),
   setTheme: (theme) => ipcRenderer.send('set-theme', theme),
   setSetting: (key, value) => ipcRenderer.send('set-setting', { key, value }),
+  onboardingActive: (active) => ipcRenderer.send('onboarding-active', active),
   openSettings: () => ipcRenderer.send('open-settings'),
   omniboxOverlay: (h) => ipcRenderer.send('omnibox-overlay', h),
   clearTabData: () => ipcRenderer.send('clear-tab-data'),
