@@ -44,7 +44,53 @@ breeze.getInit().then(({ theme, sidebarVisible, settings }) => {
   applyTheme(theme);
   setSidebarVisible(sidebarVisible);
   if (settings) applySettings(settings);
+  if (settings && !settings.onboarded) startOnboarding();
 });
+
+// ---------------------------------------------------------------------------
+// First-run onboarding
+// ---------------------------------------------------------------------------
+
+function startOnboarding() {
+  const ob = $('#onboard');
+  const steps = [...ob.querySelectorAll('.onboard-step')];
+  const dotsWrap = ob.querySelector('.onboard-dots');
+  dotsWrap.innerHTML = steps.map(() => '<span class="dot"></span>').join('');
+  const dots = [...dotsWrap.children];
+  let i = 0;
+
+  const show = (n) => {
+    steps.forEach((s, idx) => (s.hidden = idx !== n));
+    dots.forEach((d, idx) => d.classList.toggle('on', idx === n));
+    const inp = steps[n].querySelector('input');
+    if (inp) setTimeout(() => inp.focus(), 300);
+  };
+
+  ob.classList.remove('hidden');
+  requestAnimationFrame(() => ob.classList.add('visible'));
+  show(0);
+
+  ob.querySelectorAll('.onboard-next').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      if (btn.id === 'onboard-finish') {
+        const name = $('#onboard-name').value.trim();
+        if (name) breeze.setSetting('userName', name);
+        finishOnboarding();
+        return;
+      }
+      i = Math.min(steps.length - 1, i + 1);
+      show(i);
+    })
+  );
+
+  function finishOnboarding() {
+    breeze.setSetting('onboarded', true);
+    ob.classList.remove('visible');
+    setTimeout(() => ob.classList.add('hidden'), 450);
+    // nudge them to try the AI
+    setTimeout(() => breeze.toggleAssistant(), 600);
+  }
+}
 
 function applySettings(s) {
   if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
@@ -774,6 +820,18 @@ function addMsg(cls, text) {
   return el;
 }
 
+// inline tool chip ("Searched the web", "Reading …", etc.)
+function addToolChip(label) {
+  aiEmpty.style.display = 'none';
+  const el = document.createElement('div');
+  el.className = 'ai-tool-chip';
+  el.textContent = label;
+  aiMessages.appendChild(el);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+}
+
+let activeSelection = ''; // page text the user highlighted while panel is open
+
 function sendAI() {
   const text = aiInput.value.trim();
   if (!text || aiGenerating) return;
@@ -784,7 +842,14 @@ function sendAI() {
   aiGenerating = true;
   aiSend.classList.add('stop');
   aiSend.title = 'Stop';
-  breeze.aiAsk(text, aiWebEnabled);
+  breeze.aiAsk({
+    text,
+    useWeb: aiWebEnabled,
+    useImage: aiImageEnabled,
+    selection: activeSelection,
+  });
+  clearSelectionChip();
+  if (aiImageEnabled) toggleImageMode(); // one-shot
 }
 
 // optional web lookup — the AI cross-references live sources when enabled
@@ -793,10 +858,64 @@ const aiWebToggle = $('#ai-web-toggle');
 aiWebToggle.addEventListener('click', () => {
   aiWebEnabled = !aiWebEnabled;
   aiWebToggle.classList.toggle('on', aiWebEnabled);
-  aiInput.placeholder = aiWebEnabled
+  updateAIPlaceholder();
+  aiInput.focus();
+});
+
+// image generation mode (OpenAI)
+let aiImageEnabled = false;
+const aiImageToggle = $('#ai-image-toggle');
+function toggleImageMode() {
+  aiImageEnabled = !aiImageEnabled;
+  aiImageToggle.classList.toggle('on', aiImageEnabled);
+  updateAIPlaceholder();
+}
+aiImageToggle.addEventListener('click', () => {
+  toggleImageMode();
+  aiInput.focus();
+});
+
+function updateAIPlaceholder() {
+  aiInput.placeholder = aiImageEnabled
+    ? 'Describe an image to generate…'
+    : aiWebEnabled
     ? 'Ask with web sources…'
     : 'Ask about this page…';
-  aiInput.focus();
+}
+
+// active selection chip
+const selChip = $('#ai-selection-chip');
+function clearSelectionChip() {
+  activeSelection = '';
+  selChip.classList.remove('show');
+}
+breeze.onPageSelection((text) => {
+  if (!assistant.classList.contains('open')) return; // only when panel open
+  activeSelection = text || '';
+  if (activeSelection) {
+    selChip.querySelector('.sel-text').textContent = activeSelection;
+    selChip.classList.add('show');
+  } else {
+    selChip.classList.remove('show');
+  }
+});
+$('#sel-clear').addEventListener('click', clearSelectionChip);
+$('#sel-search').addEventListener('click', () => {
+  if (activeSelection) breeze.navigate(activeSelection);
+});
+
+breeze.onAITool((t) => addToolChip(t.label));
+breeze.onAIImage((src) => {
+  if (currentAIMsg && !currentAIMsg.textContent) currentAIMsg.remove();
+  currentAIMsg = null;
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ai ai-image-msg';
+  const img = document.createElement('img');
+  img.src = src;
+  img.addEventListener('click', () => breeze.openURLNewTab(src));
+  wrap.appendChild(img);
+  aiMessages.appendChild(wrap);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
 });
 
 aiSend.addEventListener('click', () => {
@@ -856,6 +975,9 @@ breeze.onAIStatus((s) => {
       break;
     case 'searching':
       aiStatusbar.textContent = 'Searching the web…';
+      break;
+    case 'generating-image':
+      aiStatusbar.textContent = 'Painting your image…';
       break;
     case 'generating':
       aiStatusbar.textContent = 'Thinking…';

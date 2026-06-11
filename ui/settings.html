@@ -311,6 +311,36 @@
     </section>
 
     <section>
+      <h2>Breeze AI</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Your name</div>
+            <div class="row-hint">So the assistant can address you</div>
+          </div>
+          <input id="userName" type="text" placeholder="Optional" maxlength="40"
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:160px" />
+        </div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="row-label">Custom instructions &amp; personality</div>
+            <div class="row-hint">Tell the AI how to behave, what you like, tone, etc.</div>
+          </div>
+          <textarea id="aiInstructions" rows="3" placeholder="e.g. Be concise and a little sarcastic. I'm a designer. Always give code in TypeScript."
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:10px;padding:10px 12px;outline:none;resize:vertical;width:100%"></textarea>
+        </div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="row-label">OpenAI API key — image generation</div>
+            <div class="row-hint">Stored locally on this device only. Lets the AI generate images. Get one at platform.openai.com</div>
+          </div>
+          <input id="openaiKey" type="password" placeholder="sk-…"
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%" />
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>Privacy</h2>
       <div class="card">
         <div class="row" id="passwords-row" style="cursor:pointer">
@@ -382,6 +412,12 @@
         b.classList.toggle('on', b.dataset.v === (settings.pinSize || 'large')));
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
+      // AI fields: don't clobber while the user is actively typing in them
+      const ae = document.activeElement;
+      const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
+      set2('userName', settings.userName);
+      set2('aiInstructions', settings.aiInstructions);
+      set2('openaiKey', settings.openaiKey);
       renderPerms();
     }
 
@@ -410,6 +446,16 @@
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
+
+    // AI text fields — debounced save so we don't spam on every keystroke
+    let aiSaveTimer = null;
+    ['userName', 'aiInstructions', 'openaiKey'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', (e) => {
+        clearTimeout(aiSaveTimer);
+        const key = id, val = e.target.value;
+        aiSaveTimer = setTimeout(() => { settings[key] = val; breezeInternal.setSetting(key, val); }, 400);
+      });
+    });
 
     // ----- site permissions manager -----
     const PERM_NAMES = {

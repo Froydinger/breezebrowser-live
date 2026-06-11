@@ -1380,3 +1380,216 @@ body.page-loading #loadbar { opacity: 1; }
 html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
 #adblock-pop strong { color: var(--accent); }
 #adblock-pop.show { opacity: 1; transform: none; }
+
+/* ================================================================== */
+/* v2.0 — glass/glow polish, AI tools, onboarding                     */
+/* ================================================================== */
+
+/* AI image toggle (matches the web toggle) */
+#ai-image-toggle {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-soft);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+#ai-image-toggle svg { width: 15px; height: 15px; }
+#ai-image-toggle:hover { background: var(--surface-hover); color: var(--text); }
+#ai-image-toggle.on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+/* inline tool chips in the chat */
+.ai-tool-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 99px;
+  padding: 4px 11px;
+  animation: rise-msg 0.25s var(--ease);
+}
+.ai-tool-chip::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* generated image bubble */
+.ai-image-msg { padding: 6px !important; }
+.ai-image-msg img {
+  width: 100%;
+  border-radius: 12px;
+  display: block;
+  cursor: zoom-in;
+  transition: transform 0.2s var(--ease);
+}
+.ai-image-msg img:hover { transform: scale(1.01); }
+
+/* active page-selection chip above the input */
+#ai-selection-chip {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  animation: rise-msg 0.2s var(--ease);
+}
+#ai-selection-chip.show { display: flex; }
+#ai-selection-chip svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+#ai-selection-chip .sel-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#ai-selection-chip button {
+  border: none; background: transparent; cursor: pointer;
+  color: var(--text-soft); display: grid; place-items: center;
+  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+  transition: background 0.13s, color 0.13s;
+}
+#ai-selection-chip button:hover { background: var(--surface-hover); color: var(--accent); }
+#ai-selection-chip button svg { width: 13px; height: 13px; }
+
+/* richer glow on the assistant panel */
+#assistant.open::before {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 0 60px -20px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* send button glow */
+#ai-send {
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Onboarding                                                          */
+/* ------------------------------------------------------------------ */
+
+#onboard {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2);
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+  -webkit-app-region: no-drag;
+}
+#onboard.hidden { display: none; }
+#onboard.visible { opacity: 1; }
+
+.onboard-glow {
+  position: absolute;
+  width: 600px; height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent), transparent 60%);
+  filter: blur(40px);
+  animation: onboard-float 8s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes onboard-float {
+  from { transform: translate(-60px, -40px) scale(1); }
+  to   { transform: translate(60px, 50px) scale(1.15); }
+}
+
+#onboard-card {
+  position: relative;
+  width: min(440px, 90vw);
+  padding: 40px 38px 30px;
+  border-radius: 26px;
+  text-align: center;
+  background: color-mix(in srgb, var(--surface-active) 92%, transparent);
+  backdrop-filter: blur(30px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 0 80px -30px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: onboard-pop 0.5s var(--ease);
+}
+html.dark #onboard-card { border-color: rgba(255,255,255,0.12); }
+
+@keyframes onboard-pop {
+  from { opacity: 0; transform: translateY(20px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+.onboard-step { animation: rise-msg 0.35s var(--ease); }
+.onboard-logo {
+  width: 76px; height: 76px; margin-bottom: 18px;
+  filter: drop-shadow(0 10px 30px color-mix(in srgb, var(--accent) 50%, transparent));
+  animation: orb-float 4s ease-in-out infinite;
+}
+.onboard-icon {
+  font-size: 40px; margin-bottom: 14px;
+  filter: drop-shadow(0 6px 20px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+#onboard h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.6px; margin-bottom: 12px; }
+#onboard h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
+#onboard p { font-size: 14.5px; line-height: 1.6; color: var(--text-soft); margin-bottom: 22px; }
+#onboard p b { color: var(--text); font-weight: 600; }
+#onboard kbd {
+  font-family: inherit; font-size: 0.92em; font-weight: 600;
+  background: var(--surface); color: var(--text);
+  padding: 1px 6px; border-radius: 5px;
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
+}
+.onboard-list {
+  list-style: none; text-align: left; margin: 0 auto 22px; max-width: 320px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.onboard-list li { font-size: 13.5px; line-height: 1.5; color: var(--text-soft); }
+.onboard-list li b { color: var(--text); }
+#onboard-name {
+  width: 100%; height: 46px; border: none; outline: none;
+  border-radius: 13px; padding: 0 16px; font-size: 15px; font-family: inherit;
+  color: var(--text); background: var(--surface);
+  margin-bottom: 16px; text-align: center;
+  transition: box-shadow 0.2s var(--ease);
+}
+#onboard-name:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+.onboard-fine { font-size: 12px !important; opacity: 0.8; }
+
+.onboard-next.primary {
+  border: none; cursor: pointer;
+  font-family: inherit; font-size: 15px; font-weight: 600;
+  color: #fff; background: var(--accent);
+  padding: 13px 28px; border-radius: 13px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: transform 0.12s var(--ease), filter 0.15s;
+}
+.onboard-next.primary:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.onboard-next.primary:active { transform: scale(0.97); }
+
+.onboard-dots { display: flex; gap: 7px; justify-content: center; margin-top: 24px; }
+.onboard-dots .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-soft); opacity: 0.3;
+  transition: all 0.25s var(--ease);
+}
+.onboard-dots .dot.on { opacity: 1; width: 22px; border-radius: 4px; background: var(--accent); }

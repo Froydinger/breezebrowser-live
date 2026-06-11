@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('breeze', {
   toggleBookmark: () => ipcRenderer.send('toggle-bookmark'),
   removeBookmark: (url) => ipcRenderer.send('remove-bookmark', url),
   setTheme: (theme) => ipcRenderer.send('set-theme', theme),
+  setSetting: (key, value) => ipcRenderer.send('set-setting', { key, value }),
   openSettings: () => ipcRenderer.send('open-settings'),
   omniboxOverlay: (h) => ipcRenderer.send('omnibox-overlay', h),
   clearTabData: () => ipcRenderer.send('clear-tab-data'),
@@ -46,7 +47,7 @@ contextBridge.exposeInMainWorld('breeze', {
   getInit: () => ipcRenderer.invoke('get-init'),
   getSuggestions: (q) => ipcRenderer.invoke('get-suggestions', q),
 
-  aiAsk: (text, useWeb) => ipcRenderer.send('ai-ask', { text, useWeb }),
+  aiAsk: (opts) => ipcRenderer.send('ai-ask', opts),
   aiStop: () => ipcRenderer.send('ai-stop'),
   aiNewChat: () => ipcRenderer.send('ai-new-chat'),
 
@@ -61,4 +62,7 @@ contextBridge.exposeInMainWorld('breeze', {
   onAIChunk: (cb) => ipcRenderer.on('ai-chunk', (_e, c) => cb(c)),
   onAIDone: (cb) => ipcRenderer.on('ai-done', () => cb()),
   onAICleared: (cb) => ipcRenderer.on('ai-cleared', () => cb()),
+  onAITool: (cb) => ipcRenderer.on('ai-tool', (_e, t) => cb(t)),
+  onAIImage: (cb) => ipcRenderer.on('ai-image', (_e, src) => cb(src)),
+  onPageSelection: (cb) => ipcRenderer.on('page-selection', (_e, t) => cb(t)),
 });

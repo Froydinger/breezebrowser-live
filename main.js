@@ -9,6 +9,7 @@ const {
   dialog,
   clipboard,
   shell,
+  Notification,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -77,6 +78,10 @@ const DEFAULT_SETTINGS = {
   autoPip: true,
   pinSize: 'large', // 'small' | 'medium' | 'large'
   neverSavePasswords: [], // origins the user declined to save for
+  userName: '', // given to the AI
+  aiInstructions: '', // standing custom instructions for the AI
+  openaiKey: '', // optional, for image generation
+  onboarded: false, // first-run setup dialog shown
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
   pinSize: 'large', // 'small' | 'medium' | 'large'
   neverSavePasswords: [], // origins the user said "never" for
@@ -1346,6 +1351,14 @@ function preconnect(url) {
 }
 
 ipcMain.on('link-hover', (_e, url) => preconnect(url));
+// relay page text selections to the chrome (AI panel uses them when open)
+ipcMain.on('page-selection', (e, text) => {
+  // only the active tab's selection matters
+  const t = tabs.get(activeTabId);
+  if (t?.view && t.view.webContents.id === e.sender.id) {
+    win?.webContents.send('page-selection', text);
+  }
+});
 
 // warm the search engine + most-visited origins right after launch
 function warmConnections() {
@@ -1778,6 +1791,23 @@ async function ensureAI() {
   return ai.ready;
 }
 
+function buildSystemPrompt() {
+  const name = (appSettings.userName || '').trim();
+  const custom = (appSettings.aiInstructions || '').trim();
+  let p =
+    "You are Breeze AI — the assistant baked into the Breeze browser. You're " +
+    'witty, warm, and a little cheeky, but never at the expense of being genuinely ' +
+    'useful. Think clever best friend who happens to know everything: you crack the ' +
+    'occasional dry joke, you have opinions, and you keep it real. Be conversational ' +
+    'and give answers room to breathe — a few helpful sentences, not a terse one-liner ' +
+    "— but don't ramble or pad. When page content or web results are provided, ground " +
+    'your answer in them and cite URLs when you use web sources. Everything you do runs ' +
+    "locally on the user's Mac, and you're quietly proud of that — their data never leaves.";
+  if (name) p += `\n\nThe user's name is ${name}. Address them by name occasionally, naturally.`;
+  if (custom) p += `\n\nThe user gave you these standing instructions — follow them: ${custom}`;
+  return p;
+}
+
 function newChat() {
   try {
     ai.session?.dispose();
@@ -1786,9 +1816,7 @@ function newChat() {
   ai.sequence = ai.context.getSequence();
   ai.session = new ai.LlamaChatSession({
     contextSequence: ai.sequence,
-    systemPrompt:
-      'You are Breeze, a helpful assistant built into a web browser. ' +
-      'Answer concisely. When page content is provided, ground your answers in it.',
+    systemPrompt: buildSystemPrompt(),
   });
   ai.lastCtxUrl = null;
 }
@@ -1840,16 +1868,129 @@ async function getPageContext() {
   }
 }
 
-ipcMain.on('ai-ask', async (_e, { text, useWeb }) => {
+// --- AI tools: reminders + OpenAI image generation -----------------------
+
+// Parse natural-language reminders: "remind me in 10 minutes to call mom",
+// "remind me to stretch in 2 hours". Returns { ms, label } or null.
+function parseReminder(text) {
+  const m = text.match(/\bremind\s+me\b/i);
+  if (!m) return null;
+  const t = text.match(/\bin\s+(\d+)\s*(sec|second|min|minute|hour|hr|day)s?\b/i);
+  if (!t) return null;
+  const n = parseInt(t[1], 10);
+  const unit = t[2].toLowerCase();
+  const mult = unit.startsWith('sec')
+    ? 1000
+    : unit.startsWith('min')
+    ? 60000
+    : unit.startsWith('hour') || unit === 'hr'
+    ? 3600000
+    : 86400000;
+  let label = text
+    .replace(/\bremind\s+me\s*(to\s+)?/i, '')
+    .replace(/\bin\s+\d+\s*(sec|second|min|minute|hour|hr|day)s?\b/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!label) label = 'Reminder';
+  return { ms: n * mult, label, human: `${n} ${unit}${n > 1 ? 's' : ''}` };
+}
+
+function scheduleReminder(label, ms) {
+  setTimeout(() => {
+    try {
+      const n = new Notification({
+        title: 'Breeze reminder',
+        body: label,
+        silent: false,
+      });
+      n.on('click', () => {
+        win?.show();
+        win?.focus();
+      });
+      n.show();
+    } catch {}
+  }, ms);
+}
+
+async function openaiImage(prompt) {
+  const key = (appSettings.openaiKey || '').trim();
+  if (!key) return { error: 'no-key' };
+  try {
+    const res = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt,
+        n: 1,
+        size: '1024x1024',
+      }),
+    });
+    const data = await res.json();
+    if (data.error) return { error: data.error.message || 'OpenAI error' };
+    const d = data.data && data.data[0];
+    if (d?.b64_json) return { dataUrl: `data:image/png;base64,${d.b64_json}` };
+    if (d?.url) return { url: d.url };
+    return { error: 'No image returned' };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
   if (ai.generating) return;
+
+  // --- Reminder shortcut: handle locally, no model needed ---
+  const reminder = parseReminder(text);
+  if (reminder) {
+    scheduleReminder(reminder.label, reminder.ms);
+    win?.webContents.send('ai-tool', { kind: 'reminder', label: `Reminder set for ${reminder.human}` });
+    win?.webContents.send(
+      'ai-chunk',
+      `Done — I'll remind you in ${reminder.human}: "${reminder.label}". 🔔`
+    );
+    win?.webContents.send('ai-done');
+    return;
+  }
+
+  // --- Image generation ---
+  if (useImage) {
+    win?.webContents.send('ai-tool', { kind: 'image', label: 'Generating image…' });
+    sendAI({ state: 'generating-image' });
+    const img = await openaiImage(text);
+    if (img.error === 'no-key') {
+      win?.webContents.send(
+        'ai-chunk',
+        'Add your OpenAI API key in Settings → AI to generate images. 🔑'
+      );
+    } else if (img.error) {
+      win?.webContents.send('ai-chunk', `Image generation failed: ${img.error}`);
+    } else {
+      win?.webContents.send('ai-image', img.dataUrl || img.url);
+    }
+    win?.webContents.send('ai-done');
+    sendAI({ state: 'ready' });
+    return;
+  }
+
   if (!(await ensureAI())) return;
   ai.generating = true;
 
   let prompt = text;
 
+  // selected page text the user highlighted — make it the focus
+  if (selection && selection.trim()) {
+    win?.webContents.send('ai-tool', { kind: 'selection', label: 'Using your selected text' });
+    prompt = `[The user highlighted this text on the page]\n"${selection.trim().slice(0, 2000)}"\n\n${prompt}`;
+  }
+
   // optional: cross-reference with live web results
   if (useWeb) {
     sendAI({ state: 'searching' });
+    win?.webContents.send('ai-tool', { kind: 'web', label: 'Searched the web' });
     const sources = await tavilySearch(text);
     if (sources) {
       prompt =
@@ -1863,6 +2004,7 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb }) => {
   {
     const ctx = await getPageContext();
     if (ctx && ctx.url !== ai.lastCtxUrl) {
+      win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
       prompt =
         `[Current page: "${ctx.title}" — ${ctx.url}]\n` +
         `[Page content]\n${ctx.text}\n[End page content]\n\n${prompt}`;
@@ -1874,9 +2016,10 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb }) => {
   try {
     await ai.session.prompt(prompt, {
       signal: ai.abort.signal,
-      // bounded + penalized generation: small local models loop without this
-      maxTokens: 1024,
-      temperature: 0.7,
+      // bounded + penalized generation: small local models loop without this.
+      // Roomier cap so answers aren't cut short, still safe from runaways.
+      maxTokens: 1700,
+      temperature: 0.75,
       topP: 0.9,
       repeatPenalty: {
         penalty: 1.18,
@@ -2426,8 +2569,64 @@ ipcMain.on('make-default-browser', () => {
 // App lifecycle
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Crash-safe storage: a "clean exit" marker lets us detect an unclean
+// shutdown (crash / force-kill) on the next launch and silently rebuild the
+// volatile caches that Chromium can leave half-written — WITHOUT touching
+// cookies, IndexedDB data, or the user's logins. Users never see a problem.
+// ---------------------------------------------------------------------------
+
+const cleanExitMarker = () => path.join(app.getPath('userData'), '.clean-exit');
+
+function healStorageIfUnclean() {
+  let unclean = false;
+  try {
+    unclean = !fs.existsSync(cleanExitMarker());
+  } catch {
+    unclean = true;
+  }
+  if (unclean) {
+    // only the disposable caches — these always rebuild, no data loss
+    const dir = app.getPath('userData');
+    for (const sub of [
+      'Service Worker',
+      'GPUCache',
+      'Code Cache',
+      'DawnCache',
+      'DawnGraphiteCache',
+      'DawnWebGPUCache',
+      'blob_storage',
+      'Shared Dictionary',
+    ]) {
+      try {
+        fs.rmSync(path.join(dir, sub), { recursive: true, force: true });
+      } catch {}
+    }
+  }
+  // mark "running / dirty" until we exit cleanly
+  try {
+    fs.rmSync(cleanExitMarker(), { force: true });
+  } catch {}
+}
+
+let didCleanShutdown = false;
+function markCleanExit() {
+  if (didCleanShutdown) return;
+  didCleanShutdown = true;
+  try {
+    // force pending storage to disk so nothing is left half-written
+    session.defaultSession.flushStorageData();
+    session.defaultSession.cookies.flushStore().catch(() => {});
+    if (incogSes) incogSes.flushStorageData();
+  } catch {}
+  try {
+    fs.writeFileSync(cleanExitMarker(), String(Date.now()));
+  } catch {}
+}
+
 app.whenReady().then(async () => {
   appSettings = { ...DEFAULT_SETTINGS, ...loadSettings() };
+  healStorageIfUnclean();
   loadHistory();
   loadVault();
   loadDownloads();
@@ -2467,4 +2666,11 @@ app.on('before-quit', () => {
       )
     );
   } catch {}
+  // flush storage + drop the clean-exit marker so the next launch knows we
+  // shut down properly (⌘Q, menu quit, window close — all routed here)
+  markCleanExit();
 });
+
+// belt-and-suspenders: also flush on hard process signals
+app.on('will-quit', markCleanExit);
+process.on('exit', markCleanExit);

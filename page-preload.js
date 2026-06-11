@@ -42,6 +42,24 @@ window.addEventListener(
   { capture: true }
 );
 
+// Report highlighted text so the AI panel can offer to act on it.
+let selTimer = null;
+let lastSel = '';
+function reportSelection() {
+  clearTimeout(selTimer);
+  selTimer = setTimeout(() => {
+    let s = '';
+    try {
+      s = String(window.getSelection() || '').trim();
+    } catch {}
+    if (s === lastSel) return;
+    lastSel = s;
+    ipcRenderer.send('page-selection', s.slice(0, 2000));
+  }, 200);
+}
+document.addEventListener('selectionchange', reportSelection, { passive: true });
+document.addEventListener('mouseup', reportSelection, { passive: true });
+
 window.addEventListener(
   'mouseover',
   (e) => {
