@@ -80,6 +80,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
+let omniboxOffset = 0; // extra top push while the omnibox dropdown is open
 
 let appSettings = { ...DEFAULT_SETTINGS };
 
@@ -120,7 +121,8 @@ function saveSettings(patch) {
 
 function contentBounds(left, right) {
   const [w, h] = win.getContentSize();
-  const top = appSettings.urlBarPosition === 'top' ? TOPBAR_HEIGHT : 0;
+  const top =
+    (appSettings.urlBarPosition === 'top' ? TOPBAR_HEIGHT : 0) + omniboxOffset;
   return {
     x: Math.round(left) + CONTENT_PAD,
     y: CONTENT_PAD + top,
@@ -1891,19 +1893,33 @@ function setupAutoUpdate() {
 // Window + menu
 // ---------------------------------------------------------------------------
 
+// 'system' follows the OS; otherwise the explicit choice. The renderer always
+// receives a concrete 'light'/'dark' (the effective theme).
+function effectiveTheme() {
+  const t = appSettings.theme || 'light';
+  if (t === 'system') return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  return t;
+}
+
 function applyTheme(theme) {
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = theme === 'system' ? 'system' : theme;
+  const eff = effectiveTheme();
   if (win) {
-    win.setBackgroundColor(theme === 'dark' ? '#16161a' : '#f2f0ed');
-    win.webContents.send('theme', theme);
+    win.setBackgroundColor(eff === 'dark' ? '#16161a' : '#f2f0ed');
+    win.webContents.send('theme', eff);
   }
   // internal pages (new tab, settings) follow instantly via their preload
   for (const { view } of tabs.values()) {
     if (view && view.webContents.getURL().startsWith('file://')) {
-      view.webContents.send('theme', theme);
+      view.webContents.send('theme', eff);
     }
   }
 }
+
+// when in System mode, re-broadcast as the OS flips light/dark
+nativeTheme.on('updated', () => {
+  if (appSettings.theme === 'system') applyTheme('system');
+});
 
 function applySetting(key, value) {
   appSettings[key] = value;
@@ -1932,8 +1948,8 @@ function createWindow() {
   pins = Array.isArray(settings.pins) ? settings.pins : [];
   loadGroups(settings);
   sidebarWidth = Math.min(420, Math.max(220, appSettings.sidebarWidth || 280));
-  const theme = appSettings.theme;
-  nativeTheme.themeSource = theme;
+  nativeTheme.themeSource = appSettings.theme === 'system' ? 'system' : appSettings.theme;
+  const theme = effectiveTheme();
 
   win = new BrowserWindow({
     width: 1280,
@@ -1962,7 +1978,7 @@ function createWindow() {
   });
 
   win.webContents.once('did-finish-load', () => {
-    win.webContents.send('theme', theme);
+    win.webContents.send('theme', effectiveTheme());
     win.webContents.send('sidebar', sidebarVisible);
     win.webContents.send('settings', appSettings);
     layout();
@@ -2188,7 +2204,7 @@ ipcMain.on('install-update', () => {
   autoUpdater.quitAndInstall();
 });
 ipcMain.handle('get-init', () => ({
-  theme: nativeTheme.themeSource === 'dark' ? 'dark' : 'light',
+  theme: effectiveTheme(),
   sidebarVisible,
   settings: appSettings,
 }));
@@ -2302,6 +2318,28 @@ ipcMain.on('set-setting', (_e, { key, value }) => {
   if (key in DEFAULT_SETTINGS) applySetting(key, value);
 });
 ipcMain.on('open-settings', () => openSettingsTab());
+
+// Omnibox dropdown overlaps the native page view in top-bar mode. Native
+// views always paint above DOM, so we push the active view down by the
+// dropdown's height while it's open (only matters in top mode).
+ipcMain.on('omnibox-overlay', (_e, h) => {
+  const next = Math.max(0, Math.min(440, Math.round(h)));
+  if (next === omniboxOffset) return;
+  omniboxOffset = next;
+  applyBounds();
+});
+
+// per-tab clear cache + storage, then hard reload (URL-bar button)
+ipcMain.on('clear-tab-data', async () => {
+  const wc = activeWC();
+  if (!wc) return;
+  try {
+    const origin = new URL(wc.getURL()).origin;
+    await wc.session.clearStorageData({ origin });
+    await wc.session.clearCache();
+    wc.reloadIgnoringCache();
+  } catch {}
+});
 
 // per-site permission management (Settings → Privacy)
 ipcMain.on('set-site-permission', (_e, { origin, permission, value }) => {

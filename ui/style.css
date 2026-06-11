@@ -64,10 +64,16 @@ html, body {
 }
 
 #drag-strip {
-  height: 36px;
+  height: 40px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
   -webkit-app-region: drag;
 }
+
+.tl-pad { width: 58px; flex-shrink: 0; } /* clears macOS traffic lights */
+.drag-fill { flex: 1; }
 
 #nav-row {
   display: flex;
@@ -75,6 +81,8 @@ html, body {
   margin-bottom: 10px;
   -webkit-app-region: drag;
 }
+
+body.urlbar-top #nav-row { display: none; }
 
 .nav-btn {
   -webkit-app-region: no-drag;
@@ -394,7 +402,7 @@ body.sidebar-hidden #edge-handle { display: block; }
 /* Bookmark button + bookmarks list                                    */
 /* ------------------------------------------------------------------ */
 
-#btn-bookmark {
+#btn-bookmark, #btn-clearcache {
   width: 24px;
   height: 24px;
   border: none;
@@ -408,8 +416,9 @@ body.sidebar-hidden #edge-handle { display: block; }
   transition: color 0.15s var(--ease), background 0.15s var(--ease), transform 0.15s var(--ease);
 }
 
-#btn-bookmark svg { width: 14px; height: 14px; }
-#btn-bookmark:hover { background: var(--surface-hover); color: var(--text); }
+#btn-bookmark svg, #btn-clearcache svg { width: 14px; height: 14px; }
+#btn-bookmark:hover, #btn-clearcache:hover { background: var(--surface-hover); color: var(--text); }
+#btn-clearcache.pop { animation: bump 0.3s var(--ease); color: var(--accent); }
 #btn-bookmark.active { color: var(--accent); }
 #btn-bookmark.active svg path { fill: var(--accent); stroke: var(--accent); }
 #btn-bookmark.pop { animation: bump 0.3s var(--ease); }
@@ -1035,17 +1044,12 @@ button, input, textarea, select, label,
 /* Brand mark in sidebar                                               */
 /* ------------------------------------------------------------------ */
 
-#drag-strip {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 2px;
-}
-
 #drag-strip img {
   width: 22px;
   height: 22px;
   opacity: 0.9;
+  margin-left: 3px;
+  flex-shrink: 0;
 }
 
 .ai-empty-logo {
@@ -1320,3 +1324,34 @@ body.page-loading #loadbar { opacity: 1; }
   height: 30px;
   border-radius: 50%;
 }
+
+/* ------------------------------------------------------------------ */
+/* Adblock popover                                                     */
+/* ------------------------------------------------------------------ */
+
+#adblock-pill { position: relative; cursor: pointer; }
+
+#adblock-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  white-space: nowrap;
+  background: var(--surface-active);
+  backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 14px 36px rgba(0,0,0,0.16);
+  border-radius: 11px;
+  padding: 9px 13px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0;
+  transform: translateY(6px) scale(0.96);
+  transform-origin: bottom left;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+  z-index: 30;
+}
+
+html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
+#adblock-pop strong { color: var(--accent); }
+#adblock-pop.show { opacity: 1; transform: none; }

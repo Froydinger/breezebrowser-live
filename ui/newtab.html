@@ -228,7 +228,9 @@
     }
 
     function applyTheme(theme) {
-      document.documentElement.classList.toggle('dark', theme === 'dark');
+      const dark = theme === 'dark' ||
+        (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', dark);
     }
 
     // theme + settings pushed live from the browser

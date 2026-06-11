@@ -203,6 +203,7 @@
           <div class="seg" id="theme-seg">
             <button data-v="light">Light</button>
             <button data-v="dark">Dark</button>
+            <button data-v="system" title="Follow macOS appearance">◷ System</button>
           </div>
         </div>
         <div class="row">
@@ -362,12 +363,13 @@
 
   <script>
     let settings = {};
+    let effective = 'light'; // resolved light/dark from main (handles System)
 
     function render() {
-      document.documentElement.classList.toggle('dark', settings.theme === 'dark');
+      document.documentElement.classList.toggle('dark', effective === 'dark');
       if (settings.accent) document.documentElement.style.setProperty('--accent', settings.accent);
       document.querySelectorAll('#theme-seg button').forEach((b) =>
-        b.classList.toggle('on', b.dataset.v === settings.theme));
+        b.classList.toggle('on', b.dataset.v === (settings.theme || 'light')));
       document.querySelectorAll('.swatch').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === settings.accent));
       document.getElementById('clock24').checked = !!settings.clock24;
@@ -389,9 +391,9 @@
       render();
     }
 
-    breezeInternal.getSettings().then((s) => { settings = s; render(); });
+    breezeInternal.getSettings().then((s) => { settings = s; effective = s.theme === 'dark' ? 'dark' : (s.theme === 'system' ? effective : 'light'); render(); });
     breezeInternal.onSettings((s) => { settings = s; render(); });
-    breezeInternal.onTheme((t) => { settings.theme = t; render(); });
+    breezeInternal.onTheme((t) => { effective = t; render(); });
 
     document.querySelectorAll('#theme-seg button').forEach((b) =>
       b.addEventListener('click', () => set('theme', b.dataset.v)));

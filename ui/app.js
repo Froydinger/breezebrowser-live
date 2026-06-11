@@ -52,6 +52,10 @@ function applySettings(s) {
     document.documentElement.style.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
   }
   if (s.urlBarPosition) applyUrlBarMode(s.urlBarPosition);
+  if (s.theme) {
+    themePref = s.theme;
+    updateThemeIcon();
+  }
   const pinSizes = { small: '36px', medium: '44px', large: '52px' };
   document.documentElement.style.setProperty(
     '--pin-min',
@@ -72,10 +76,10 @@ function applyUrlBarMode(mode) {
     topbar.append(back, fwd, reload, addressWrap);
     document.body.classList.add('urlbar-top');
   } else {
-    const newtabBtn = $('#btn-newtab');
-    navRow.insertBefore(back, newtabBtn);
-    navRow.insertBefore(fwd, newtabBtn);
-    navRow.insertBefore(reload, newtabBtn);
+    const spacer = navRow.querySelector('.nav-spacer');
+    navRow.insertBefore(back, spacer);
+    navRow.insertBefore(fwd, spacer);
+    navRow.insertBefore(reload, spacer);
     sidebar.insertBefore(addressWrap, $('#pins'));
     document.body.classList.remove('urlbar-top');
   }
@@ -462,6 +466,18 @@ function hideSuggestions() {
   sugEl.classList.remove('show');
   sugItems = [];
   sugIndex = -1;
+  breeze.omniboxOverlay(0); // let the page view return to full size
+}
+
+// In top-bar mode the native page view covers the dropdown, so tell main how
+// far to push the view down to clear it.
+function syncOmniboxOverlay() {
+  if (document.body.classList.contains('urlbar-top') && sugEl.classList.contains('show')) {
+    const r = sugEl.getBoundingClientRect();
+    breeze.omniboxOverlay(r.bottom - 52);
+  } else {
+    breeze.omniboxOverlay(0);
+  }
 }
 
 function renderSuggestions() {
@@ -491,6 +507,7 @@ function renderSuggestions() {
     sugEl.appendChild(el);
   });
   sugEl.classList.add('show');
+  syncOmniboxOverlay();
 }
 
 function acceptSuggestion(item) {
@@ -582,6 +599,24 @@ $('#bookmarks-btn').addEventListener('click', () => breeze.openBookmarks());
 $('#downloads-btn').addEventListener('click', () => breeze.openDownloads());
 $('#history-btn').addEventListener('click', () => breeze.openHistory());
 $('#ai-btn').addEventListener('click', () => breeze.toggleAssistant());
+$('#btn-clearcache').addEventListener('click', () => {
+  const btn = $('#btn-clearcache');
+  btn.classList.add('pop');
+  setTimeout(() => btn.classList.remove('pop'), 300);
+  breeze.clearTabData();
+});
+
+// adblock pill → little popover with the running count
+const adblockPop = $('#adblock-pop');
+let adblockPopTimer = null;
+$('#adblock-pill').addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('#adblock-pop-count').textContent = $('#adblock-count').textContent;
+  adblockPop.classList.add('show');
+  clearTimeout(adblockPopTimer);
+  adblockPopTimer = setTimeout(() => adblockPop.classList.remove('show'), 2600);
+});
+document.addEventListener('click', () => adblockPop.classList.remove('show'));
 
 // edge handle: hover to peek (auto-hides when the mouse leaves the sidebar),
 // click to dock it for good
@@ -677,17 +712,26 @@ function setSidebarVisible(visible) {
 
 breeze.onSidebar(setSidebarVisible);
 
+let themePref = 'light'; // 'light' | 'dark' | 'system'
+
 function applyTheme(theme) {
+  // `theme` is the effective light/dark from main
   document.documentElement.classList.toggle('dark', theme === 'dark');
-  $('#icon-sun').style.display = theme === 'dark' ? 'none' : 'block';
-  $('#icon-moon').style.display = theme === 'dark' ? 'block' : 'none';
+  updateThemeIcon();
+}
+
+function updateThemeIcon() {
+  $('#icon-sun').style.display = themePref === 'light' ? 'block' : 'none';
+  $('#icon-moon').style.display = themePref === 'dark' ? 'block' : 'none';
+  $('#icon-system').style.display = themePref === 'system' ? 'block' : 'none';
 }
 
 breeze.onTheme(applyTheme);
 
 $('#theme-btn').addEventListener('click', () => {
-  const next = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
-  breeze.setTheme(next);
+  themePref = themePref === 'light' ? 'dark' : themePref === 'dark' ? 'system' : 'light';
+  updateThemeIcon();
+  breeze.setTheme(themePref);
 });
 
 // ---------------------------------------------------------------------------

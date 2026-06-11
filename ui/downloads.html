@@ -247,7 +247,7 @@
     }
 
     breezeInternal.getSettings().then((s) => {
-      document.documentElement.classList.toggle('dark', s.theme === 'dark');
+      document.documentElement.classList.toggle('dark', s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches));
       if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
     });
     breezeInternal.onTheme((t) =>

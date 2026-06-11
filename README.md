@@ -1,6 +1,6 @@
 # Breeze
 
-A hyper-simple Chromium browser. Sidebar navigation, ad blocking baked in, auto-updates, light mode first.
+Breeze is a fast, Chromium-based browser with local AI, native ad blocking, and zero tracking. Your data stays yours. Forever.
 
 ## Run it
 
