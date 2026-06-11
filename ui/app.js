@@ -800,6 +800,7 @@ breeze.onAssistant((open) => {
   assistant.classList.toggle('open', open);
   document.body.classList.toggle('assistant-open', open);
   if (open) setTimeout(() => aiInput.focus(), 250);
+  else clearSelectionChip(); // drop any active selection when the panel closes
 });
 
 $('#ai-close').addEventListener('click', () => breeze.toggleAssistant());
@@ -820,14 +821,24 @@ function addMsg(cls, text) {
   return el;
 }
 
-// inline tool chip ("Searched the web", "Reading …", etc.)
+// Transient activity chips — they show what the AI is doing FOR THE CURRENT
+// request, then fade away when it's done. They never pile up across the chat.
+const aiActivity = $('#ai-activity');
+function clearActivityChips(fade) {
+  if (fade) {
+    aiActivity.querySelectorAll('.ai-tool-chip').forEach((c) => c.classList.add('fade'));
+    setTimeout(() => { aiActivity.textContent = ''; }, 320);
+  } else {
+    aiActivity.textContent = '';
+  }
+}
 function addToolChip(label) {
-  aiEmpty.style.display = 'none';
+  // de-dupe: don't add the same activity twice in one request
+  if ([...aiActivity.children].some((c) => c.textContent === label)) return;
   const el = document.createElement('div');
   el.className = 'ai-tool-chip';
   el.textContent = label;
-  aiMessages.appendChild(el);
-  aiMessages.scrollTop = aiMessages.scrollHeight;
+  aiActivity.appendChild(el);
 }
 
 let activeSelection = ''; // page text the user highlighted while panel is open
@@ -842,6 +853,7 @@ function sendAI() {
   aiGenerating = true;
   aiSend.classList.add('stop');
   aiSend.title = 'Stop';
+  clearActivityChips(false); // fresh activity for this request
   breeze.aiAsk({
     text,
     useWeb: aiWebEnabled,
@@ -958,6 +970,7 @@ breeze.onAIDone(() => {
   aiGenerating = false;
   aiSend.classList.remove('stop');
   aiSend.title = 'Send';
+  clearActivityChips(true); // activity finished — fade the chips out
 });
 
 breeze.onAIStatus((s) => {

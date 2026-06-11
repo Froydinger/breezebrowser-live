@@ -42,12 +42,16 @@ window.addEventListener(
   { capture: true }
 );
 
-// Report highlighted text so the AI panel can offer to act on it. We listen
-// only on mouseup/keyup (not selectionchange, which fires on every caret move
-// and pegs the CPU) and bail instantly when nothing is selected.
+// Report highlighted text so the AI panel can act on it. selectionchange is
+// the only event that reliably fires across ALL pages (plain pages, editors,
+// etc.) — but it fires a lot, so we ONLY listen while the AI panel is open
+// (main toggles aiPanelOpen). Zero cost when the panel is closed.
 let selTimer = null;
 let lastSel = '';
+let aiPanelOpen = false;
+
 function reportSelection() {
+  if (!aiPanelOpen) return;
   clearTimeout(selTimer);
   selTimer = setTimeout(() => {
     let s = '';
@@ -57,13 +61,20 @@ function reportSelection() {
     if (s === lastSel) return;
     lastSel = s;
     ipcRenderer.send('page-selection', s.slice(0, 2000));
-  }, 250);
+  }, 220);
 }
+
+ipcRenderer.on('ai-panel', (_e, open) => {
+  aiPanelOpen = open;
+  if (!open) {
+    lastSel = '';
+  } else {
+    reportSelection(); // surface any current selection right away
+  }
+});
+
+document.addEventListener('selectionchange', reportSelection, { passive: true });
 document.addEventListener('mouseup', reportSelection, { passive: true });
-document.addEventListener('keyup', (e) => {
-  // only when the selection could have changed via keyboard
-  if (e.shiftKey || e.key === 'ArrowLeft' || e.key === 'ArrowRight') reportSelection();
-}, { passive: true });
 
 window.addEventListener(
   'mouseover',

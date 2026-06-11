@@ -1593,3 +1593,19 @@ html.dark #onboard-card { border-color: rgba(255,255,255,0.12); }
   transition: all 0.25s var(--ease);
 }
 .onboard-dots .dot.on { opacity: 1; width: 22px; border-radius: 4px; background: var(--accent); }
+
+/* transient activity chips (above the input, cleared after each request) */
+#ai-activity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 0 14px;
+  flex-shrink: 0;
+}
+#ai-activity:empty { display: none; }
+#ai-activity .ai-tool-chip {
+  margin: 0;
+  transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
+}
+#ai-activity .ai-tool-chip.fade { opacity: 0; transform: translateY(-4px); }

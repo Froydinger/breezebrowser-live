@@ -184,6 +184,39 @@
       line-height: 1.6;
       padding: 0 2px;
     }
+
+    #faq details {
+      border-bottom: 1px solid var(--border);
+    }
+    #faq details:last-child { border-bottom: none; }
+    #faq summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: color 0.15s var(--ease);
+    }
+    #faq summary::-webkit-details-marker { display: none; }
+    #faq summary::after {
+      content: '+';
+      font-size: 18px;
+      color: var(--text-soft);
+      transition: transform 0.2s var(--ease);
+    }
+    #faq details[open] summary::after { transform: rotate(45deg); }
+    #faq summary:hover { color: var(--accent); }
+    #faq p {
+      padding: 0 18px 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text-soft);
+      animation: rise 0.25s var(--ease);
+    }
+    #faq p b { color: var(--text); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -395,8 +428,45 @@
       </div>
     </section>
 
+    <section>
+      <h2>Help &amp; FAQ</h2>
+      <div class="card" id="faq">
+        <details>
+          <summary>How does Breeze AI work?</summary>
+          <p>Press <b>⌘E</b> to open it. It runs Llama 3.2 <b>entirely on your Mac</b> — nothing you ask ever leaves your device. It automatically reads the page you're on, so you can ask "summarize this," "what's the key point," etc.</p>
+        </details>
+        <details>
+          <summary>Use the AI on selected text</summary>
+          <p>Open the assistant (⌘E), then highlight any text on the page. It appears as a chip above the input and becomes the focus of your next question. Hit the magnifier on the chip to web-search that exact text instead.</p>
+        </details>
+        <details>
+          <summary>Search the web &amp; generate images</summary>
+          <p>In the AI input, toggle the <b>globe</b> to cross-reference live web sources (cited by link), or the <b>image</b> icon to generate a picture. Image generation needs your own OpenAI key — add it under <b>Breeze AI</b> above.</p>
+        </details>
+        <details>
+          <summary>Set a reminder</summary>
+          <p>Just tell the assistant: "remind me in 20 minutes to call mom." Breeze fires a native notification when it's time. (Notifications must be allowed — see Privacy above.)</p>
+        </details>
+        <details>
+          <summary>Pin sites &amp; make tab groups</summary>
+          <p>Right-click any tab → <b>Pin Tab</b> to keep it as an app icon at the top of the sidebar (drag to reorder; size in Appearance). Right-click → <b>Move to Group</b> to file tabs into a named, collapsible group. Pins and groups persist even after you close the tab.</p>
+        </details>
+        <details>
+          <summary>Shortcuts cheat-sheet</summary>
+          <p><b>⌘T</b> new tab · <b>⌘W</b> close · <b>⌘S</b> toggle sidebar · <b>⌘E</b> AI · <b>⌘L</b> address bar · <b>⌘D</b> bookmark · <b>⌘Y</b> history · <b>⇧⌘J</b> downloads · <b>⌘⇧N</b> incognito · <b>⌥⌘P</b> picture-in-picture · <b>⇧⌘D</b> dark mode.</p>
+        </details>
+        <details>
+          <summary>A site looks broken</summary>
+          <p>Right-click the page → <b>Fix This Site (Clear Data &amp; Reload)</b>, or use the trash icon next to the bookmark star to clear that site's cache. Breeze blocks ads at the network level only, so it never hides real page content.</p>
+        </details>
+        <details>
+          <summary>Privacy &amp; your data</summary>
+          <p>History and saved passwords are encrypted on this device with your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. The AI is fully local. Nothing syncs anywhere.</p>
+        </details>
+      </div>
+    </section>
+
     <p class="footer-note">
-      The AI assistant (⌘E) runs Llama 3.2 entirely on this Mac — nothing you ask it ever leaves your machine.
       Passkey support with iCloud Keychain requires a code-signed build; USB security keys work everywhere.
     </p>
   </main>

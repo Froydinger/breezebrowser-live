@@ -249,9 +249,18 @@ function stopEdgePoll() {
   }
 }
 
+function notifyAIPanel(open) {
+  // tell the active tab's page whether to track text selections
+  const t = tabs.get(activeTabId);
+  try {
+    t?.view?.webContents.send('ai-panel', open);
+  } catch {}
+}
+
 function setAssistant(show) {
   assistantVisible = show;
   win?.webContents.send('assistant', show);
+  notifyAIPanel(show);
   animateLayout();
   if (show) {
     clearTimeout(ai.idleTimer);
@@ -432,6 +441,10 @@ function buildView(t, url) {
   });
   wc.on('did-finish-load', () => {
     t.didAutoRetry = false; // reset for the next navigation
+    // a freshly loaded page has a fresh preload — restore selection tracking
+    if (assistantVisible && t.id === activeTabId) {
+      try { wc.send('ai-panel', true); } catch {}
+    }
   });
   wc.on('media-started-playing', () => {
     t.mediaPlaying = true;
@@ -609,6 +622,10 @@ function activateTab(id) {
   t.view.webContents.focus();
   // returning to the tab → bring its video back inline
   if (appSettings.autoPip) runPiP(t.view.webContents, PIP_EXIT);
+  if (prev?.view) {
+    try { prev.view.webContents.send('ai-panel', false); } catch {}
+  }
+  if (assistantVisible) notifyAIPanel(true); // new tab should track selections
   pushState();
 }
 
