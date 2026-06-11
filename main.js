@@ -1637,12 +1637,23 @@ const ADBLOCK_EXCEPTIONS = [
 
 async function setupAdblock() {
   try {
-    const { ElectronBlocker } = require('@ghostery/adblocker-electron');
-    blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
-      path: path.join(app.getPath('userData'), 'adblock-engine.bin'),
-      read: fs.promises.readFile,
-      write: fs.promises.writeFile,
-    });
+    const { ElectronBlocker, adsAndTrackingLists } = require('@ghostery/adblocker-electron');
+    // Network blocking + site-specific cosmetics ON, but GENERIC cosmetic
+    // filters OFF. Generic rules (e.g. "##.ad", "##[id*=banner]") match too
+    // broadly and were hiding legit site UI like the YouTube logo. We still
+    // block the actual ad/tracker *requests*, so ads don't load — we just
+    // don't aggressively hide arbitrary DOM. Fresh cache file (v2) so the
+    // new config is honored, not the old serialized engine.
+    blocker = await ElectronBlocker.fromLists(
+      fetch,
+      adsAndTrackingLists,
+      { loadGenericCosmeticsFilters: false },
+      {
+        path: path.join(app.getPath('userData'), 'adblock-engine-v2.bin'),
+        read: fs.promises.readFile,
+        write: fs.promises.writeFile,
+      }
+    );
     try {
       blocker.updateFromDiff({ added: ADBLOCK_EXCEPTIONS });
     } catch (e) {

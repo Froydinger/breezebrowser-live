@@ -1040,6 +1040,10 @@ button, input, textarea, select, label,
 #drag-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
 #drag-right { top: 0; right: 0; bottom: 0; width: 10px; }
 
+/* In top-bar mode the URL bar owns the top strip — a drag region there
+   intermittently steals mousedowns from the back/forward/reload buttons. */
+body.urlbar-top #drag-top { display: none; }
+
 /* ------------------------------------------------------------------ */
 /* Brand mark in sidebar                                               */
 /* ------------------------------------------------------------------ */
@@ -1101,7 +1105,8 @@ button, input, textarea, select, label,
   display: none;
   align-items: center;
   gap: 4px;
-  z-index: 4;
+  z-index: 20;
+  isolation: isolate;
   /* NEVER a drag region: macOS drag rects sit above the page view and the
      no-drag carve-outs go stale after DOM moves → dead buttons / hot zones */
   -webkit-app-region: no-drag;
@@ -1111,6 +1116,15 @@ button, input, textarea, select, label,
 body.urlbar-top #topbar { display: flex; }
 body.sidebar-hidden #topbar { left: 14px; }
 body.assistant-open #topbar { right: 370px; }
+
+/* explicit no-drag + own stacking so clicks never fall through to a window
+   drag region or the native page layer */
+#topbar .nav-btn,
+#topbar #address-wrap {
+  -webkit-app-region: no-drag;
+  position: relative;
+  z-index: 1;
+}
 
 #topbar #address-wrap {
   flex: 1;
