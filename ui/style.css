@@ -715,7 +715,7 @@ body.resizing #sidebar { transition: none; }
 
 #pins {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--pin-min, 52px), 1fr));
   gap: 7px;
   margin-bottom: 14px;
   flex-shrink: 0;
@@ -1098,7 +1098,9 @@ button, input, textarea, select, label,
   align-items: center;
   gap: 4px;
   z-index: 4;
-  -webkit-app-region: drag;
+  /* NEVER a drag region: macOS drag rects sit above the page view and the
+     no-drag carve-outs go stale after DOM moves → dead buttons / hot zones */
+  -webkit-app-region: no-drag;
   transition: left 0.24s var(--ease), right 0.24s var(--ease);
 }
 
@@ -1248,4 +1250,73 @@ body.urlbar-top #sidebar #nav-row { margin-bottom: 12px; }
 
 #now-playing.playing .np-favicon {
   animation: pulse 1.6s ease-in-out infinite;
+}
+
+.pin.dragging { opacity: 0.4; transform: scale(0.92); }
+
+/* ------------------------------------------------------------------ */
+/* Page loading bar (lives in the pad ring just above the page view)   */
+/* ------------------------------------------------------------------ */
+
+#loadbar {
+  position: fixed;
+  top: 7px;
+  left: calc(var(--sidebar-w, 280px) + 10px);
+  right: 14px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  opacity: 0;
+  transition: opacity 0.2s var(--ease), left 0.24s var(--ease), right 0.24s var(--ease);
+  z-index: 5;
+  pointer-events: none;
+}
+
+body.urlbar-top #loadbar { top: 53px; }
+body.sidebar-hidden #loadbar { left: 14px; }
+body.assistant-open #loadbar { right: 370px; }
+body.page-loading #loadbar { opacity: 1; }
+
+#loadbar-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: loadbar-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes loadbar-slide {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(350%); }
+}
+
+/* ------------------------------------------------------------------ */
+/* AI input: glass pill, everything centered                           */
+/* ------------------------------------------------------------------ */
+
+#ai-input-wrap {
+  border-radius: 99px;
+  align-items: center;
+  padding: 5px 5px 5px 6px;
+  gap: 7px;
+}
+
+#ai-web-toggle {
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+#ai-input {
+  align-self: center;
+  padding: 4px 0;
+}
+
+#ai-send {
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
 }

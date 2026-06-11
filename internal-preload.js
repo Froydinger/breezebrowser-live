@@ -23,6 +23,12 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   showDownload: (id) => ipcRenderer.send('download-show', id),
   clearDownloads: () => ipcRenderer.send('downloads-clear'),
 
+  setSitePermission: (origin, permission, value) =>
+    ipcRenderer.send('set-site-permission', { origin, permission, value }),
+  isDefaultBrowser: () => ipcRenderer.invoke('is-default-browser'),
+  makeDefaultBrowser: () => ipcRenderer.send('make-default-browser'),
+  switchToTab: (id) => ipcRenderer.send('switch-to-tab', id),
+
   importSources: () => ipcRenderer.invoke('import-sources'),
   importFromBrowser: (path, kind, target) =>
     ipcRenderer.invoke('import-from-browser', { path, kind, target }),

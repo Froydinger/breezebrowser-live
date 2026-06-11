@@ -20,6 +20,28 @@ window.addEventListener(
   { capture: true }
 );
 
+// Offer to save credentials when a login form is submitted.
+window.addEventListener(
+  'submit',
+  (e) => {
+    try {
+      const form = e.target;
+      if (!form || !form.querySelector) return;
+      const pass = form.querySelector('input[type="password"]');
+      if (!pass || !pass.value) return;
+      const userEl = form.querySelector(
+        'input[type="email"], input[autocomplete*="username" i], input[type="text"]'
+      );
+      ipcRenderer.send('cred-captured', {
+        origin: location.origin,
+        username: (userEl && userEl.value) || '',
+        password: pass.value,
+      });
+    } catch {}
+  },
+  { capture: true }
+);
+
 window.addEventListener(
   'mouseover',
   (e) => {

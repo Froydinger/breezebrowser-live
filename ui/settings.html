@@ -216,6 +216,14 @@
           </div>
         </div>
         <div class="row">
+          <div><div class="row-label">Pinned app size</div></div>
+          <div class="seg" id="pinsize-seg">
+            <button data-v="small">Small</button>
+            <button data-v="medium">Medium</button>
+            <button data-v="large">Large</button>
+          </div>
+        </div>
+        <div class="row">
           <div><div class="row-label">Accent color</div></div>
           <div class="swatches" id="swatches">
             <button class="swatch" data-v="#5b7cfa" style="background:#5b7cfa"></button>
@@ -324,6 +332,28 @@
       </div>
     </section>
 
+    <section>
+      <h2>Site Permissions</h2>
+      <div class="card" id="perm-list">
+        <div class="row" id="perm-empty">
+          <div class="row-hint">Nothing yet — sites that ask for notifications, camera, location, etc. will appear here once you Allow or Block them.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>System</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Default browser</div>
+            <div class="row-hint" id="default-hint">Links from other apps open in Breeze</div>
+          </div>
+          <button class="seg" id="make-default" style="border:none;background:var(--accent);color:#fff;padding:8px 14px;border-radius:10px;font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Make default</button>
+        </div>
+      </div>
+    </section>
+
     <p class="footer-note">
       The AI assistant (⌘E) runs Llama 3.2 entirely on this Mac — nothing you ask it ever leaves your machine.
       Passkey support with iCloud Keychain requires a code-signed build; USB security keys work everywhere.
@@ -346,8 +376,11 @@
       document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
       document.querySelectorAll('#urlbar-seg button').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === (settings.urlBarPosition || 'top')));
+      document.querySelectorAll('#pinsize-seg button').forEach((b) =>
+        b.classList.toggle('on', b.dataset.v === (settings.pinSize || 'large')));
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
+      renderPerms();
     }
 
     function set(key, value) {
@@ -370,9 +403,77 @@
     document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
     document.querySelectorAll('#urlbar-seg button').forEach((b) =>
       b.addEventListener('click', () => set('urlBarPosition', b.dataset.v)));
+    document.querySelectorAll('#pinsize-seg button').forEach((b) =>
+      b.addEventListener('click', () => set('pinSize', b.dataset.v)));
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
+
+    // ----- site permissions manager -----
+    const PERM_NAMES = {
+      notifications: 'Notifications',
+      media: 'Camera / Microphone',
+      geolocation: 'Location',
+      'clipboard-read': 'Read clipboard',
+      midi: 'MIDI',
+    };
+
+    function renderPerms() {
+      const listEl = document.getElementById('perm-list');
+      const perms = settings.permissions || {};
+      const rows = [];
+      for (const [origin, byPerm] of Object.entries(perms)) {
+        for (const [perm, allowed] of Object.entries(byPerm)) {
+          rows.push({ origin, perm, allowed });
+        }
+      }
+      listEl.querySelectorAll('.perm-row').forEach((el) => el.remove());
+      document.getElementById('perm-empty').style.display = rows.length ? 'none' : '';
+      for (const r of rows) {
+        const el = document.createElement('div');
+        el.className = 'row perm-row';
+        const left = document.createElement('div');
+        const label = document.createElement('div');
+        label.className = 'row-label';
+        label.textContent = r.origin.replace(/^https?:\/\//, '');
+        const hint = document.createElement('div');
+        hint.className = 'row-hint';
+        hint.textContent = PERM_NAMES[r.perm] || r.perm;
+        left.append(label, hint);
+
+        const right = document.createElement('div');
+        right.style.cssText = 'display:flex;gap:8px;align-items:center';
+        const sel = document.createElement('select');
+        sel.innerHTML = '<option value="1">Allow</option><option value="0">Block</option>';
+        sel.value = r.allowed ? '1' : '0';
+        sel.addEventListener('change', () =>
+          breezeInternal.setSitePermission(r.origin, r.perm, sel.value === '1'));
+        const rm = document.createElement('button');
+        rm.textContent = '✕';
+        rm.title = 'Forget — site will ask again';
+        rm.style.cssText = 'border:none;background:transparent;color:var(--text-soft);cursor:pointer;font-size:13px;padding:4px';
+        rm.addEventListener('click', () =>
+          breezeInternal.setSitePermission(r.origin, r.perm, null));
+        right.append(sel, rm);
+
+        el.append(left, right);
+        listEl.appendChild(el);
+      }
+    }
+
+    // ----- default browser -----
+    async function refreshDefault() {
+      const isDef = await breezeInternal.isDefaultBrowser();
+      const btn = document.getElementById('make-default');
+      btn.textContent = isDef ? 'Default ✓' : 'Make default';
+      btn.disabled = isDef;
+      if (isDef) btn.style.opacity = '0.6';
+    }
+    refreshDefault();
+    document.getElementById('make-default').addEventListener('click', () => {
+      breezeInternal.makeDefaultBrowser();
+      setTimeout(refreshDefault, 1500);
+    });
   </script>
 </body>
 </html>

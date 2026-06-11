@@ -27,6 +27,15 @@
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.png",
+      "extendInfo": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "Web URLs",
+            "CFBundleURLSchemes": ["http", "https"]
+          }
+        ],
+        "NSUserActivityTypes": ["NSUserActivityTypeBrowsingWeb"]
+      },
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "target": [

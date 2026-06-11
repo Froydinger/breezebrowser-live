@@ -286,7 +286,7 @@
         el.className = 'sug-item' + (i === idx ? ' selected' : '');
         const ic = document.createElement('span');
         ic.className = 'ic';
-        ic.textContent = item.kind === 'history' ? '◷' : item.kind === 'bookmark' ? '☆' : '⌕';
+        ic.textContent = item.kind === 'tab' ? '⇄' : item.kind === 'history' ? '◷' : item.kind === 'bookmark' ? '☆' : '⌕';
         const lb = document.createElement('span');
         lb.className = 'lb';
         lb.textContent = item.label;
@@ -308,7 +308,8 @@
 
     function accept(item) {
       hideSug();
-      if (item.kind === 'search') go(item.value);
+      if (item.kind === 'tab') breezeInternal.switchToTab(item.tabId);
+      else if (item.kind === 'search') go(item.value);
       else location.href = item.value;
     }
 
@@ -321,6 +322,7 @@
         const r = await breezeInternal.getSuggestions(q);
         if (mySeq !== seq) return;
         items = [
+          ...(r.openTabs || []).map((t) => ({ kind: 'tab', label: t.title, sub: 'Switch to tab', value: t.url, tabId: t.id })),
           ...r.history.map((h) => ({ kind: 'history', label: h.title || h.url, sub: h.url.replace(/^https?:\/\/(www\.)?/, ''), value: h.url })),
           ...r.bookmarks.map((b) => ({ kind: 'bookmark', label: b.title, sub: b.url.replace(/^https?:\/\/(www\.)?/, ''), value: b.url })),
           ...r.web.map((w) => ({ kind: 'search', label: w, value: w })),

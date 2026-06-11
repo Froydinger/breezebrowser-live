@@ -167,40 +167,44 @@
       return (n / 1024 ** i).toFixed(i ? 1 : 0) + ' ' + u[i];
     }
 
-    function render(list) {
-      listEl.textContent = '';
-      emptyEl.style.display = list.length ? 'none' : '';
-      for (const d of list) {
-        const el = document.createElement('div');
-        el.className = 'dl';
+    // Keyed reconciliation: rows are created once and updated in place, so
+    // progress ticks never tear down the DOM (no flicker, smooth bar).
+    function buildRow(d) {
+      const el = document.createElement('div');
+      el.className = 'dl';
+      el.dataset.id = d.id;
+      el.innerHTML = `
+        <div class="dl-row">
+          <div class="dl-icon"></div>
+          <div class="dl-info">
+            <div class="dl-name"></div>
+            <div class="dl-meta"></div>
+          </div>
+          <div class="dl-actions"></div>
+        </div>
+        <div class="bar" style="display:none"><div class="bar-fill"></div></div>`;
+      el.querySelector('.dl-name').textContent = d.filename;
+      return el;
+    }
 
-        const row = document.createElement('div');
-        row.className = 'dl-row';
+    function updateRow(el, d) {
+      el.querySelector('.dl-icon').textContent =
+        d.state === 'completed' ? '✓' :
+        d.state === 'progressing' ? '↓' :
+        d.state === 'cancelled' ? '✕' : '!';
 
-        const icon = document.createElement('div');
-        icon.className = 'dl-icon';
-        icon.textContent =
-          d.state === 'completed' ? '✓' :
-          d.state === 'progressing' ? '↓' :
-          d.state === 'cancelled' ? '✕' : '!';
+      el.querySelector('.dl-meta').textContent =
+        d.state === 'progressing'
+          ? `${fmtBytes(d.receivedBytes)}${d.totalBytes ? ' of ' + fmtBytes(d.totalBytes) : ''}`
+          : d.state === 'completed'
+          ? `${fmtBytes(d.totalBytes || d.receivedBytes)} · ${new Date(d.ts).toLocaleString()}`
+          : d.state;
 
-        const info = document.createElement('div');
-        info.className = 'dl-info';
-        const name = document.createElement('div');
-        name.className = 'dl-name';
-        name.textContent = d.filename;
-        const meta = document.createElement('div');
-        meta.className = 'dl-meta';
-        meta.textContent =
-          d.state === 'progressing'
-            ? `${fmtBytes(d.receivedBytes)} of ${fmtBytes(d.totalBytes)}`
-            : d.state === 'completed'
-            ? `${fmtBytes(d.totalBytes || d.receivedBytes)} · ${new Date(d.ts).toLocaleString()}`
-            : d.state;
-        info.append(name, meta);
-
-        const actions = document.createElement('div');
-        actions.className = 'dl-actions';
+      // only rebuild buttons when the state actually changes
+      if (el.dataset.state !== d.state) {
+        el.dataset.state = d.state;
+        const actions = el.querySelector('.dl-actions');
+        actions.textContent = '';
         if (d.state === 'progressing') {
           const cancel = document.createElement('button');
           cancel.className = 'cancel';
@@ -216,22 +220,30 @@
           show.addEventListener('click', () => breezeInternal.showDownload(d.id));
           actions.append(open, show);
         }
-
-        row.append(icon, info, actions);
-        el.appendChild(row);
-
-        if (d.state === 'progressing' && d.totalBytes) {
-          const bar = document.createElement('div');
-          bar.className = 'bar';
-          const fill = document.createElement('div');
-          fill.className = 'bar-fill';
-          fill.style.width = `${(d.receivedBytes / d.totalBytes) * 100}%`;
-          bar.appendChild(fill);
-          el.appendChild(bar);
-        }
-
-        listEl.appendChild(el);
       }
+
+      const bar = el.querySelector('.bar');
+      const active = d.state === 'progressing' && d.totalBytes > 0;
+      bar.style.display = active ? '' : 'none';
+      if (active) {
+        bar.querySelector('.bar-fill').style.width =
+          `${(d.receivedBytes / d.totalBytes) * 100}%`;
+      }
+    }
+
+    function render(list) {
+      emptyEl.style.display = list.length ? 'none' : '';
+      const existing = new Map(
+        [...listEl.children].map((el) => [Number(el.dataset.id), el])
+      );
+      list.forEach((d, i) => {
+        let el = existing.get(d.id);
+        if (!el) el = buildRow(d);
+        existing.delete(d.id);
+        updateRow(el, d);
+        if (listEl.children[i] !== el) listEl.insertBefore(el, listEl.children[i] || null);
+      });
+      for (const [, el] of existing) el.remove();
     }
 
     breezeInternal.getSettings().then((s) => {

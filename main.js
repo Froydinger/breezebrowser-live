@@ -71,7 +71,11 @@ const DEFAULT_SETTINGS = {
   sidebarWidth: 280,
   urlBarPosition: 'top', // 'top' | 'sidebar'
   autoPip: true,
+  pinSize: 'large', // 'small' | 'medium' | 'large'
+  neverSavePasswords: [], // origins the user declined to save for
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
+  pinSize: 'large', // 'small' | 'medium' | 'large'
+  neverSavePasswords: [], // origins the user said "never" for
   permissions: {},
 };
 
@@ -971,6 +975,19 @@ function showPageContextMenu(wc, p) {
     },
     { type: 'separator' },
     {
+      // stale service workers + caches from before UA/adblock changes are the
+      // usual cause of "this page isn't available" on FB/IG — nuke and reload
+      label: 'Fix This Site (Clear Data & Reload)',
+      click: async () => {
+        try {
+          const origin = new URL(wc.getURL()).origin;
+          await wc.session.clearStorageData({ origin });
+          await wc.session.clearCache();
+          wc.reloadIgnoringCache();
+        } catch {}
+      },
+    },
+    {
       label: 'Inspect Element',
       click: () => {
         wc.inspectElement(p.x, p.y);
@@ -1151,6 +1168,51 @@ ipcMain.on('vault-import-csv', (e, csv) => {
   e.sender.send('vault-imported', added);
 });
 
+// Offer to save credentials captured from a login form submission.
+let credPromptOpen = false;
+
+ipcMain.on('cred-captured', async (e, { origin, username, password }) => {
+  if (credPromptOpen || !origin || !password) return;
+  // never prompt for incognito tabs
+  if (e.sender.session !== session.defaultSession) return;
+  if ((appSettings.neverSavePasswords || []).includes(origin)) return;
+  const exists = vault.some(
+    (c) =>
+      credsForOrigin(origin).includes(c) &&
+      c.username === username &&
+      c.password === password
+  );
+  if (exists) return;
+  const updating = credsForOrigin(origin).some((c) => c.username === username);
+
+  credPromptOpen = true;
+  try {
+    const host = origin.replace(/^https?:\/\//, '');
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      message: updating
+        ? `Update saved password for ${host}?`
+        : `Save password for ${host}?`,
+      detail: username ? `Account: ${username}` : undefined,
+      buttons: [updating ? 'Update' : 'Save', 'Not Now', 'Never for This Site'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) {
+      const prev = credsForOrigin(origin).find((c) => c.username === username);
+      if (prev) prev.password = password;
+      else vault.push({ id: nextCredId++, site: origin, username, password });
+      saveVault();
+    } else if (response === 2) {
+      const never = appSettings.neverSavePasswords || [];
+      never.push(origin);
+      applySetting('neverSavePasswords', never);
+    }
+  } finally {
+    credPromptOpen = false;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Downloads
 // ---------------------------------------------------------------------------
@@ -1221,6 +1283,7 @@ function setupDownloads(ses) {
     };
     downloadList.unshift(entry);
     downloadItems.set(id, item);
+    saveDownloads(); // survive a crash mid-download (shows as interrupted)
 
     item.on('updated', (_ev, state) => {
       entry.receivedBytes = item.getReceivedBytes();
@@ -1278,10 +1341,27 @@ function warmConnections() {
   for (const o of origins) preconnect(o);
 }
 
-ipcMain.handle('get-suggestions', async (_e, q) => {
+ipcMain.handle('get-suggestions', async (e, q) => {
   const query = String(q || '').trim();
-  if (!query) return { history: [], bookmarks: [], web: [] };
+  if (!query) return { openTabs: [], history: [], bookmarks: [], web: [] };
   const lower = query.toLowerCase();
+
+  // open tabs matching the query → "switch to tab"
+  const senderId = e.sender.id;
+  const openTabs = [];
+  for (const id of tabOrder) {
+    if (openTabs.length >= 3) break;
+    const t = tabs.get(id);
+    const url = tabURL(t);
+    if (!url || url.startsWith('file://') || t.incognito) continue;
+    if (t.view && t.view.webContents.id === senderId) continue; // not myself
+    const title = t.sleeping
+      ? t.saved?.title || ''
+      : t.view.webContents.getTitle() || '';
+    if (url.toLowerCase().includes(lower) || title.toLowerCase().includes(lower)) {
+      openTabs.push({ id, title: title || url, url });
+    }
+  }
 
   const seen = new Set();
   const hist = [];
@@ -1328,7 +1408,24 @@ ipcMain.handle('get-suggestions', async (_e, q) => {
   // pre-warm the most likely destination while the user is still typing
   if (hist[0]) preconnect(hist[0].url);
 
-  return { history: hist, bookmarks: bms, web };
+  return { openTabs, history: hist, bookmarks: bms, web };
+});
+
+// "Switch to tab" from a new-tab page: activate the target and close the
+// now-orphaned new tab the user was typing in.
+ipcMain.on('switch-to-tab', (e, id) => {
+  if (!tabs.has(id)) return;
+  let senderTabId = null;
+  for (const t of tabs.values()) {
+    if (t.view && t.view.webContents.id === e.sender.id) {
+      senderTabId = t.id;
+      break;
+    }
+  }
+  activateTab(id);
+  if (senderTabId && tabURL(tabs.get(senderTabId)) === NEWTAB_URL) {
+    closeTab(senderTabId);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1644,17 +1741,48 @@ function newChat() {
   ai.lastCtxUrl = null;
 }
 
+// Smart extraction: main/article content over nav clutter; site-specific
+// handling for YouTube (title + channel + description, not "related videos").
+const EXTRACT_CONTEXT = `(() => {
+  const meta =
+    document.querySelector('meta[name="description"]')?.content ||
+    document.querySelector('meta[property="og:description"]')?.content || '';
+
+  if (location.hostname.endsWith('youtube.com') && location.pathname === '/watch') {
+    const vidTitle =
+      document.querySelector('h1.ytd-watch-metadata')?.innerText ||
+      document.querySelector('#title h1')?.innerText || document.title;
+    const channel =
+      document.querySelector('ytd-channel-name #text a, ytd-channel-name a')?.innerText || '';
+    try { document.querySelector('tp-yt-paper-button#expand, #expand')?.click(); } catch {}
+    const desc =
+      document.querySelector('#description-inline-expander')?.innerText ||
+      document.querySelector('#description')?.innerText || meta;
+    const comments = [...document.querySelectorAll('#content-text')]
+      .slice(0, 5).map((c) => c.innerText).join('\\n· ');
+    return 'VIDEO: ' + vidTitle + '\\nCHANNEL: ' + channel +
+      '\\nDESCRIPTION:\\n' + desc +
+      (comments ? '\\nTOP COMMENTS:\\n· ' + comments : '');
+  }
+
+  const root =
+    document.querySelector('main') ||
+    document.querySelector('article') ||
+    document.querySelector('[role="main"]') ||
+    document.body;
+  let text = root ? root.innerText : '';
+  if (!text || text.length < 200) text = document.body ? document.body.innerText : '';
+  return (meta ? meta + '\\n\\n' : '') + text;
+})()`;
+
 async function getPageContext() {
   const wc = activeWC();
   if (!wc) return null;
   const url = wc.getURL();
   if (!url || url.startsWith('file://')) return null;
   try {
-    const text = await wc.executeJavaScript(
-      'document.body ? document.body.innerText : ""',
-      true
-    );
-    return { title: wc.getTitle(), url, text: String(text).slice(0, 6000) };
+    const text = await wc.executeJavaScript(EXTRACT_CONTEXT, true);
+    return { title: wc.getTitle(), url, text: String(text).slice(0, 9000) };
   } catch {
     return null;
   }
@@ -1694,11 +1822,35 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb }) => {
   try {
     await ai.session.prompt(prompt, {
       signal: ai.abort.signal,
+      // bounded + penalized generation: small local models loop without this
+      maxTokens: 1024,
+      temperature: 0.7,
+      topP: 0.9,
+      repeatPenalty: {
+        penalty: 1.18,
+        frequencyPenalty: 0.4,
+        presencePenalty: 0.3,
+        lastTokens: 128,
+      },
       onTextChunk: (chunk) => win?.webContents.send('ai-chunk', chunk),
     });
   } catch (err) {
     if (!ai.abort.signal.aborted) {
-      sendAI({ state: 'error', message: err.message });
+      // a full context window shows up as endless errors/restarts — recover
+      // with a fresh chat instead of leaving the session wedged
+      if (/context|sequence|kv|slot/i.test(err.message)) {
+        try {
+          newChat();
+          win?.webContents.send(
+            'ai-chunk',
+            'This conversation got too long for the model — I started a fresh chat. Ask me again!'
+          );
+        } catch {
+          sendAI({ state: 'error', message: err.message });
+        }
+      } else {
+        sendAI({ state: 'error', message: err.message });
+      }
     }
   }
   ai.generating = false;
@@ -1897,8 +2049,7 @@ function buildMenu() {
           accelerator: 'CmdOrCtrl+Shift+D',
           click: () => {
             const next = nativeTheme.themeSource === 'dark' ? 'light' : 'dark';
-            saveSettings({ theme: next });
-            applyTheme(next);
+            applySetting('theme', next);
           },
         },
         { type: 'separator' },
@@ -2030,10 +2181,7 @@ ipcMain.on('remove-bookmark', (_e, url) => {
 ipcMain.handle('get-bookmarks', () => bookmarks);
 ipcMain.on('open-bookmarks', () => openInternalTab(BOOKMARKS_URL));
 ipcMain.on('pin-tab', (_e, id) => pinTab(id));
-ipcMain.on('set-theme', (_e, theme) => {
-  saveSettings({ theme });
-  applyTheme(theme);
-});
+ipcMain.on('set-theme', (_e, theme) => applySetting('theme', theme));
 ipcMain.on('install-update', () => {
   if (!updateDownloaded) return;
   const { autoUpdater } = require('electron-updater');
@@ -2055,6 +2203,15 @@ ipcMain.on('set-sidebar-width', (_e, w) => {
 ipcMain.on('save-sidebar-width', () => applySetting('sidebarWidth', sidebarWidth));
 ipcMain.on('tab-context-menu', (_e, id) => showTabContextMenu(id));
 ipcMain.on('open-pin', (_e, url) => openPin(url));
+ipcMain.on('reorder-pins', (_e, urls) => {
+  const byUrl = new Map(pins.map((p) => [p.url, p]));
+  const next = urls.map((u) => byUrl.get(u)).filter(Boolean);
+  // keep any pins the renderer didn't know about
+  for (const p of pins) if (!next.includes(p)) next.push(p);
+  pins = next;
+  saveSettings({ pins });
+  pushState();
+});
 ipcMain.on('pin-context-menu', (_e, url) => {
   const open = !!pinnedTab(url);
   Menu.buildFromTemplate([
@@ -2146,6 +2303,37 @@ ipcMain.on('set-setting', (_e, { key, value }) => {
 });
 ipcMain.on('open-settings', () => openSettingsTab());
 
+// per-site permission management (Settings → Privacy)
+ipcMain.on('set-site-permission', (_e, { origin, permission, value }) => {
+  const perms = appSettings.permissions || {};
+  if (value === null) {
+    if (perms[origin]) {
+      delete perms[origin][permission];
+      if (!Object.keys(perms[origin]).length) delete perms[origin];
+    }
+  } else {
+    perms[origin] = { ...perms[origin], [permission]: !!value };
+  }
+  applySetting('permissions', perms);
+});
+
+// default browser
+ipcMain.handle('is-default-browser', () => {
+  try {
+    return (
+      app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https')
+    );
+  } catch {
+    return false;
+  }
+});
+ipcMain.on('make-default-browser', () => {
+  try {
+    app.setAsDefaultProtocolClient('http');
+    app.setAsDefaultProtocolClient('https');
+  } catch {}
+});
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
@@ -2170,4 +2358,25 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+// links opened from other apps when Breeze is the default browser
+app.on('open-url', (e, url) => {
+  e.preventDefault();
+  if (app.isReady() && win) createTab(url, true);
+  else app.whenReady().then(() => setTimeout(() => createTab(url, true), 500));
+});
+
+app.on('before-quit', () => {
+  // persist everything, including any in-flight download (as interrupted)
+  try {
+    fs.writeFileSync(
+      downloadsPath(),
+      JSON.stringify(
+        downloadList
+          .map((d) => (d.state === 'progressing' ? { ...d, state: 'interrupted' } : d))
+          .slice(0, 200)
+      )
+    );
+  } catch {}
 });

@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('breeze', {
   tabContextMenu: (id) => ipcRenderer.send('tab-context-menu', id),
   openPin: (url) => ipcRenderer.send('open-pin', url),
   pinContextMenu: (url) => ipcRenderer.send('pin-context-menu', url),
+  reorderPins: (urls) => ipcRenderer.send('reorder-pins', urls),
   onDownloads: (cb) => ipcRenderer.on('downloads', (_e, d) => cb(d)),
   openGroupEntry: (gid, eid) => ipcRenderer.send('open-group-entry', { gid, eid }),
   renameGroup: (gid, name) => ipcRenderer.send('rename-group', { gid, name }),

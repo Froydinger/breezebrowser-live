@@ -52,6 +52,11 @@ function applySettings(s) {
     document.documentElement.style.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
   }
   if (s.urlBarPosition) applyUrlBarMode(s.urlBarPosition);
+  const pinSizes = { small: '36px', medium: '44px', large: '52px' };
+  document.documentElement.style.setProperty(
+    '--pin-min',
+    pinSizes[s.pinSize] || pinSizes.large
+  );
 }
 
 // The address bar + nav buttons are single DOM nodes that physically move
@@ -172,10 +177,12 @@ function renderTabs() {
 // ---------------------------------------------------------------------------
 
 const pinsEl = $('#pins');
+let dragPinUrl = null;
 
 // Keyed reconciliation — pins are only created/removed when the pin set
 // changes, so state pushes don't replay the entry animation (no flicker).
 function renderPins() {
+  if (dragPinUrl) return; // don't fight the user's drag mid-flight
   const list = state.pins || [];
   const existing = new Map(
     [...pinsEl.children].map((el) => [el.dataset.url, el])
@@ -205,6 +212,29 @@ function renderPins() {
         e.preventDefault();
         breeze.pinContextMenu(p.url);
       });
+
+      // drag to rearrange
+      el.draggable = true;
+      el.addEventListener('dragstart', (e) => {
+        dragPinUrl = p.url;
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => {
+        dragPinUrl = null;
+        el.classList.remove('dragging');
+        breeze.reorderPins([...pinsEl.children].map((c) => c.dataset.url));
+      });
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!dragPinUrl || dragPinUrl === el.dataset.url) return;
+        const dragging = pinsEl.querySelector('.pin.dragging');
+        if (!dragging) return;
+        const r = el.getBoundingClientRect();
+        const after = e.clientX > r.left + r.width / 2;
+        pinsEl.insertBefore(dragging, after ? el.nextSibling : el);
+      });
+
       pinsEl.appendChild(el);
     }
     existing.delete(p.url);
@@ -239,68 +269,119 @@ function pinLetter(p) {
 
 const groupsEl = $('#groups');
 
+// Keyed reconciliation: group sections and entry rows persist across state
+// pushes and update in place — no teardown, no entry-animation replay.
+function buildGroupSection(g) {
+  const section = document.createElement('div');
+  section.className = 'group';
+  section.dataset.gid = g.id;
+
+  const header = document.createElement('div');
+  header.className = 'group-header';
+  header.innerHTML = `<span class="group-dot"></span><span class="group-name"></span>`;
+  header.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    breeze.groupHeaderMenu(g.id);
+  });
+  header.addEventListener('dblclick', () => startRename(g.id));
+  section.appendChild(header);
+  return section;
+}
+
+function buildGroupEntry(gid, eid) {
+  const el = document.createElement('div');
+  el.className = 'tab group-entry';
+  el.dataset.eid = eid;
+
+  const fav = document.createElement('span');
+  fav.className = 'favicon';
+  const title = document.createElement('span');
+  title.className = 'title';
+  const close = document.createElement('button');
+  close.className = 'close';
+  close.innerHTML = xIcon;
+  close.addEventListener('click', (e) => {
+    e.stopPropagation();
+    breeze.groupEntryMenu(gid, eid);
+  });
+
+  el.append(fav, title, close);
+  el.addEventListener('click', () => breeze.openGroupEntry(gid, eid));
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    breeze.groupEntryMenu(gid, eid);
+  });
+  return el;
+}
+
 function renderGroups() {
   const list = state.groups || [];
-  groupsEl.textContent = '';
   const liveByEid = new Map(
     state.tabs.filter((t) => t.groupEid).map((t) => [t.groupEid, t])
   );
 
-  for (const g of list) {
-    const section = document.createElement('div');
-    section.className = 'group';
-    section.dataset.gid = g.id;
+  const sections = new Map(
+    [...groupsEl.children].map((el) => [Number(el.dataset.gid), el])
+  );
 
-    const header = document.createElement('div');
-    header.className = 'group-header';
-    const dot = document.createElement('span');
-    dot.className = 'group-dot';
-    const name = document.createElement('span');
-    name.className = 'group-name';
-    name.textContent = g.name;
-    header.append(dot, name);
-    header.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      breeze.groupHeaderMenu(g.id);
-    });
-    header.addEventListener('dblclick', () => startRename(g.id));
-    section.appendChild(header);
+  list.forEach((g, gi) => {
+    let section = sections.get(g.id);
+    if (!section) section = buildGroupSection(g);
+    sections.delete(g.id);
 
-    for (const entry of g.entries) {
-      const live = liveByEid.get(entry.eid);
-      const el = document.createElement('div');
-      el.className = 'tab';
-      if (!live || live.sleeping) el.classList.add('asleep');
-      if (live && live.id === state.activeTabId) el.classList.add('active');
-
-      const fav = document.createElement('span');
-      fav.className = 'favicon';
-      if (live?.loading) fav.innerHTML = `<span class="spinner"></span>`;
-      else setFavicon(fav, (live && live.favicon) || entry.favicon);
-
-      const title = document.createElement('span');
-      title.className = 'title';
-      title.textContent = (live && live.title) || entry.title;
-
-      const close = document.createElement('button');
-      close.className = 'close';
-      close.title = live ? 'Close (stays in group)' : 'Remove from group';
-      close.innerHTML = xIcon;
-      close.addEventListener('click', (e) => {
-        e.stopPropagation();
-        breeze.groupEntryMenu(g.id, entry.eid);
-      });
-
-      el.append(fav, title, close);
-      el.addEventListener('click', () => breeze.openGroupEntry(g.id, entry.eid));
-      el.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        breeze.groupEntryMenu(g.id, entry.eid);
-      });
-      section.appendChild(el);
+    const nameEl = section.querySelector('.group-name');
+    // don't clobber an in-progress inline rename
+    if (nameEl.contentEditable !== 'true' && nameEl.textContent !== g.name) {
+      nameEl.textContent = g.name;
     }
-    groupsEl.appendChild(section);
-  }
+
+    const rows = new Map(
+      [...section.querySelectorAll('.group-entry')].map((el) => [
+        Number(el.dataset.eid),
+        el,
+      ])
+    );
+
+    g.entries.forEach((entry, i) => {
+      let el = rows.get(entry.eid);
+      if (!el) el = buildGroupEntry(g.id, entry.eid);
+      rows.delete(entry.eid);
+
+      const live = liveByEid.get(entry.eid);
+      el.classList.toggle('asleep', !live || !!live.sleeping);
+      el.classList.toggle('active', !!live && live.id === state.activeTabId);
+
+      const titleEl = el.querySelector('.title');
+      const nextTitle = (live && live.title) || entry.title;
+      if (titleEl.textContent !== nextTitle) titleEl.textContent = nextTitle;
+
+      el.querySelector('.close').title = live
+        ? 'Close (stays in group)'
+        : 'Remove from group';
+
+      const fav = el.querySelector('.favicon');
+      if (live?.loading) {
+        if (!fav.querySelector('.spinner')) {
+          fav.dataset.src = '~loading~';
+          fav.innerHTML = `<span class="spinner"></span>`;
+        }
+      } else {
+        setFavicon(fav, (live && live.favicon) || entry.favicon);
+      }
+
+      // header is child 0, entries start at 1
+      const want = section.children[i + 1];
+      if (want !== el) section.insertBefore(el, want || null);
+    });
+
+    for (const [, el] of rows) el.remove();
+
+    if (groupsEl.children[gi] !== section) {
+      groupsEl.insertBefore(section, groupsEl.children[gi] || null);
+    }
+  });
+
+  for (const [, el] of sections) el.remove();
 }
 
 function startRename(gid) {
@@ -340,6 +421,7 @@ breeze.onState((s) => {
   const bookmarked =
     active && active.url && (s.bookmarks || []).some((b) => b.url === active.url);
   btnBookmark.classList.toggle('active', !!bookmarked);
+  document.body.classList.toggle('page-loading', !!active?.loading);
   $('#address-wrap').classList.toggle('incognito', !!active?.incognito);
   if (active?.incognito) address.placeholder = 'Incognito — search privately';
   else address.placeholder = 'Search or enter URL';
@@ -365,6 +447,7 @@ address.addEventListener('blur', () => {
 
 const sugEl = $('#suggestions');
 const icons = {
+  tab: `<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="m6 8 2 2 3-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   history: `<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`,
   bookmark: `<svg viewBox="0 0 16 16"><path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11l-4.02 2.84a.3.3 0 0 1-.48-.24V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`,
   search: `<svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
@@ -411,7 +494,8 @@ function renderSuggestions() {
 }
 
 function acceptSuggestion(item) {
-  breeze.navigate(item.value);
+  if (item.kind === 'tab') breeze.activateTab(item.tabId);
+  else breeze.navigate(item.value);
   hideSuggestions();
   address.blur();
 }
@@ -428,6 +512,13 @@ address.addEventListener('input', () => {
     const r = await breeze.getSuggestions(q);
     if (seq !== sugSeq) return; // stale response, a newer query is in flight
     sugItems = [
+      ...(r.openTabs || []).map((t) => ({
+        kind: 'tab',
+        label: t.title,
+        sub: 'Switch to tab',
+        value: t.url,
+        tabId: t.id,
+      })),
       ...r.history.map((h) => ({
         kind: 'history',
         label: h.title || h.url,
