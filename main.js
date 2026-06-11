@@ -17,11 +17,15 @@ const fs = require('fs');
 // before the video plays on first load).
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-// Sites sniff the UA; "Electron/x breeze-browser/x" makes Google & co. serve
-// degraded or broken experiences. Present as plain Chrome.
+// Sites sniff the UA; any non-standard token (Electron/x, Breeze/x) makes
+// Google & co. serve degraded or broken layouts. Strip everything but the
+// standard Chrome/Safari tokens so we look like plain Chrome.
 app.userAgentFallback = app.userAgentFallback
-  .replace(/Electron\/\S+\s*/, '')
-  .replace(/breeze-browser\/\S+\s*/, '');
+  .replace(/\sElectron\/\S+/i, '')
+  .replace(/\sBreeze\/\S+/i, '')
+  .replace(/\sbreeze-browser\/\S+/i, '')
+  .replace(/\s{2,}/g, ' ')
+  .trim();
 
 // ---------------------------------------------------------------------------
 // State
@@ -1638,18 +1642,18 @@ const ADBLOCK_EXCEPTIONS = [
 async function setupAdblock() {
   try {
     const { ElectronBlocker, adsAndTrackingLists } = require('@ghostery/adblocker-electron');
-    // Network blocking + site-specific cosmetics ON, but GENERIC cosmetic
-    // filters OFF. Generic rules (e.g. "##.ad", "##[id*=banner]") match too
-    // broadly and were hiding legit site UI like the YouTube logo. We still
-    // block the actual ad/tracker *requests*, so ads don't load — we just
-    // don't aggressively hide arbitrary DOM. Fresh cache file (v2) so the
-    // new config is honored, not the old serialized engine.
+    // COSMETIC FILTERING FULLY OFF — it was hiding legit site UI (the YouTube
+    // masthead logo/menu). Cosmetic rules hide DOM elements by selector and
+    // false-positive on real content; we drop them entirely. NETWORK blocking
+    // stays fully on, so ad/tracker *requests* are still blocked and ads don't
+    // load — Breeze just never hides arbitrary page elements anymore.
+    // Fresh cache file (v3) so the new config is honored, not a stale engine.
     blocker = await ElectronBlocker.fromLists(
       fetch,
       adsAndTrackingLists,
-      { loadGenericCosmeticsFilters: false },
+      { loadCosmeticFilters: false },
       {
-        path: path.join(app.getPath('userData'), 'adblock-engine-v2.bin'),
+        path: path.join(app.getPath('userData'), 'adblock-engine-v3.bin'),
         read: fs.promises.readFile,
         write: fs.promises.writeFile,
       }

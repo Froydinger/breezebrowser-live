@@ -63,6 +63,17 @@ html, body {
   pointer-events: none;
 }
 
+/* A hidden sidebar still carries -webkit-app-region: drag, and in top-bar
+   mode the URL bar slides over that phantom drag region (left:14) — macOS
+   then steals button mousedowns as a window drag. Kill the drag when hidden. */
+#sidebar.hidden,
+#sidebar.hidden #drag-strip,
+#sidebar.hidden #nav-row,
+#sidebar.hidden .nav-spacer,
+#sidebar.hidden .drag-fill {
+  -webkit-app-region: no-drag;
+}
+
 #drag-strip {
   height: 40px;
   flex-shrink: 0;
