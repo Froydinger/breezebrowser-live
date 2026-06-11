@@ -386,12 +386,27 @@ function buildView(t, url) {
   wc.on('leave-html-full-screen', applyBounds);
   // incognito tabs never touch history
   wc.on('did-navigate', (_e, navUrl) => {
+    t.didAutoRetry = false; // each navigation gets its own one retry
     if (!t.incognito) recordHistory(wc, navUrl);
   });
   wc.on('did-navigate-in-page', (_e, navUrl, isMain) => {
     if (isMain && !t.incognito) recordHistory(wc, navUrl);
   });
   wc.on('context-menu', (_e, p) => showPageContextMenu(wc, p));
+  // Auto-recover transient main-frame load failures (the "had to reload"
+  // cases) — retry once, then leave it alone so real errors still surface.
+  wc.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+    if (!isMainFrame) return;
+    if (errorCode === -3) return; // ERR_ABORTED (user navigated away)
+    if (t.didAutoRetry) return;
+    t.didAutoRetry = true;
+    setTimeout(() => {
+      if (t.view && !t.view.webContents.isDestroyed()) t.view.webContents.reload();
+    }, 400);
+  });
+  wc.on('did-finish-load', () => {
+    t.didAutoRetry = false; // reset for the next navigation
+  });
   wc.on('media-started-playing', () => {
     t.mediaPlaying = true;
     t.mediaTs = Date.now();
@@ -1605,6 +1620,21 @@ ipcMain.handle('import-html', (_e, { html, target }) => {
 // Ad blocking
 // ---------------------------------------------------------------------------
 
+// Sites whose own content endpoints look like trackers to filter lists, so
+// blocking breaks them (FB/IG feeds die after first paint, etc). $document
+// exceptions disable ALL blocking on these origins — their ads are
+// first-party and unblockable anyway, so we trade nothing real for working
+// feeds. Everywhere else keeps full ad/tracker blocking.
+const ADBLOCK_EXCEPTIONS = [
+  '@@||facebook.com^$document',
+  '@@||fbcdn.net^$document',
+  '@@||instagram.com^$document',
+  '@@||cdninstagram.com^$document',
+  '@@||messenger.com^$document',
+  '@@||threads.net^$document',
+  '@@||whatsapp.com^$document',
+];
+
 async function setupAdblock() {
   try {
     const { ElectronBlocker } = require('@ghostery/adblocker-electron');
@@ -1613,6 +1643,11 @@ async function setupAdblock() {
       read: fs.promises.readFile,
       write: fs.promises.writeFile,
     });
+    try {
+      blocker.updateFromDiff({ added: ADBLOCK_EXCEPTIONS });
+    } catch (e) {
+      console.error('Adblock exceptions failed:', e.message);
+    }
     if (appSettings.adblockEnabled) {
       blocker.enableBlockingInSession(session.defaultSession);
     }
