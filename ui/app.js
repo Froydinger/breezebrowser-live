@@ -360,21 +360,11 @@ function buildGroupSection(g) {
   header.innerHTML =
     `<span class="group-carrot"><svg viewBox="0 0 12 12"><path d="M4 2.5 8 6l-4 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` +
     `<span class="group-dot"></span><span class="group-name"></span><span class="group-count"></span>`;
-  header.querySelector('.group-carrot').addEventListener('click', (e) => {
-    e.stopPropagation();
-    breeze.toggleGroupCollapse(g.id);
-  });
-  header.addEventListener('click', (e) => {
-    if (e.target.closest('.group-carrot') || e.target.classList.contains('group-name')) return;
-    breeze.toggleGroupCollapse(g.id);
-  });
+  // whole header toggles collapse; rename + delete live in the right-click menu
+  header.addEventListener('click', () => breeze.toggleGroupCollapse(g.id));
   header.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     breeze.groupHeaderMenu(g.id);
-  });
-  header.querySelector('.group-name').addEventListener('dblclick', (e) => {
-    e.stopPropagation();
-    startRename(g.id);
   });
   section.appendChild(header);
   return section;
@@ -427,8 +417,10 @@ function renderGroups() {
       nameEl.textContent = g.name;
     }
 
-    // collapsed: show only OPEN tabs (or just the header if none are open)
-    const collapsed = !!g.collapsed;
+    // collapsed: show only OPEN tabs (or just the header if none are open).
+    // Groups are collapsed by DEFAULT (undefined === collapsed); only an
+    // explicit `collapsed:false` expands them.
+    const collapsed = g.collapsed !== false;
     section.classList.toggle('collapsed', collapsed);
     const openCount = g.entries.filter((e) => liveByEid.has(e.eid)).length;
     const visibleEntries = collapsed

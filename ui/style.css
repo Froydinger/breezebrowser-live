@@ -1036,7 +1036,8 @@ button, input, textarea, select, label,
 .tab, .pin, .bookmark, .ai-chip,
 #tabs, #pins, #suggestions, #address-wrap, #sidebar-resizer, #edge-handle,
 #ai-messages, #ai-input-wrap, #ai-ctx-toggle,
-#adblock-pill, #update-toast {
+#adblock-pill, #update-toast,
+#groups, .group, .group-header, .group-carrot, .group-name, .group-count {
   -webkit-app-region: no-drag;
 }
 

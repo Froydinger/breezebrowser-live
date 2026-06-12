@@ -2684,7 +2684,9 @@ ipcMain.on('reorder-tabs', (_e, ids) => {
 ipcMain.on('toggle-group-collapse', (_e, gid) => {
   const g = groups.find((x) => x.id === gid);
   if (g) {
-    g.collapsed = !g.collapsed;
+    // default (undefined) is collapsed, so flip the EFFECTIVE state:
+    // expanded (collapsed===false) → collapse (true); otherwise → expand (false)
+    g.collapsed = g.collapsed === false;
     saveGroups();
     pushState();
   }
