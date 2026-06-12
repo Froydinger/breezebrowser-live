@@ -1031,6 +1031,12 @@ html.dark #suggestions {
    detect when you leave — drag regions swallow those events */
 body.peeking #sidebar { -webkit-app-region: no-drag; }
 
+/* A closed assistant is opacity:0 / pointer-events:none, but its .ai-header
+   drag region is a NATIVE macOS rect that ignores both — it kept stealing
+   mousedowns over the top-right of the page (assistant-width dead zone).
+   Kill the drag region whenever the panel isn't open. */
+#assistant:not(.open) .ai-header { -webkit-app-region: no-drag; }
+
 button, input, textarea, select, label,
 .tab, .pin, .bookmark, .ai-chip,
 #tabs, #pins, #suggestions, #address-wrap, #sidebar-resizer, #edge-handle,
