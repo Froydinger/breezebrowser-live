@@ -18,6 +18,10 @@ const fs = require('fs');
 // before the video plays on first load).
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+// Make sure OS dialogs and menus say "Breeze", never "Electron"
+app.setName('Breeze');
+
+
 // Sites sniff the UA; any non-standard token (Electron/x, Breeze/x) makes
 // Google & co. serve degraded or broken layouts. Strip everything but the
 // standard Chrome/Safari tokens so we look like plain Chrome.
@@ -357,7 +361,21 @@ function tabState(t) {
   };
 }
 
+// Coalesced: busy SPAs fire did-navigate-in-page / title / loading events
+// many times a second, and each push serializes all state, polls audio on
+// every tab, and forces the chrome renderer to redraw the sidebar. Batching
+// to one push per 80ms keeps main + chrome renderer idle-cheap.
+let pushStateTimer = null;
+
 function pushState() {
+  if (pushStateTimer) return;
+  pushStateTimer = setTimeout(() => {
+    pushStateTimer = null;
+    pushStateNow();
+  }, 80);
+}
+
+function pushStateNow() {
   if (!win) return;
   syncGroupEntries();
   try {
@@ -405,6 +423,7 @@ function enableAdblockOn(ses) {
 // Builds the live Chromium view for a tab. Called on create and on wake.
 function buildView(t, url) {
   const isInternal = url.startsWith('file://');
+  t.preloadInternal = isInternal; // which preload this view carries
   if (t.incognito) getIncognitoSession();
   const view = new WebContentsView({
     webPreferences: {
@@ -422,11 +441,15 @@ function buildView(t, url) {
   const id = t.id;
   const incognito = t.incognito;
 
+  // Rounded corners cost a little GPU during video playback (blocks the
+  // hardware video overlay), but the idle burn was elsewhere (perpetual
+  // animations + pushState storms) — keeping the look is worth it.
   try {
     view.setBorderRadius(12);
   } catch {} // older Electron: no rounded corners, no problem
 
   const wc = view.webContents;
+  wc.on('focus', () => { lastWCFocusAt = Date.now(); });
   const sync = () => pushState();
   wc.on('page-title-updated', sync);
   wc.on('did-start-loading', sync);
@@ -560,6 +583,33 @@ ipcMain.on('media-toggle', (_e, id) => {
 ipcMain.on('media-back-to-tab', (_e, id) => {
   if (tabs.has(id)) activateTab(id); // activateTab already exits PiP
 });
+// PiP routing. Electron gives us no direct signal for the PiP window's
+// "back to tab" button, but the click focuses our browser window (a wc
+// 'focus' fires) right before the owner page reports leaving PiP — while
+// the X close emits no focus at all. Track both and route accordingly.
+let lastWCFocusAt = 0;
+ipcMain.on('pip-state', (e, inPiP) => {
+  for (const t of tabs.values()) {
+    if (t.view && t.view.webContents === e.sender) {
+      const was = t.inPiP;
+      t.inPiP = inPiP === true;
+      if (
+        was &&
+        !t.inPiP &&
+        t.id !== activeTabId &&
+        Date.now() - lastWCFocusAt < 600
+      ) {
+        activateTab(t.id);
+        if (win) {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        }
+      }
+      break;
+    }
+  }
+});
 ipcMain.on('media-pip', (_e, id) => {
   const t = tabs.get(id);
   if (t?.view) runPiP(t.view.webContents, PIP_TOGGLE);
@@ -573,6 +623,7 @@ function createTab(url = NEWTAB_URL, activate = true, incognito = false) {
     favicon: null,
     incognito,
     sleeping: false,
+    inPiP: false,
     saved: null,
     lastActive: Date.now(),
     groupEid: null,
@@ -834,8 +885,15 @@ let groups = []; // [{ id, name, entries: [{ eid, title, url, favicon }] }]
 let nextGroupId = 1;
 let nextEntryId = 1;
 
+// Debounced: syncGroupEntries calls this whenever a grouped tab's title or
+// URL changes, and saveSettings is a synchronous disk read+write.
+let saveGroupsTimer = null;
 function saveGroups() {
-  saveSettings({ groups });
+  if (saveGroupsTimer) return;
+  saveGroupsTimer = setTimeout(() => {
+    saveGroupsTimer = null;
+    saveSettings({ groups });
+  }, 500);
 }
 
 function loadGroups(settings) {
@@ -2340,9 +2398,17 @@ function effectiveTheme() {
   return t;
 }
 
+let lastAppliedTheme = null;
+
 function applyTheme(theme) {
-  nativeTheme.themeSource = theme === 'system' ? 'system' : theme;
+  // Only assign when it actually changes: setting themeSource re-fires
+  // nativeTheme 'updated', and our 'updated' handler calls applyTheme —
+  // an unconditional assignment here spins that loop forever (~30% CPU idle).
+  const src = theme === 'system' ? 'system' : theme;
+  if (nativeTheme.themeSource !== src) nativeTheme.themeSource = src;
   const eff = effectiveTheme();
+  if (eff === lastAppliedTheme) return;
+  lastAppliedTheme = eff;
   if (win) {
     win.setBackgroundColor(eff === 'dark' ? '#16161a' : '#f2f0ed');
     win.webContents.send('theme', eff);
@@ -2620,11 +2686,37 @@ function buildMenu() {
 ipcMain.on('new-tab', () => createTab());
 ipcMain.on('close-tab', (_e, id) => closeTab(id));
 ipcMain.on('activate-tab', (_e, id) => activateTab(id));
+// Navigating across the internal(file://)<->web boundary must REBUILD the
+// view: the preload is fixed at view creation, and a newtab's internal-preload
+// lacks what web pages need (PiP routing, link pre-warm, creds, AI selection).
+function loadInActiveTab(url) {
+  const t = tabs.get(activeTabId);
+  if (!t) return;
+  if (!t.view) {
+    buildView(t, url);
+    win.contentView.addChildView(t.view);
+    applyBounds();
+    return;
+  }
+  const wantInternal = url.startsWith('file://');
+  if (t.preloadInternal === wantInternal) {
+    t.view.webContents.loadURL(url);
+    return;
+  }
+  win.contentView.removeChildView(t.view);
+  t.view.webContents.close();
+  t.view = null;
+  buildView(t, url);
+  win.contentView.addChildView(t.view);
+  applyBounds();
+  t.view.webContents.focus();
+}
+
 ipcMain.on('navigate', (_e, input) => {
   const url = toNavigableURL(input);
-  if (url) activeWC()?.loadURL(url);
+  if (url) loadInActiveTab(url);
 });
-ipcMain.on('open-url', (_e, url) => activeWC()?.loadURL(url));
+ipcMain.on('open-url', (_e, url) => loadInActiveTab(url));
 ipcMain.on('open-url-new-tab', (_e, url) => createTab(url, true));
 ipcMain.on('go-back', () => activeWC()?.navigationHistory.goBack());
 ipcMain.on('go-forward', () => activeWC()?.navigationHistory.goForward());
@@ -2977,8 +3069,24 @@ app.on('before-quit', () => {
   // flush storage + drop the clean-exit marker so the next launch knows we
   // shut down properly (⌘Q, menu quit, window close — all routed here)
   markCleanExit();
+  // node-llama-cpp's native (Metal) worker threads keep the process alive
+  // after the windows are gone — ⌘Q looked dead until force quit. Release
+  // everything; each dispose is independent so one failure can't skip the rest.
+  try { clearTimeout(ai.idleTimer); } catch {}
+  try { ai.abort?.abort(); } catch {}
+  try { ai.session?.dispose(); } catch {}
+  try { ai.sequence?.dispose(); } catch {}
+  try { ai.context?.dispose(); } catch {}
+  try { ai.model?.dispose(); } catch {}
+  try { ai.llama?.dispose(); } catch {}
 });
 
 // belt-and-suspenders: also flush on hard process signals
 app.on('will-quit', markCleanExit);
 process.on('exit', markCleanExit);
+
+// Backstop: if any native thread still pins the process after quit, end it.
+// The timer is unref'd, so a clean exit is never delayed by it.
+app.on('quit', () => {
+  setTimeout(() => process.exit(0), 1500).unref();
+});

@@ -6,15 +6,32 @@ const { ipcRenderer } = require('electron');
 let lastHref = '';
 let lastTime = 0;
 
+// Track whether this page owns the native PiP window, so main can route the
+// PiP "back to tab" button to the right tab.
+window.addEventListener(
+  'enterpictureinpicture',
+  () => ipcRenderer.send('pip-state', true),
+  { capture: true }
+);
+
 // When the PiP window closes, keep the video playing in its tab instead of
 // letting Chromium pause it. (Closing the tab kills the document, which
 // closes PiP automatically — that direction needs no code.)
 window.addEventListener(
   'leavepictureinpicture',
   (e) => {
+    ipcRenderer.send('pip-state', false);
+    // Chromium pauses the video shortly AFTER this event when the tab is
+    // hidden — only re-assert play if it was playing when PiP closed (a
+    // video the user paused stays paused).
     const v = e.target;
-    if (v && v.tagName === 'VIDEO' && v.paused && !v.ended) {
-      setTimeout(() => v.play().catch(() => {}), 0);
+    if (v && v.tagName === 'VIDEO' && !v.ended && !v.paused) {
+      const resume = () => {
+        if (v.paused && !v.ended) v.play().catch(() => {});
+      };
+      setTimeout(resume, 0);
+      setTimeout(resume, 150);
+      setTimeout(resume, 400);
     }
   },
   { capture: true }

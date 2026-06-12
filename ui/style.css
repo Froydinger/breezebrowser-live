@@ -862,7 +862,6 @@ html.dark #assistant::before {
     color-mix(in srgb, var(--accent) 60%, #000) 100%);
   box-shadow: 0 6px 24px color-mix(in srgb, var(--accent) 45%, transparent),
               inset 0 2px 6px rgba(255,255,255,0.5);
-  animation: orb-float 4s ease-in-out infinite;
 }
 
 @keyframes orb-float {
@@ -1074,7 +1073,6 @@ body.urlbar-top #drag-top { display: none; }
   margin: 0 auto 16px;
   display: block;
   filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent));
-  animation: orb-float 4s ease-in-out infinite;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1313,8 +1311,13 @@ body.page-loading #loadbar { opacity: 1; }
   width: 40%;
   border-radius: 2px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  /* paused unless a page is actually loading — an always-running animation
+     keeps the GPU compositor awake even at opacity 0 */
   animation: loadbar-slide 1.1s ease-in-out infinite;
+  animation-play-state: paused;
 }
+
+body.page-loading #loadbar-fill { animation-play-state: running; }
 
 @keyframes loadbar-slide {
   from { transform: translateX(-100%); }
@@ -1510,7 +1513,6 @@ html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
   border-radius: 50%;
   background: radial-gradient(circle, color-mix(in srgb, var(--accent) 45%, transparent), transparent 60%);
   filter: blur(40px);
-  animation: onboard-float 8s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
@@ -1544,7 +1546,6 @@ html.dark #onboard-card { border-color: rgba(255,255,255,0.12); }
 .onboard-logo {
   width: 76px; height: 76px; margin-bottom: 18px;
   filter: drop-shadow(0 10px 30px color-mix(in srgb, var(--accent) 50%, transparent));
-  animation: orb-float 4s ease-in-out infinite;
 }
 .onboard-icon {
   font-size: 40px; margin-bottom: 14px;
