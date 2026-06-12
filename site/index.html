@@ -8,7 +8,8 @@
 <meta property="og:title" content="Breeze — A calmer, faster browser" />
 <meta property="og:description" content="Local AI. Native ad blocking. Zero tracking. Your data stays yours. Forever." />
 <meta name="theme-color" content="#0b0b12" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237b95ff'/%3E%3Cstop offset='1' stop-color='%233f5ee8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='url(%23g)'/%3E%3Cpath d='M22 40c-1-7 3-16 11-19 7-2 13 2 12 8-1 5-7 7-11 4 5 4 1 12-5 12-4 0-7-2-7-5z' fill='%23fff'/%3E%3C/svg%3E" />
+<link rel="icon" type="image/png" href="breeze.png" />
+<link rel="apple-touch-icon" href="breeze.png" />
 <style>
   :root{
     --bg:#0a0a10;
@@ -178,13 +179,9 @@
 <div class="aura"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
 <div class="grain"></div>
 
-<svg width="0" height="0" style="position:absolute">
-  <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b95ff"/><stop offset="1" stop-color="#3f5ee8"/></linearGradient></defs>
-</svg>
-
 <nav id="nav"><div class="wrap nav-inner">
   <a class="brand" href="#top">
-    <svg class="logo" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#lg)"/><path d="M22 40c-1-7 3-16 11-19 7-2 13 2 12 8-1 5-7 7-11 4 5 4 1 12-5 12-4 0-7-2-7-5z" fill="#fff"/></svg>
+    <img class="logo" src="breeze.png" alt="Breeze" />
     Breeze
   </a>
   <div class="nav-links">
@@ -201,11 +198,11 @@
   <p class="sub">Breeze is a fast, Chromium-based browser with a <b style="color:var(--ink)">private local AI</b>, native ad blocking, and zero tracking. Your data stays yours. Forever.</p>
   <div class="cta-row">
     <a class="btn btn-primary btn-rec" id="dl-mac" href="#" data-os="mac">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 2c.1 1.2-.4 2.4-1.1 3.2-.8.9-2 1.6-3.2 1.5-.1-1.2.5-2.4 1.2-3.1C14.6 2.7 15.9 2.1 17 2zm3.4 16.5c-.6 1.3-.9 1.9-1.7 3-1.1 1.6-2.6 3.5-4.5 3.5-1.7 0-2.1-1.1-4.4-1.1-2.3 0-2.8 1.1-4.4 1.1-1.9 0-3.3-1.8-4.4-3.3C-1 16-1.4 11.4.6 8.6 1.9 6.5 4.1 5.3 6.2 5.3c2 0 3.2 1.1 4.9 1.1 1.6 0 2.5-1.1 4.8-1.1 1.8 0 3.7 1 5.1 2.7-4.5 2.4-3.7 8.8-.6 10.5z"/></svg>
+      <svg viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
       <span>Download for Mac<small>Apple Silicon · .dmg</small></span>
     </a>
     <a class="btn btn-ghost" id="dl-win" href="#" data-os="win">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.4 4.4v7.1H3V5.5zm0 13 7.4 1.1v-7H3v5.9zM11.3 4.3 21 3v8.5h-9.7V4.3zm0 8.2H21V21l-9.7-1.3v-7.2z"/></svg>
+      <svg viewBox="0 0 448 512" fill="currentColor"><path d="M0 93.7l183.6-25.3v177.4H0V93.7zm0 324.6l183.6 25.3V268.4H0v149.9zm203.8 28L448 480V268.4H203.8v177.9zm0-380.6v180.1H448V32L203.8 65.7z"/></svg>
       <span>Download for Windows<small>64-bit · .exe</small></span>
     </a>
   </div>
@@ -302,13 +299,13 @@
   <p class="lead reveal">Download, drag, done. No account, no setup wizard, no nonsense.</p>
   <div class="platforms">
     <div class="plat reveal">
-      <svg class="os" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2c.1 1.2-.4 2.4-1.1 3.2-.8.9-2 1.6-3.2 1.5-.1-1.2.5-2.4 1.2-3.1C14.6 2.7 15.9 2.1 17 2zm3.4 16.5c-.6 1.3-.9 1.9-1.7 3-1.1 1.6-2.6 3.5-4.5 3.5-1.7 0-2.1-1.1-4.4-1.1-2.3 0-2.8 1.1-4.4 1.1-1.9 0-3.3-1.8-4.4-3.3C-1 16-1.4 11.4.6 8.6 1.9 6.5 4.1 5.3 6.2 5.3c2 0 3.2 1.1 4.9 1.1 1.6 0 2.5-1.1 4.8-1.1 1.8 0 3.7 1 5.1 2.7-4.5 2.4-3.7 8.8-.6 10.5z"/></svg>
+      <svg class="os" viewBox="0 0 384 512" fill="currentColor"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
       <h3>macOS</h3>
       <div class="req">Apple Silicon · macOS 11+</div>
       <a class="btn btn-primary dl-mac" href="#">Download .dmg</a>
     </div>
     <div class="plat reveal">
-      <svg class="os" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.4 4.4v7.1H3V5.5zm0 13 7.4 1.1v-7H3v5.9zM11.3 4.3 21 3v8.5h-9.7V4.3zm0 8.2H21V21l-9.7-1.3v-7.2z"/></svg>
+      <svg class="os" viewBox="0 0 448 512" fill="currentColor"><path d="M0 93.7l183.6-25.3v177.4H0V93.7zm0 324.6l183.6 25.3V268.4H0v149.9zm203.8 28L448 480V268.4H203.8v177.9zm0-380.6v180.1H448V32L203.8 65.7z"/></svg>
       <h3>Windows</h3>
       <div class="req">64-bit · Windows 10+</div>
       <a class="btn btn-ghost dl-win" href="#">Download .exe</a>
@@ -319,7 +316,7 @@
 
 <footer><div class="wrap">
   <a class="brand" href="#top">
-    <svg class="logo" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#lg)"/><path d="M22 40c-1-7 3-16 11-19 7-2 13 2 12 8-1 5-7 7-11 4 5 4 1 12-5 12-4 0-7-2-7-5z" fill="#fff"/></svg>
+    <img class="logo" src="breeze.png" alt="Breeze" />
     Breeze
   </a>
   <div>A calmer, faster browser. Local AI · Native ad blocking · Zero tracking.</div>
