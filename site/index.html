@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Breeze — A calmer, faster browser</title>
+<meta name="description" content="Breeze is a fast, Chromium-based browser with local AI, native ad blocking, and zero tracking. Your data stays yours. Forever." />
+<meta property="og:title" content="Breeze — A calmer, faster browser" />
+<meta property="og:description" content="Local AI. Native ad blocking. Zero tracking. Your data stays yours. Forever." />
+<meta name="theme-color" content="#0b0b12" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237b95ff'/%3E%3Cstop offset='1' stop-color='%233f5ee8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='url(%23g)'/%3E%3Cpath d='M22 40c-1-7 3-16 11-19 7-2 13 2 12 8-1 5-7 7-11 4 5 4 1 12-5 12-4 0-7-2-7-5z' fill='%23fff'/%3E%3C/svg%3E" />
+<style>
+  :root{
+    --bg:#0a0a10;
+    --ink:#eef0f6;
+    --muted:#a6a9b8;
+    --faint:#6c6f80;
+    --accent:#6d8bff;
+    --accent2:#8e7bff;
+    --card:rgba(255,255,255,.04);
+    --stroke:rgba(255,255,255,.09);
+    --radius:22px;
+    --ease:cubic-bezier(.22,1,.36,1);
+    --maxw:1160px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;
+    background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;line-height:1.5;
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .accent-text{
+    background:linear-gradient(100deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+
+  /* ---------- ambient background ---------- */
+  .aura{position:fixed;inset:0;z-index:-2;overflow:hidden;pointer-events:none}
+  .orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.55;animation:drift 22s ease-in-out infinite alternate}
+  .orb.a{width:620px;height:620px;background:radial-gradient(circle,#3f5ee8,transparent 70%);top:-180px;left:-120px}
+  .orb.b{width:520px;height:520px;background:radial-gradient(circle,#8e7bff,transparent 70%);top:140px;right:-160px;animation-delay:-7s}
+  .orb.c{width:460px;height:460px;background:radial-gradient(circle,#2bc0c9,transparent 70%);bottom:-160px;left:32%;opacity:.32;animation-delay:-13s}
+  @keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.12)}}
+  .grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.04;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+  /* ---------- nav ---------- */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(16px);
+    background:linear-gradient(to bottom,rgba(10,10,16,.72),rgba(10,10,16,0));
+    border-bottom:1px solid transparent;transition:border-color .3s}
+  nav.scrolled{border-bottom-color:var(--stroke);background:rgba(10,10,16,.82)}
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:68px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:18px;letter-spacing:-.3px}
+  .logo{width:30px;height:30px;filter:drop-shadow(0 4px 14px rgba(109,139,255,.5))}
+  .nav-links{display:flex;align-items:center;gap:30px}
+  .nav-links a{color:var(--muted);font-size:14.5px;font-weight:500;transition:color .15s}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-cta{padding:9px 18px;border-radius:99px;background:linear-gradient(100deg,var(--accent),var(--accent2));
+    color:#fff;font-weight:600;font-size:14px;box-shadow:0 8px 24px rgba(109,139,255,.35);transition:transform .15s,filter .15s}
+  .nav-cta:hover{transform:translateY(-1px);filter:brightness(1.08)}
+  @media(max-width:760px){.nav-links a:not(.nav-cta){display:none}}
+
+  /* ---------- hero ---------- */
+  header.hero{position:relative;text-align:center;padding:88px 0 40px}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 15px;border-radius:99px;
+    background:var(--card);border:1px solid var(--stroke);font-size:13px;color:var(--muted);
+    margin-bottom:30px;animation:rise .7s var(--ease) both}
+  .pill .dot{width:7px;height:7px;border-radius:50%;background:#46d39a;box-shadow:0 0 10px #46d39a}
+  h1{font-size:clamp(40px,7vw,78px);line-height:1.03;letter-spacing:-.035em;font-weight:800;
+    animation:rise .7s var(--ease) .05s both}
+  h1 .accent-text{display:inline-block}
+  .sub{max-width:620px;margin:26px auto 0;font-size:clamp(16px,2.2vw,20px);color:var(--muted);
+    animation:rise .7s var(--ease) .12s both}
+  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:38px;
+    animation:rise .7s var(--ease) .18s both}
+  .btn{display:inline-flex;align-items:center;gap:11px;padding:15px 26px;border-radius:15px;
+    font-weight:650;font-size:15.5px;transition:transform .15s,filter .2s,box-shadow .2s;border:1px solid transparent;white-space:nowrap}
+  .btn svg{width:20px;height:20px}
+  .btn-primary{background:linear-gradient(100deg,var(--accent),var(--accent2));color:#fff;
+    box-shadow:0 14px 38px rgba(109,139,255,.4)}
+  .btn-primary:hover{transform:translateY(-2px);filter:brightness(1.07);box-shadow:0 18px 46px rgba(109,139,255,.5)}
+  .btn-ghost{background:var(--card);border-color:var(--stroke);color:var(--ink)}
+  .btn-ghost:hover{transform:translateY(-2px);background:rgba(255,255,255,.07)}
+  .btn small{display:block;font-size:11.5px;font-weight:500;opacity:.7;line-height:1;margin-top:3px}
+  .btn-rec{position:relative}
+  .btn-rec::after{content:"Recommended";position:absolute;top:-10px;right:-8px;font-size:10px;font-weight:700;
+    letter-spacing:.04em;padding:3px 8px;border-radius:99px;background:#46d39a;color:#04261a;box-shadow:0 4px 12px rgba(70,211,154,.4)}
+  .meta{margin-top:20px;font-size:13px;color:var(--faint);animation:rise .7s var(--ease) .24s both}
+
+  /* ---------- browser mockup ---------- */
+  .stage{margin:54px auto 0;max-width:1000px;padding:0 24px;perspective:1600px;
+    animation:rise 1s var(--ease) .3s both}
+  .window{border-radius:18px;overflow:hidden;border:1px solid var(--stroke);
+    background:#101018;box-shadow:0 50px 120px -30px rgba(0,0,0,.8),0 0 90px -40px rgba(109,139,255,.5);
+    transform:rotateX(6deg);transform-origin:center top}
+  .titlebar{display:flex;align-items:center;gap:8px;padding:13px 16px;background:#13131c}
+  .tl{width:12px;height:12px;border-radius:50%}
+  .tl.r{background:#ff5f57}.tl.y{background:#febc2e}.tl.g{background:#28c840}
+  .app{display:flex;height:430px;background:linear-gradient(160deg,#13131b,#0e0e15)}
+  .side{width:212px;flex-shrink:0;padding:14px 12px;display:flex;flex-direction:column;gap:9px;border-right:1px solid rgba(255,255,255,.05)}
+  .omni{height:34px;border-radius:10px;background:rgba(255,255,255,.05);display:flex;align-items:center;padding:0 12px;gap:8px;color:var(--faint);font-size:12.5px}
+  .pins{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+  .pin{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.06);display:grid;place-items:center;font-size:16px}
+  .grp{font-size:10px;letter-spacing:.1em;color:var(--faint);margin:6px 2px 0;display:flex;align-items:center;gap:6px}
+  .grp .d{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .stab{height:32px;border-radius:9px;display:flex;align-items:center;gap:9px;padding:0 11px;font-size:12.5px;color:var(--muted)}
+  .stab.on{background:rgba(255,255,255,.08);color:var(--ink)}
+  .stab .fav{width:14px;height:14px;border-radius:4px;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  .view{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .view .glow{position:absolute;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(109,139,255,.22),transparent 70%);top:10%;left:30%}
+  .clock{position:relative;text-align:center}
+  .clock .t{font-size:60px;font-weight:200;letter-spacing:-2px}
+  .clock .g{color:var(--faint);font-size:13px;margin-top:2px}
+  .clock .s{margin:22px auto 0;width:300px;max-width:60vw;height:44px;border-radius:13px;background:rgba(255,255,255,.05);border:1px solid var(--stroke)}
+  .aip{width:230px;flex-shrink:0;border-left:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);padding:14px;display:flex;flex-direction:column;gap:10px}
+  .aip .h{font-size:12px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .bub{padding:9px 12px;border-radius:13px;font-size:12px;line-height:1.45;max-width:90%}
+  .bub.u{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-bottom-right-radius:5px}
+  .bub.ai{align-self:flex-start;background:rgba(255,255,255,.06);color:var(--muted);border-bottom-left-radius:5px}
+  .aip .in{margin-top:auto;height:40px;border-radius:99px;background:rgba(255,255,255,.05);border:1px solid var(--stroke)}
+  @media(max-width:860px){.aip{display:none}.app{height:380px}}
+  @media(max-width:560px){.side{display:none}.window{transform:none}.clock .t{font-size:46px}}
+
+  /* ---------- sections ---------- */
+  section{position:relative;padding:96px 0}
+  .eyebrow{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);text-align:center}
+  .h2{font-size:clamp(30px,4.6vw,46px);font-weight:800;letter-spacing:-.03em;text-align:center;margin-top:14px}
+  .lead{max-width:560px;margin:18px auto 0;text-align:center;color:var(--muted);font-size:17px}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:56px}
+  @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:600px){.grid{grid-template-columns:1fr}}
+  .feat{padding:28px;border-radius:var(--radius);background:var(--card);border:1px solid var(--stroke);
+    transition:transform .25s var(--ease),background .25s,border-color .25s}
+  .feat:hover{transform:translateY(-4px);background:rgba(255,255,255,.06);border-color:rgba(109,139,255,.4)}
+  .ficon{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;margin-bottom:18px;
+    background:linear-gradient(135deg,rgba(109,139,255,.25),rgba(142,123,255,.18));border:1px solid rgba(109,139,255,.3)}
+  .ficon svg{width:23px;height:23px;color:var(--accent)}
+  .feat h3{font-size:18.5px;font-weight:700;letter-spacing:-.01em}
+  .feat p{margin-top:9px;color:var(--muted);font-size:14.5px;line-height:1.6}
+
+  /* privacy band */
+  .band{margin:0 24px;border-radius:30px;border:1px solid var(--stroke);overflow:hidden;
+    background:linear-gradient(120deg,rgba(63,94,232,.14),rgba(142,123,255,.1));position:relative}
+  .band-in{max-width:var(--maxw);margin:0 auto;padding:72px 40px;text-align:center;position:relative}
+  .band h2{font-size:clamp(28px,4.4vw,44px);font-weight:800;letter-spacing:-.03em;line-height:1.12}
+  .band p{max-width:560px;margin:20px auto 0;color:var(--muted);font-size:17px}
+  .stats{display:flex;gap:48px;justify-content:center;flex-wrap:wrap;margin-top:48px}
+  .stat .n{font-size:38px;font-weight:800;letter-spacing:-.02em}
+  .stat .l{color:var(--muted);font-size:13.5px;margin-top:4px}
+
+  /* download CTA */
+  .dl{text-align:center}
+  .dl .h2{margin-bottom:8px}
+  .platforms{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:40px}
+  .plat{flex:1;min-width:240px;max-width:330px;padding:32px 26px;border-radius:var(--radius);
+    background:var(--card);border:1px solid var(--stroke);transition:transform .25s var(--ease),border-color .25s}
+  .plat:hover{transform:translateY(-4px);border-color:rgba(109,139,255,.45)}
+  .plat .os{width:40px;height:40px;margin:0 auto 16px;color:var(--ink)}
+  .plat h3{font-size:20px;font-weight:700}
+  .plat .req{color:var(--faint);font-size:13px;margin-top:6px}
+  .plat .btn{width:100%;justify-content:center;margin-top:22px}
+  .note{max-width:560px;margin:34px auto 0;font-size:13px;color:var(--faint);line-height:1.7}
+
+  footer{padding:50px 0 60px;border-top:1px solid var(--stroke);margin-top:40px;text-align:center;color:var(--faint);font-size:13.5px}
+  footer .brand{justify-content:center;color:var(--ink);margin-bottom:14px}
+
+  .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+  .reveal.in{opacity:1;transform:none}
+  @keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="aura"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+<div class="grain"></div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7b95ff"/><stop offset="1" stop-color="#3f5ee8"/></linearGradient></defs>
+</svg>
+
+<nav id="nav"><div class="wrap nav-inner">
+  <a class="brand" href="#top">
+    <svg class="logo" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#lg)"/><path d="M22 40c-1-7 3-16 11-19 7-2 13 2 12 8-1 5-7 7-11 4 5 4 1 12-5 12-4 0-7-2-7-5z" fill="#fff"/></svg>
+    Breeze
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#download" class="nav-cta">Download</a>
+  </div>
+</div></nav>
+
+<a id="top"></a>
+<header class="hero"><div class="wrap">
+  <div class="pill"><span class="dot"></span> Version 2.1.1 · macOS &amp; Windows</div>
+  <h1>The web, <span class="accent-text">at ease.</span></h1>
+  <p class="sub">Breeze is a fast, Chromium-based browser with a <b style="color:var(--ink)">private local AI</b>, native ad blocking, and zero tracking. Your data stays yours. Forever.</p>
+  <div class="cta-row">
+    <a class="btn btn-primary btn-rec" id="dl-mac" href="#" data-os="mac">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 2c.1 1.2-.4 2.4-1.1 3.2-.8.9-2 1.6-3.2 1.5-.1-1.2.5-2.4 1.2-3.1C14.6 2.7 15.9 2.1 17 2zm3.4 16.5c-.6 1.3-.9 1.9-1.7 3-1.1 1.6-2.6 3.5-4.5 3.5-1.7 0-2.1-1.1-4.4-1.1-2.3 0-2.8 1.1-4.4 1.1-1.9 0-3.3-1.8-4.4-3.3C-1 16-1.4 11.4.6 8.6 1.9 6.5 4.1 5.3 6.2 5.3c2 0 3.2 1.1 4.9 1.1 1.6 0 2.5-1.1 4.8-1.1 1.8 0 3.7 1 5.1 2.7-4.5 2.4-3.7 8.8-.6 10.5z"/></svg>
+      <span>Download for Mac<small>Apple Silicon · .dmg</small></span>
+    </a>
+    <a class="btn btn-ghost" id="dl-win" href="#" data-os="win">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.4 4.4v7.1H3V5.5zm0 13 7.4 1.1v-7H3v5.9zM11.3 4.3 21 3v8.5h-9.7V4.3zm0 8.2H21V21l-9.7-1.3v-7.2z"/></svg>
+      <span>Download for Windows<small>64-bit · .exe</small></span>
+    </a>
+  </div>
+  <p class="meta">Free · Open download · No account required</p>
+</div></header>
+
+<div class="stage">
+  <div class="window">
+    <div class="titlebar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span></div>
+    <div class="app">
+      <aside class="side">
+        <div class="omni">🔍 Search or enter URL</div>
+        <div class="pins">
+          <div class="pin">🎬</div><div class="pin">📺</div><div class="pin">🎵</div><div class="pin">✦</div>
+        </div>
+        <div class="grp"><span class="d"></span> WORK</div>
+        <div class="stab on"><span class="fav"></span> Dashboard</div>
+        <div class="stab"><span class="fav"></span> Docs</div>
+        <div class="stab"><span class="fav"></span> Research notes</div>
+      </aside>
+      <div class="view">
+        <div class="glow"></div>
+        <div class="clock">
+          <div class="t" id="mockClock">9:41</div>
+          <div class="g">Good morning.</div>
+          <div class="s"></div>
+        </div>
+      </div>
+      <aside class="aip">
+        <div class="h">✦ Breeze AI · local</div>
+        <div class="bub u">Summarize this page</div>
+        <div class="bub ai">Sure — three key points, all running privately on your Mac…</div>
+        <div class="bub u">Now find sources</div>
+        <div class="bub ai">🔍 Searched the web · 4 sources cited below.</div>
+        <div class="in"></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<section id="features"><div class="wrap">
+  <div class="eyebrow reveal">Everything you need</div>
+  <h2 class="h2 reveal">Powerful where it counts.<br/>Quiet everywhere else.</h2>
+  <div class="grid">
+    <div class="feat reveal">
+      <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l2.2 5.6a1 1 0 0 0 .6.6L20.4 12l-5.6 2.2a1 1 0 0 0-.6.6L12 20.4l-2.2-5.6a1 1 0 0 0-.6-.6L3.6 12l5.6-2.2a1 1 0 0 0 .6-.6z" stroke-linejoin="round"/></svg></div>
+      <h3>Local AI assistant</h3>
+      <p>A genuinely private assistant built in. Summarize pages, ask anything, generate images, set reminders — running entirely on your machine. Nothing leaves your device.</p>
+    </div>
+    <div class="feat reveal">
+      <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h3>Ad &amp; tracker blocking</h3>
+      <p>EasyList + tracking filters baked into the network layer of every tab. Ads never load, trackers never fire — no extensions, no setup, no slowdown.</p>
+    </div>
+    <div class="feat reveal">
+      <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke-linecap="round"/></svg></div>
+      <h3>Zero tracking</h3>
+      <p>No telemetry. No profiles. History and passwords are encrypted on your device with your system keychain. Incognito leaves nothing behind.</p>
+    </div>
+    <div class="feat reveal">
+      <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg></div>
+      <h3>Split screen</h3>
+      <p>Two pages side by side with a draggable divider. Compare, reference, multitask — all in one window, exactly where you want it.</p>
+    </div>
+    <div class="feat reveal">
+      <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="7" height="7" rx="1.6"/><rect x="14" y="4" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="6" rx="1.6"/><rect x="14" y="14" width="7" height="6" rx="1.6"/></svg></div>
+      <h3>Tabs, organized</h3>
+      <p>Pin sites as apps, file tabs into named groups, and let idle tabs sleep to save memory. A sidebar that stays calm no matter how busy you get.</p>
+    </div>
+    <div class="feat reveal">
+      <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 2 4 14h7l-1 8 9-12h-7z" stroke-linejoin="round"/></svg></div>
+      <h3>Effortlessly fast</h3>
+      <p>Built on Chromium with link pre-warming, smart suggestions, and picture-in-picture. Sites that already feel instant feel even faster.</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="privacy" style="padding-top:20px">
+  <div class="band reveal"><div class="band-in">
+    <div class="eyebrow">Privacy, by default</div>
+    <h2 style="margin-top:14px">Your data stays yours.<br/><span class="accent-text">Forever.</span></h2>
+    <p>The AI runs locally. The blocker runs locally. Your history and passwords are encrypted on the device. Breeze has nothing to sell because Breeze collects nothing.</p>
+    <div class="stats">
+      <div class="stat"><div class="n accent-text">100%</div><div class="l">Local AI</div></div>
+      <div class="stat"><div class="n accent-text">0</div><div class="l">Trackers allowed</div></div>
+      <div class="stat"><div class="n accent-text">∞</div><div class="l">Ads blocked</div></div>
+    </div>
+  </div></div>
+</section>
+
+<section id="download" class="dl"><div class="wrap">
+  <div class="eyebrow reveal">Get Breeze</div>
+  <h2 class="h2 reveal">Ready in seconds.</h2>
+  <p class="lead reveal">Download, drag, done. No account, no setup wizard, no nonsense.</p>
+  <div class="platforms">
+    <div class="plat reveal">
+      <svg class="os" viewBox="0 0 24 24" fill="currentColor"><path d="M17 2c.1 1.2-.4 2.4-1.1 3.2-.8.9-2 1.6-3.2 1.5-.1-1.2.5-2.4 1.2-3.1C14.6 2.7 15.9 2.1 17 2zm3.4 16.5c-.6 1.3-.9 1.9-1.7 3-1.1 1.6-2.6 3.5-4.5 3.5-1.7 0-2.1-1.1-4.4-1.1-2.3 0-2.8 1.1-4.4 1.1-1.9 0-3.3-1.8-4.4-3.3C-1 16-1.4 11.4.6 8.6 1.9 6.5 4.1 5.3 6.2 5.3c2 0 3.2 1.1 4.9 1.1 1.6 0 2.5-1.1 4.8-1.1 1.8 0 3.7 1 5.1 2.7-4.5 2.4-3.7 8.8-.6 10.5z"/></svg>
+      <h3>macOS</h3>
+      <div class="req">Apple Silicon · macOS 11+</div>
+      <a class="btn btn-primary dl-mac" href="#">Download .dmg</a>
+    </div>
+    <div class="plat reveal">
+      <svg class="os" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.4 4.4v7.1H3V5.5zm0 13 7.4 1.1v-7H3v5.9zM11.3 4.3 21 3v8.5h-9.7V4.3zm0 8.2H21V21l-9.7-1.3v-7.2z"/></svg>
+      <h3>Windows</h3>
+      <div class="req">64-bit · Windows 10+</div>
+      <a class="btn btn-ghost dl-win" href="#">Download .exe</a>
+    </div>
+  </div>
+  <p class="note">The builds are currently unsigned. On macOS, right-click the app → <b>Open</b> the first time. On Windows, choose <b>More info → Run anyway</b> if SmartScreen appears. That's it.</p>
+</div></section>
+
+<footer><div class="wrap">
+  <a class="brand" href="#top">
+    <svg class="logo" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="url(#lg)"/><path d="M22 40c-1-7 3-16 11-19 7-2 13 2 12 8-1 5-7 7-11 4 5 4 1 12-5 12-4 0-7-2-7-5z" fill="#fff"/></svg>
+    Breeze
+  </a>
+  <div>A calmer, faster browser. Local AI · Native ad blocking · Zero tracking.</div>
+  <div style="margin-top:14px;opacity:.7">© <span id="yr"></span> Breeze · Your data stays yours. Forever.</div>
+</div></footer>
+
+<script>
+  // ---- download links (edit these if your file names change) ----
+  var MAC_URL = "https://izyoevpcdndahphnpxhz.supabase.co/storage/v1/object/public/public-files//Breeze-2.1.1%20Mac.dmg";
+  var WIN_URL = "https://izyoevpcdndahphnpxhz.supabase.co/storage/v1/object/public/public-files//Breeze-2.1.1%20Windows.exe";
+  document.querySelectorAll('#dl-mac, .dl-mac').forEach(function(a){a.href=MAC_URL;});
+  document.querySelectorAll('#dl-win, .dl-win').forEach(function(a){a.href=WIN_URL;});
+
+  // OS-aware "Recommended" badge in the hero
+  (function(){
+    var isMac=/Mac|iP(hone|ad|od)/.test(navigator.platform)||/Mac/.test(navigator.userAgent);
+    var mac=document.getElementById('dl-mac'), win=document.getElementById('dl-win');
+    if(!isMac){ // surface Windows as the recommended/primary one
+      win.classList.add('btn-rec'); win.classList.remove('btn-ghost'); win.classList.add('btn-primary');
+      mac.classList.remove('btn-rec','btn-primary'); mac.classList.add('btn-ghost');
+    }
+  })();
+
+  // nav shadow on scroll
+  var nav=document.getElementById('nav');
+  addEventListener('scroll',function(){nav.classList.toggle('scrolled',scrollY>12);});
+
+  // scroll reveal
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.14});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+
+  // live clock in the mockup
+  function tick(){var d=new Date(),h=d.getHours()%12||12,m=String(d.getMinutes()).padStart(2,'0');document.getElementById('mockClock').textContent=h+':'+m;}
+  tick();setInterval(tick,1000*20);
+  document.getElementById('yr').textContent=new Date().getFullYear();
+</script>
+</body>
+</html>
