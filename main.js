@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS = {
   userName: '', // given to the AI
   aiInstructions: '', // standing custom instructions for the AI
   openaiKey: '', // optional, for image generation
+  tavilyKey: '', // optional, for AI web search
   onboarded: false, // first-run setup dialog shown
   webNotifications: true, // sites may show notifications (browser-wide)
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
@@ -141,10 +142,53 @@ function contentBounds(left, right) {
   };
 }
 
+let splitTabId = null; // secondary tab shown beside the active one
+let splitRatio = 0.5; // left pane width fraction
+const SPLIT_DIVIDER = 14; // wide enough to grab (native views can't cover the gap)
+
 function applyBounds() {
   if (!win) return;
   const b = contentBounds(currentLeft, currentRight);
+  const a = tabs.get(activeTabId);
+  const s = splitTabId ? tabs.get(splitTabId) : null;
+  if (s && s.view && a && a.view && splitTabId !== activeTabId) {
+    const leftW = Math.max(120, Math.round((b.width - SPLIT_DIVIDER) * splitRatio));
+    const rightW = Math.max(120, b.width - SPLIT_DIVIDER - leftW);
+    a.view.setBounds({ x: b.x, y: b.y, width: leftW, height: b.height });
+    s.view.setBounds({ x: b.x + leftW + SPLIT_DIVIDER, y: b.y, width: rightW, height: b.height });
+    win.webContents.send('split-divider', {
+      x: b.x + leftW,
+      y: b.y,
+      h: b.height,
+      w: SPLIT_DIVIDER,
+    });
+    return;
+  }
+  win.webContents.send('split-divider', null);
   for (const { view } of tabs.values()) if (view) view.setBounds(b);
+}
+
+function enterSplit(id) {
+  if (!tabs.has(id) || id === activeTabId) return;
+  const t = tabs.get(id);
+  wakeTab(t);
+  splitTabId = id;
+  if (t.view) win.contentView.addChildView(t.view);
+  win?.webContents.send('split', true);
+  applyBounds();
+  pushState();
+}
+
+function exitSplit() {
+  if (!splitTabId) return;
+  const t = tabs.get(splitTabId);
+  if (t?.view && splitTabId !== activeTabId) {
+    try { win.contentView.removeChildView(t.view); } catch {}
+  }
+  splitTabId = null;
+  win?.webContents.send('split', false);
+  applyBounds();
+  pushState();
 }
 
 function layout() {
@@ -322,6 +366,7 @@ function pushState() {
   win.webContents.send('state', {
     tabs: tabOrder.map((id) => tabState(tabs.get(id))),
     activeTabId,
+    splitTabId,
     bookmarks,
     pins,
     groups,
@@ -608,6 +653,15 @@ function runPiP(wc, code) {
 function activateTab(id) {
   const t = tabs.get(id);
   if (!t || !win) return;
+  // clicking the split partner just focuses it; clicking any other tab while
+  // split is on exits split first (keeps the layout simple & robust)
+  if (splitTabId) {
+    if (id === splitTabId) {
+      t.view?.webContents.focus();
+      return;
+    }
+    if (id !== activeTabId) exitSplit();
+  }
   const prev = activeTabId && activeTabId !== id ? tabs.get(activeTabId) : null;
   if (prev?.view) {
     win.contentView.removeChildView(prev.view);
@@ -632,6 +686,7 @@ function activateTab(id) {
 function closeTab(id) {
   const t = tabs.get(id);
   if (!t) return;
+  if (id === splitTabId || (id === activeTabId && splitTabId)) exitSplit();
   const idx = tabOrder.indexOf(id);
   tabOrder = tabOrder.filter((x) => x !== id);
   if (activeTabId === id) {
@@ -929,6 +984,14 @@ function showTabContextMenu(id) {
       enabled: isWeb && !t.sleeping && id !== activeTabId,
       click: () => sleepTab(id),
     },
+    { type: 'separator' },
+    splitTabId
+      ? { label: 'Exit Split View', click: () => exitSplit() }
+      : {
+          label: 'Open in Split View',
+          enabled: id !== activeTabId && tabs.size > 1,
+          click: () => enterSplit(id),
+        },
     { type: 'separator' },
     {
       label: 'Allow Popups',
@@ -1743,6 +1806,10 @@ async function setupAdblock() {
 // ---------------------------------------------------------------------------
 
 function getTavilyKey() {
+  // user's own key (Settings) wins, then env var, then a bundled/dev .env
+  if (appSettings.tavilyKey && appSettings.tavilyKey.trim()) {
+    return appSettings.tavilyKey.trim();
+  }
   if (process.env.TAVILY_API_KEY) return process.env.TAVILY_API_KEY;
   for (const file of [
     path.join(__dirname, '.env'),
@@ -2069,12 +2136,20 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
   // optional: cross-reference with live web results
   if (useWeb) {
     sendAI({ state: 'searching' });
-    win?.webContents.send('ai-tool', { kind: 'web', label: 'Searched the web' });
+    win?.webContents.send('ai-tool', { kind: 'web', label: 'Searching the web…' });
     const sources = await tavilySearch(text);
     if (sources) {
+      win?.webContents.send('ai-tool', { kind: 'web', label: 'Searched the web' });
       prompt =
-        `[Web search results — cite these by URL when you use them]\n` +
-        `${sources}\n[End web results]\n\n${prompt}`;
+        `You have these live web search results. Use them as your primary ` +
+        `source and ALWAYS include the relevant source links (as markdown ` +
+        `[title](url)) in your answer:\n${sources}\n[End web results]\n\n` +
+        `Question: ${prompt}`;
+    } else {
+      win?.webContents.send('ai-tool', {
+        kind: 'web',
+        label: getTavilyKey() ? 'No web results' : 'Add a Tavily key in Settings',
+      });
     }
   }
   sendAI({ state: 'generating' });
@@ -2133,11 +2208,103 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
 });
 
 ipcMain.on('ai-stop', () => ai.abort?.abort());
+
+// Save an AI-generated image (data: URL or http) to ~/Downloads.
+ipcMain.on('download-image', async (_e, src) => {
+  try {
+    const dir = app.getPath('downloads');
+    const name = `breeze-image-${Date.now()}.png`;
+    const dest = path.join(dir, name);
+    if (src.startsWith('data:')) {
+      const b64 = src.split(',')[1] || '';
+      fs.writeFileSync(dest, Buffer.from(b64, 'base64'));
+    } else {
+      const res = await fetch(src);
+      const buf = Buffer.from(await res.arrayBuffer());
+      fs.writeFileSync(dest, buf);
+    }
+    // surface it in the downloads list + notify
+    downloadList.unshift({
+      id: downloadSeq++,
+      filename: name,
+      path: dest,
+      url: src.startsWith('data:') ? 'AI-generated image' : src,
+      totalBytes: fs.statSync(dest).size,
+      receivedBytes: fs.statSync(dest).size,
+      state: 'completed',
+      ts: Date.now(),
+    });
+    saveDownloads();
+    broadcastDownloads();
+    try {
+      new Notification({ title: 'Image saved', body: name }).show();
+    } catch {}
+  } catch (err) {
+    console.error('Image download failed:', err.message);
+  }
+});
 ipcMain.on('ai-new-chat', () => {
   if (ai.ready && !ai.generating) {
     newChat();
     win?.webContents.send('ai-cleared');
   }
+});
+
+// ---------------------------------------------------------------------------
+// Local chat history — conversations stored encrypted on this device
+// ---------------------------------------------------------------------------
+
+const chatsPath = () => path.join(app.getPath('userData'), 'chats.bin');
+let chats = []; // [{ id, title, ts, messages:[{role,text|src}], llama }]
+
+function loadChats() {
+  try {
+    chats = decryptFromFile(chatsPath());
+  } catch {
+    chats = [];
+  }
+}
+function saveChats() {
+  encryptToFile(chatsPath(), chats.slice(0, 200));
+}
+
+ipcMain.handle('chat-list', () =>
+  chats
+    .map((c) => ({ id: c.id, title: c.title, ts: c.ts }))
+    .sort((a, b) => b.ts - a.ts)
+);
+ipcMain.handle('chat-load', async (_e, id) => {
+  const c = chats.find((x) => x.id === id);
+  if (!c) return null;
+  // restore the model's context for this conversation when possible
+  if (ai.ready && ai.session && Array.isArray(c.llama)) {
+    try {
+      ai.session.setChatHistory(c.llama);
+    } catch {}
+  }
+  return { messages: c.messages || [] };
+});
+ipcMain.on('chat-save', (_e, { id, title, messages }) => {
+  let c = chats.find((x) => x.id === id);
+  if (!c) {
+    c = { id };
+    chats.push(c);
+  }
+  c.title = title || 'New chat';
+  c.messages = messages || [];
+  c.ts = Date.now();
+  try {
+    c.llama = ai.session ? ai.session.getChatHistory() : null;
+  } catch {
+    c.llama = null;
+  }
+  saveChats();
+  win?.webContents.send('chats-changed');
+});
+ipcMain.on('chat-delete', (_e, id) => {
+  chats = chats.filter((x) => x.id !== id);
+  saveChats();
+  win?.webContents.send('chats-changed');
 });
 
 // ---------------------------------------------------------------------------
@@ -2496,6 +2663,32 @@ ipcMain.on('set-sidebar-width', (_e, w) => {
 ipcMain.on('save-sidebar-width', () => applySetting('sidebarWidth', sidebarWidth));
 ipcMain.on('tab-context-menu', (_e, id) => showTabContextMenu(id));
 ipcMain.on('open-pin', (_e, url) => openPin(url));
+ipcMain.on('enter-split', (_e, id) => enterSplit(id));
+ipcMain.on('exit-split', () => exitSplit());
+ipcMain.on('set-split-ratio', (_e, r) => {
+  splitRatio = Math.min(0.85, Math.max(0.15, r));
+  applyBounds();
+});
+ipcMain.on('reorder-tabs', (_e, ids) => {
+  // ids = the new order of the ungrouped/unpinned list tabs; slot them back
+  // into the positions they occupied in the master tab order.
+  const slots = [];
+  tabOrder.forEach((id, i) => {
+    if (ids.includes(id)) slots.push(i);
+  });
+  ids.forEach((id, k) => {
+    if (slots[k] !== undefined) tabOrder[slots[k]] = id;
+  });
+  pushState();
+});
+ipcMain.on('toggle-group-collapse', (_e, gid) => {
+  const g = groups.find((x) => x.id === gid);
+  if (g) {
+    g.collapsed = !g.collapsed;
+    saveGroups();
+    pushState();
+  }
+});
 ipcMain.on('reorder-pins', (_e, urls) => {
   const byUrl = new Map(pins.map((p) => [p.url, p]));
   const next = urls.map((u) => byUrl.get(u)).filter(Boolean);
@@ -2741,6 +2934,7 @@ app.whenReady().then(async () => {
   healStorageIfUnclean();
   loadHistory();
   loadVault();
+  loadChats();
   loadDownloads();
   setupDownloads(session.defaultSession);
   setupPermissions(session.defaultSession);

@@ -25,21 +25,62 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: linear-gradient(160deg, #faf8f5 0%, #f1ede7 60%, #ece6dd 100%);
       color: var(--text);
       transition: background 0.4s var(--ease);
-      padding: 56px 24px;
-      display: flex;
-      justify-content: center;
     }
 
     html.dark body {
       background: linear-gradient(160deg, #1c1c24 0%, #15151b 60%, #131318 100%);
     }
 
-    main { width: min(620px, 100%); animation: rise 0.5s var(--ease); }
+    #settings-layout { display: flex; height: 100vh; }
+
+    #settings-nav {
+      width: 210px;
+      flex-shrink: 0;
+      padding: 22px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 16px; font-weight: 700; letter-spacing: -0.3px;
+      padding: 4px 10px 16px;
+    }
+    .nav-brand img { filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--accent) 35%, transparent)); }
+    #settings-nav button {
+      text-align: left;
+      border: none;
+      background: transparent;
+      color: var(--text-soft);
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 500;
+      padding: 9px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 0.13s var(--ease), color 0.13s var(--ease);
+    }
+    #settings-nav button:hover { background: var(--surface); color: var(--text); }
+    #settings-nav button.on { background: var(--accent); color: #fff; }
+
+    #settings-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 48px 40px 60px;
+      animation: rise 0.4s var(--ease);
+    }
+    #settings-content > section,
+    #settings-content > p { max-width: 640px; margin-left: auto; margin-right: auto; }
+    h1 { display: none; }
+    .subtitle { display: none; }
 
     @keyframes rise {
       from { opacity: 0; transform: translateY(12px); }
@@ -220,15 +261,46 @@
   </style>
 </head>
 <body>
-  <main>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:4px">
-      <img src="icon.png" alt="" width="44" height="44" draggable="false"
-        style="filter:drop-shadow(0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent))" />
-      <h1 style="margin-bottom:0">Settings</h1>
-    </div>
-    <div class="subtitle">Breeze · everything saves instantly</div>
+  <div id="settings-layout">
+    <nav id="settings-nav">
+      <div class="nav-brand">
+        <img src="icon.png" alt="" width="26" height="26" draggable="false" />
+        <span>Settings</span>
+      </div>
+      <button data-nav="general" class="on">General</button>
+      <button data-nav="ai">Breeze AI</button>
+      <button data-nav="search">Search</button>
+      <button data-nav="performance">Performance</button>
+      <button data-nav="notifications">Notifications</button>
+      <button data-nav="privacy">Privacy</button>
+      <button data-nav="system">System</button>
+      <button data-nav="help">Help &amp; FAQ</button>
+    </nav>
+    <main id="settings-content">
 
-    <section>
+    <section data-tab="notifications">
+      <h2>Notifications</h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Allow website notifications</div>
+            <div class="row-hint">When on, sites can show native notifications. Turn off to block all sites.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="webNotifications2" />
+            <span class="knob"></span>
+          </label>
+        </div>
+      </div>
+      <h2 style="margin-top:22px">Per-site</h2>
+      <div class="card" id="notif-list">
+        <div class="row" id="notif-empty">
+          <div class="row-hint">No sites yet. Sites you allow or block (here or via their prompt) appear here.</div>
+        </div>
+      </div>
+    </section>
+
+    <section data-tab="general">
       <h2>Appearance</h2>
       <div class="card">
         <div class="row">
@@ -271,7 +343,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="general">
       <h2>New Tab</h2>
       <div class="card">
         <div class="row">
@@ -296,7 +368,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="search">
       <h2>Search</h2>
       <div class="card">
         <div class="row">
@@ -315,7 +387,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="performance">
       <h2>Performance &amp; Playback</h2>
       <div class="card">
         <div class="row">
@@ -343,7 +415,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="ai">
       <h2>Breeze AI</h2>
       <div class="card">
         <div class="row">
@@ -373,7 +445,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="privacy">
       <h2>Privacy</h2>
       <div class="card">
         <div class="row" id="passwords-row" style="cursor:pointer">
@@ -406,7 +478,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="privacy">
       <h2>Site Permissions</h2>
       <div class="card" id="perm-list">
         <div class="row" id="perm-empty">
@@ -415,7 +487,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="system">
       <h2>System</h2>
       <div class="card">
         <div class="row">
@@ -428,7 +500,7 @@
       </div>
     </section>
 
-    <section>
+    <section data-tab="help">
       <h2>Help &amp; FAQ</h2>
       <div class="card" id="faq">
         <details>
@@ -466,12 +538,26 @@
       </div>
     </section>
 
-    <p class="footer-note">
+    <p class="footer-note" data-tab="help">
       Passkey support with iCloud Keychain requires a code-signed build; USB security keys work everywhere.
     </p>
-  </main>
+    </main>
+  </div>
 
   <script>
+    // ---- tabbed dashboard ----
+    function showTab(name) {
+      document.querySelectorAll('#settings-nav button').forEach((b) =>
+        b.classList.toggle('on', b.dataset.nav === name));
+      document.querySelectorAll('[data-tab]').forEach((el) => {
+        el.style.display = el.dataset.tab === name ? '' : 'none';
+      });
+      document.getElementById('settings-content').scrollTop = 0;
+    }
+    document.querySelectorAll('#settings-nav button').forEach((b) =>
+      b.addEventListener('click', () => showTab(b.dataset.nav)));
+    showTab('general');
+
     let settings = {};
     let effective = 'light'; // resolved light/dark from main (handles System)
 
@@ -487,6 +573,7 @@
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
       document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
       document.getElementById('webNotifications').checked = settings.webNotifications !== false;
+      document.getElementById('webNotifications2').checked = settings.webNotifications !== false;
       document.querySelectorAll('#urlbar-seg button').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === (settings.urlBarPosition || 'top')));
       document.querySelectorAll('#pinsize-seg button').forEach((b) =>
@@ -521,6 +608,7 @@
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
     document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
     document.getElementById('webNotifications').addEventListener('change', (e) => set('webNotifications', e.target.checked));
+    document.getElementById('webNotifications2').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.querySelectorAll('#urlbar-seg button').forEach((b) =>
       b.addEventListener('click', () => set('urlBarPosition', b.dataset.v)));
     document.querySelectorAll('#pinsize-seg button').forEach((b) =>
@@ -586,6 +674,44 @@
           breezeInternal.setSitePermission(r.origin, r.perm, null));
         right.append(sel, rm);
 
+        el.append(left, right);
+        listEl.appendChild(el);
+      }
+      renderNotifs();
+    }
+
+    // ----- notifications per-site breakdown -----
+    function renderNotifs() {
+      const listEl = document.getElementById('notif-list');
+      const perms = settings.permissions || {};
+      const rows = [];
+      for (const [origin, byPerm] of Object.entries(perms)) {
+        if ('notifications' in byPerm) rows.push({ origin, allowed: byPerm.notifications });
+      }
+      listEl.querySelectorAll('.notif-row').forEach((el) => el.remove());
+      document.getElementById('notif-empty').style.display = rows.length ? 'none' : '';
+      for (const r of rows) {
+        const el = document.createElement('div');
+        el.className = 'row notif-row';
+        const left = document.createElement('div');
+        const label = document.createElement('div');
+        label.className = 'row-label';
+        label.textContent = r.origin.replace(/^https?:\/\//, '');
+        left.appendChild(label);
+        const right = document.createElement('div');
+        right.style.cssText = 'display:flex;gap:8px;align-items:center';
+        const sel = document.createElement('select');
+        sel.innerHTML = '<option value="1">Allow</option><option value="0">Block</option>';
+        sel.value = r.allowed ? '1' : '0';
+        sel.addEventListener('change', () =>
+          breezeInternal.setSitePermission(r.origin, 'notifications', sel.value === '1'));
+        const rm = document.createElement('button');
+        rm.textContent = '✕';
+        rm.title = 'Forget';
+        rm.style.cssText = 'border:none;background:transparent;color:var(--text-soft);cursor:pointer;font-size:13px;padding:4px';
+        rm.addEventListener('click', () =>
+          breezeInternal.setSitePermission(r.origin, 'notifications', null));
+        right.append(sel, rm);
         el.append(left, right);
         listEl.appendChild(el);
       }

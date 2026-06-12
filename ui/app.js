@@ -137,7 +137,10 @@ breeze.onSettings(applySettings);
 // Tabs
 // ---------------------------------------------------------------------------
 
+let dragTabId = null;
+
 function renderTabs() {
+  if (dragTabId) return; // don't fight the user's drag mid-flight
   const existing = new Map(
     [...tabsEl.children].map((el) => [Number(el.dataset.id), el])
   );
@@ -184,11 +187,37 @@ function renderTabs() {
         e.preventDefault();
         breeze.tabContextMenu(t.id);
       });
+
+      // drag to reorder within the tab list
+      el.draggable = true;
+      el.addEventListener('dragstart', (e) => {
+        dragTabId = t.id;
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => {
+        dragTabId = null;
+        el.classList.remove('dragging');
+        breeze.reorderTabs(
+          [...tabsEl.children].map((c) => Number(c.dataset.id))
+        );
+      });
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!dragTabId || dragTabId === t.id) return;
+        const dragging = tabsEl.querySelector('.tab.dragging');
+        if (!dragging) return;
+        const r = el.getBoundingClientRect();
+        const after = e.clientY > r.top + r.height / 2;
+        tabsEl.insertBefore(dragging, after ? el.nextSibling : el);
+      });
+
       tabsEl.appendChild(el);
     }
     existing.delete(t.id);
 
-    el.classList.toggle('active', t.id === state.activeTabId);
+    el.classList.toggle('active', t.id === state.activeTabId || t.id === state.splitTabId);
+    el.classList.toggle('split', t.id === state.splitTabId);
     el.classList.toggle('incognito', !!t.incognito);
     el.classList.toggle('asleep', !!t.sleeping);
     el.querySelector('.title').textContent = t.title;
@@ -328,12 +357,25 @@ function buildGroupSection(g) {
 
   const header = document.createElement('div');
   header.className = 'group-header';
-  header.innerHTML = `<span class="group-dot"></span><span class="group-name"></span>`;
+  header.innerHTML =
+    `<span class="group-carrot"><svg viewBox="0 0 12 12"><path d="M4 2.5 8 6l-4 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` +
+    `<span class="group-dot"></span><span class="group-name"></span><span class="group-count"></span>`;
+  header.querySelector('.group-carrot').addEventListener('click', (e) => {
+    e.stopPropagation();
+    breeze.toggleGroupCollapse(g.id);
+  });
+  header.addEventListener('click', (e) => {
+    if (e.target.closest('.group-carrot') || e.target.classList.contains('group-name')) return;
+    breeze.toggleGroupCollapse(g.id);
+  });
   header.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     breeze.groupHeaderMenu(g.id);
   });
-  header.addEventListener('dblclick', () => startRename(g.id));
+  header.querySelector('.group-name').addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    startRename(g.id);
+  });
   section.appendChild(header);
   return section;
 }
@@ -385,6 +427,16 @@ function renderGroups() {
       nameEl.textContent = g.name;
     }
 
+    // collapsed: show only OPEN tabs (or just the header if none are open)
+    const collapsed = !!g.collapsed;
+    section.classList.toggle('collapsed', collapsed);
+    const openCount = g.entries.filter((e) => liveByEid.has(e.eid)).length;
+    const visibleEntries = collapsed
+      ? g.entries.filter((e) => liveByEid.has(e.eid))
+      : g.entries;
+    const countEl = section.querySelector('.group-count');
+    countEl.textContent = collapsed && g.entries.length ? String(g.entries.length) : '';
+
     const rows = new Map(
       [...section.querySelectorAll('.group-entry')].map((el) => [
         Number(el.dataset.eid),
@@ -392,7 +444,7 @@ function renderGroups() {
       ])
     );
 
-    g.entries.forEach((entry, i) => {
+    visibleEntries.forEach((entry, i) => {
       let el = rows.get(entry.eid);
       if (!el) el = buildGroupEntry(g.id, entry.eid);
       rows.delete(entry.eid);
@@ -804,22 +856,146 @@ breeze.onAssistant((open) => {
 });
 
 $('#ai-close').addEventListener('click', () => breeze.toggleAssistant());
-$('#ai-new-chat').addEventListener('click', () => breeze.aiNewChat());
+
+// ---------------------------------------------------------------------------
+// Local chat history
+// ---------------------------------------------------------------------------
+
+let chatId = Date.now();
+let chatMessages = []; // [{role:'user'|'ai'|'image', text|src}]
+const aiChats = $('#ai-chats');
+
+function chatTitle() {
+  const firstUser = chatMessages.find((m) => m.role === 'user');
+  return firstUser ? firstUser.text.slice(0, 48) : 'New chat';
+}
+function persistChat() {
+  if (!chatMessages.length) return;
+  breeze.chatSave({ id: chatId, title: chatTitle(), messages: chatMessages });
+}
+function startNewChat() {
+  chatId = Date.now();
+  chatMessages = [];
+  aiMessages.querySelectorAll('.msg, .ai-image-msg').forEach((m) => m.remove());
+  aiEmpty.style.display = '';
+  clearActivityChips(false);
+  breeze.aiNewChat();
+  aiChats.classList.add('hidden');
+}
+function renderLoadedChat(messages) {
+  aiMessages.querySelectorAll('.msg, .ai-image-msg').forEach((m) => m.remove());
+  aiEmpty.style.display = 'none';
+  for (const m of messages) {
+    if (m.role === 'image') {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg ai ai-image-msg';
+      const img = document.createElement('img');
+      img.src = m.src;
+      img.title = 'Click to download';
+      img.addEventListener('click', () => breeze.downloadImage(m.src));
+      wrap.appendChild(img);
+      aiMessages.appendChild(wrap);
+    } else {
+      addMsg(m.role === 'user' ? 'user' : 'ai', m.text);
+    }
+  }
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+}
+
+async function renderChatList() {
+  const list = await breeze.chatList();
+  const el = $('#ai-chats-list');
+  el.textContent = '';
+  if (!list.length) {
+    el.innerHTML = '<div class="ai-chat-empty">No saved chats yet.</div>';
+    return;
+  }
+  for (const c of list) {
+    const row = document.createElement('div');
+    row.className = 'ai-chat-row' + (c.id === chatId ? ' active' : '');
+    const t = document.createElement('span');
+    t.className = 'ai-chat-title';
+    t.textContent = c.title;
+    const del = document.createElement('button');
+    del.className = 'ai-chat-del';
+    del.textContent = '✕';
+    del.title = 'Delete chat';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      breeze.chatDelete(c.id);
+    });
+    row.append(t, del);
+    row.addEventListener('click', async () => {
+      const data = await breeze.chatLoad(c.id);
+      if (!data) return;
+      chatId = c.id;
+      chatMessages = data.messages.slice();
+      renderLoadedChat(chatMessages);
+      aiChats.classList.add('hidden');
+    });
+    el.appendChild(row);
+  }
+}
+
+$('#ai-history').addEventListener('click', () => {
+  const showing = aiChats.classList.toggle('hidden');
+  if (!showing) renderChatList();
+});
+$('#ai-new-chat').addEventListener('click', startNewChat);
+breeze.onChatsChanged(() => {
+  if (!aiChats.classList.contains('hidden')) renderChatList();
+});
 
 breeze.onAICleared(() => {
   aiMessages.querySelectorAll('.msg').forEach((m) => m.remove());
   aiEmpty.style.display = '';
 });
 
+// Lightweight, SAFE markdown → HTML: escapes everything first, then adds
+// **bold**, `code`, [text](url), and bare URLs as clickable links.
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+function renderMarkdown(text) {
+  let h = escapeHtml(text);
+  // [label](url)
+  h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_m, label, url) => `<a class="ai-link" data-url="${url}">${label}</a>`);
+  // bare URLs (not already inside an anchor)
+  h = h.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,
+    (_m, pre, url) => `${pre}<a class="ai-link" data-url="${url}">${url}</a>`);
+  h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
+  h = h.replace(/\n/g, '<br>');
+  return h;
+}
+
+function setMsgText(el, text) {
+  el.dataset.raw = text;
+  if (el.classList.contains('user')) el.textContent = text;
+  else el.innerHTML = renderMarkdown(text);
+}
+
 function addMsg(cls, text) {
   aiEmpty.style.display = 'none';
   const el = document.createElement('div');
   el.className = `msg ${cls}`;
-  el.textContent = text;
+  setMsgText(el, text);
   aiMessages.appendChild(el);
   aiMessages.scrollTop = aiMessages.scrollHeight;
   return el;
 }
+
+// open links in AI chat in a new tab (delegated, works for streamed content)
+aiMessages.addEventListener('click', (e) => {
+  const a = e.target.closest('a.ai-link');
+  if (a && a.dataset.url) {
+    e.preventDefault();
+    breeze.openURLNewTab(a.dataset.url);
+  }
+});
 
 // Transient activity chips — they show what the AI is doing FOR THE CURRENT
 // request, then fade away when it's done. They never pile up across the chat.
@@ -847,6 +1023,7 @@ function sendAI() {
   const text = aiInput.value.trim();
   if (!text || aiGenerating) return;
   addMsg('user', text);
+  chatMessages.push({ role: 'user', text });
   aiInput.value = '';
   aiInput.style.height = 'auto';
   currentAIMsg = addMsg('ai thinking', '');
@@ -918,16 +1095,20 @@ $('#sel-search').addEventListener('click', () => {
 
 breeze.onAITool((t) => addToolChip(t.label));
 breeze.onAIImage((src) => {
-  if (currentAIMsg && !currentAIMsg.textContent) currentAIMsg.remove();
+  if (currentAIMsg && !currentAIMsg.dataset.raw) currentAIMsg.remove();
   currentAIMsg = null;
   const wrap = document.createElement('div');
   wrap.className = 'msg ai ai-image-msg';
   const img = document.createElement('img');
   img.src = src;
-  img.addEventListener('click', () => breeze.openURLNewTab(src));
+  img.title = 'Click to download';
+  // data: URLs can't open as a tab — download the image instead
+  img.addEventListener('click', () => breeze.downloadImage(src));
   wrap.appendChild(img);
   aiMessages.appendChild(wrap);
   aiMessages.scrollTop = aiMessages.scrollHeight;
+  chatMessages.push({ role: 'image', src });
+  persistChat();
 });
 
 aiSend.addEventListener('click', () => {
@@ -957,20 +1138,24 @@ aiInput.addEventListener('input', () => {
 breeze.onAIChunk((chunk) => {
   if (!currentAIMsg) currentAIMsg = addMsg('ai', '');
   currentAIMsg.classList.remove('thinking');
-  currentAIMsg.textContent += chunk;
+  setMsgText(currentAIMsg, (currentAIMsg.dataset.raw || '') + chunk);
   aiMessages.scrollTop = aiMessages.scrollHeight;
 });
 
 breeze.onAIDone(() => {
   if (currentAIMsg) {
     currentAIMsg.classList.remove('thinking');
-    if (!currentAIMsg.textContent) currentAIMsg.textContent = '(stopped)';
+    if (!currentAIMsg.dataset.raw) setMsgText(currentAIMsg, '(stopped)');
+    if (currentAIMsg.dataset.raw) {
+      chatMessages.push({ role: 'ai', text: currentAIMsg.dataset.raw });
+    }
   }
   currentAIMsg = null;
   aiGenerating = false;
   aiSend.classList.remove('stop');
   aiSend.title = 'Send';
   clearActivityChips(true); // activity finished — fade the chips out
+  persistChat();
 });
 
 breeze.onAIStatus((s) => {
@@ -1002,7 +1187,7 @@ breeze.onAIStatus((s) => {
       aiStatusbar.textContent = `Error: ${s.message}`;
       if (currentAIMsg) {
         currentAIMsg.classList.remove('thinking');
-        currentAIMsg.textContent = `Something went wrong: ${s.message}`;
+        setMsgText(currentAIMsg, `Something went wrong: ${s.message}`);
         currentAIMsg = null;
         aiGenerating = false;
         aiSend.classList.remove('stop');
@@ -1047,6 +1232,53 @@ breeze.onAdblockCount((n) => {
   pill.classList.remove('bump');
   void pill.offsetWidth; // restart animation
   pill.classList.add('bump');
+});
+
+// ---------------------------------------------------------------------------
+// Split screen divider
+// ---------------------------------------------------------------------------
+
+const splitDivider = $('#split-divider');
+let splitDragging = false;
+
+breeze.onSplitDivider((d) => {
+  if (!d || splitDragging) {
+    if (!d) splitDivider.classList.remove('show');
+    return;
+  }
+  splitDivider.classList.add('show');
+  splitDivider.style.left = `${d.x}px`;
+  splitDivider.style.top = `${d.y}px`;
+  splitDivider.style.height = `${d.h}px`;
+  splitDivider.style.width = `${d.w}px`;
+});
+breeze.onSplit((on) => {
+  document.body.classList.toggle('split-active', on);
+  if (!on) splitDivider.classList.remove('show');
+});
+
+splitDivider.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  splitDragging = true;
+  document.body.classList.add('split-dragging');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!splitDragging) return;
+  // ratio of the page area; account for sidebar width + pad on the left
+  const sb = document.body.classList.contains('sidebar-hidden')
+    ? 0
+    : parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 280;
+  const pageLeft = sb + 10;
+  const pageRight = document.body.classList.contains('assistant-open') ? 360 : 14;
+  const pageW = window.innerWidth - pageLeft - pageRight;
+  const ratio = (e.clientX - pageLeft) / pageW;
+  splitDivider.style.left = `${e.clientX}px`;
+  breeze.setSplitRatio(ratio);
+});
+window.addEventListener('mouseup', () => {
+  if (!splitDragging) return;
+  splitDragging = false;
+  document.body.classList.remove('split-dragging');
 });
 
 breeze.onUpdateReady(() => $('#update-toast').classList.add('show'));

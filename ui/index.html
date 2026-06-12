@@ -13,6 +13,7 @@
 
   <div id="topbar"></div>
   <div id="loadbar"><div id="loadbar-fill"></div></div>
+  <div id="split-divider"><div class="split-grip"></div></div>
 
   <div id="sidebar">
     <div id="drag-strip">
@@ -114,6 +115,9 @@
         Assistant
       </span>
       <span class="ai-header-btns">
+        <button class="nav-btn" id="ai-history" title="Chat history">
+          <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <button class="nav-btn" id="ai-new-chat" title="New chat">
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
@@ -121,6 +125,11 @@
           <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
       </span>
+    </div>
+
+    <div id="ai-chats" class="hidden">
+      <div class="ai-chats-head">Chat history</div>
+      <div id="ai-chats-list"></div>
     </div>
 
     <div id="ai-messages">
