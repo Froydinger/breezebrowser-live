@@ -66,6 +66,11 @@ function startOnboarding() {
     if (inp) setTimeout(() => inp.focus(), 300);
   };
 
+  // "Get a key" links open in a real tab (these are buttons, not <a href>)
+  ob.querySelectorAll('.onboard-keylink').forEach((a) =>
+    a.addEventListener('click', () => breeze.openURLNewTab(a.dataset.url))
+  );
+
   breeze.onboardingActive(true); // detach page view so the dialog is visible
   ob.classList.remove('hidden');
   requestAnimationFrame(() => ob.classList.add('visible'));
@@ -76,6 +81,10 @@ function startOnboarding() {
       if (btn.id === 'onboard-finish') {
         const name = $('#onboard-name').value.trim();
         if (name) breeze.setSetting('userName', name);
+        const openai = $('#onboard-openai').value.trim();
+        if (openai) breeze.setSetting('openaiKey', openai);
+        const tavily = $('#onboard-tavily').value.trim();
+        if (tavily) breeze.setSetting('tavilyKey', tavily);
         finishOnboarding();
         return;
       }
@@ -515,6 +524,17 @@ breeze.onState((s) => {
   const bookmarked =
     active && active.url && (s.bookmarks || []).some((b) => b.url === active.url);
   btnBookmark.classList.toggle('active', !!bookmarked);
+  // notification bell: only for sites that use notifications; reflects state
+  const notifBtn = $('#btn-notif');
+  if (active && active.notifSite) {
+    notifBtn.hidden = false;
+    notifBtn.classList.toggle('off', !active.notifOn);
+    notifBtn.title = active.notifOn
+      ? 'Notifications on for this site — click to mute'
+      : 'Notifications muted for this site — click to allow';
+  } else {
+    notifBtn.hidden = true;
+  }
   document.body.classList.toggle('page-loading', !!active?.loading);
   $('#address-wrap').classList.toggle('incognito', !!active?.incognito);
   if (active?.incognito) address.placeholder = 'Incognito — search privately';
@@ -694,6 +714,16 @@ $('#btn-clearcache').addEventListener('click', () => {
   btn.classList.add('pop');
   setTimeout(() => btn.classList.remove('pop'), 300);
   breeze.clearTabData();
+});
+$('#btn-notif').addEventListener('click', () => {
+  const active = state.tabs.find((t) => t.id === state.activeTabId);
+  if (!active || !active.url) return;
+  let origin;
+  try { origin = new URL(active.url).origin; } catch { return; }
+  const btn = $('#btn-notif');
+  btn.classList.add('pop');
+  setTimeout(() => btn.classList.remove('pop'), 300);
+  breeze.toggleSiteNotif(origin);
 });
 
 // adblock pill → little popover with the running count
@@ -1086,6 +1116,42 @@ $('#sel-search').addEventListener('click', () => {
 });
 
 breeze.onAITool((t) => addToolChip(t.label));
+
+// Privacy consent: before any web search leaves the device, the main process
+// asks here. Show an inline card with the disclosure + Search/Skip; the click
+// replies and the AI continues (search on Search, local-only on Skip).
+breeze.onAIWebConsent(() => {
+  if (currentAIMsg) currentAIMsg.classList.remove('thinking'); // pause the dots
+
+  const card = document.createElement('div');
+  card.className = 'ai-web-consent';
+  card.innerHTML = `
+    <div class="awc-head">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      <span>Search the web?</span>
+    </div>
+    <p>This sends your query to our search provider, so it leaves your
+       device. Breeze doesn't collect, store, or share what you search —
+       and nothing is sent until you choose Search.</p>
+    <div class="awc-actions">
+      <button class="awc-skip" type="button">Skip · answer locally</button>
+      <button class="awc-go" type="button">Search the web</button>
+    </div>`;
+  aiMessages.appendChild(card);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+
+  let replied = false;
+  const reply = (ok) => {
+    if (replied) return;
+    replied = true;
+    card.remove();
+    if (currentAIMsg) currentAIMsg.classList.add('thinking');
+    breeze.aiWebConsent(ok);
+  };
+  card.querySelector('.awc-go').addEventListener('click', () => reply(true));
+  card.querySelector('.awc-skip').addEventListener('click', () => reply(false));
+});
+
 breeze.onAIImage((src) => {
   if (currentAIMsg && !currentAIMsg.dataset.raw) currentAIMsg.remove();
   currentAIMsg = null;
@@ -1162,6 +1228,9 @@ breeze.onAIStatus((s) => {
     }
     case 'loading':
       aiStatusbar.textContent = 'Loading model…';
+      break;
+    case 'awaiting-web-consent':
+      aiStatusbar.textContent = 'Waiting for your OK to search…';
       break;
     case 'searching':
       aiStatusbar.textContent = 'Searching the web…';

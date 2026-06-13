@@ -37,27 +37,262 @@ window.addEventListener(
   { capture: true }
 );
 
-// Offer to save credentials when a login form is submitted.
-window.addEventListener(
-  'submit',
-  (e) => {
-    try {
-      const form = e.target;
-      if (!form || !form.querySelector) return;
-      const pass = form.querySelector('input[type="password"]');
-      if (!pass || !pass.value) return;
-      const userEl = form.querySelector(
-        'input[type="email"], input[autocomplete*="username" i], input[type="text"]'
-      );
-      ipcRenderer.send('cred-captured', {
-        origin: location.origin,
-        username: (userEl && userEl.value) || '',
-        password: pass.value,
+// Proactive autofill offer: when the user focuses a login field on a site we
+// have a saved credential for, show a small "Fill saved login" chip anchored
+// to the field. Click fills username + password. Built in a shadow root so
+// page CSS can't touch it; passwords stay in this isolated world (never the
+// page's JS). One offer per page; dismiss on outside click or Esc.
+(() => {
+  let creds = null; // cached for this page after first lookup
+  let chip = null;
+  let dismissed = false;
+
+  const findPassword = () =>
+    document.querySelector('input[type="password"]:not([disabled])');
+  const findUsername = (pass) => {
+    const form = pass && pass.closest ? pass.closest('form') : document;
+    return (form || document).querySelector(
+      'input[type="email"], input[autocomplete*="username" i], input[type="text"]:not([disabled])'
+    );
+  };
+
+  function removeChip() {
+    if (chip) { chip.remove(); chip = null; }
+  }
+
+  function fill(cred, pass) {
+    const set = (el, v) => {
+      if (!el) return;
+      const proto = Object.getPrototypeOf(el);
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      setter ? setter.call(el, v) : (el.value = v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    set(findUsername(pass), cred.username);
+    set(pass, cred.password);
+    removeChipFull();
+  }
+
+  let chipField = null; // the input the current chip is anchored to
+
+  function reposition() {
+    if (!chip || !chipField) return;
+    const r = chipField.getBoundingClientRect();
+    chip.style.left = `${window.scrollX + r.left}px`;
+    chip.style.top = `${window.scrollY + r.bottom + 4}px`;
+  }
+
+  const esc = (s) => String(s || '').replace(/[<>&"]/g, (c) =>
+    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+
+  function showChip(field, pass) {
+    if (chip || dismissed) return;
+    const multi = creds.length > 1;
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;z-index:2147483647;';
+    const root = host.attachShadow({ mode: 'closed' });
+    root.innerHTML = `
+      <style>
+        :host{all:initial}
+        .b{display:inline-flex;align-items:center;gap:7px;
+           font:500 12px -apple-system,system-ui,sans-serif;color:#fff;
+           background:#1e1e24;border:1px solid rgba(255,255,255,.14);
+           border-radius:9px;padding:7px 10px;cursor:pointer;
+           box-shadow:0 6px 22px rgba(0,0,0,.35)}
+        .b:hover{background:#2c2c34}
+        .k{font-size:13px}
+        .u{opacity:.7}
+        .car{opacity:.6;margin-left:1px;font-size:10px}
+        .menu{margin-top:5px;background:#1e1e24;border:1px solid rgba(255,255,255,.14);
+           border-radius:9px;box-shadow:0 6px 22px rgba(0,0,0,.35);overflow:hidden;
+           min-width:170px}
+        .item{display:flex;align-items:center;gap:8px;padding:8px 11px;cursor:pointer;
+           font:500 12px -apple-system,system-ui,sans-serif;color:#fff}
+        .item:hover{background:#2c2c34}
+        .item .k{font-size:13px}
+        .hidden{display:none}
+      </style>
+      <div class="b" role="button"><span class="k">🔑</span>
+        <span>${multi ? 'Saved logins' : 'Fill saved login'}</span>
+        ${!multi && creds[0].username ? `<span class="u">· ${esc(creds[0].username)}</span>` : ''}
+        ${multi ? '<span class="car">▾</span>' : ''}
+      </div>
+      <div class="menu hidden">
+        ${creds.map((c, idx) =>
+          `<div class="item" data-idx="${idx}"><span class="k">👤</span><span>${esc(c.username) || '(no username)'}</span></div>`
+        ).join('')}
+      </div>`;
+
+    const fillIdx = (idx) => fill(creds[idx], pass);
+
+    if (multi) {
+      const menu = root.querySelector('.menu');
+      root.querySelector('.b').addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        menu.classList.toggle('hidden');
       });
-    } catch {}
+      root.querySelectorAll('.item').forEach((el) =>
+        el.addEventListener('pointerdown', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          fillIdx(Number(el.dataset.idx));
+        })
+      );
+    } else {
+      // pointerdown (not click) so we fill before the field's own blur/click
+      // can race the dismiss; preventDefault keeps focus where it is.
+      root.querySelector('.b').addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        fillIdx(0);
+      });
+    }
+    document.body.appendChild(host);
+    chip = host;
+    chipField = field;
+    reposition();
+
+    // Dismiss on a click that's truly outside — but NOT the click that just
+    // spawned the chip (the field click), so defer attaching by a tick. The
+    // chip lives in a closed shadow root, so clicks on it retarget to `host`.
+    setTimeout(() => {
+      if (!chip) return;
+      const outside = (e) => {
+        if (!chip) { document.removeEventListener('mousedown', outside, true); return; }
+        if (e.target === chip || e.target === chipField) return;
+        removeChip();
+        document.removeEventListener('mousedown', outside, true);
+      };
+      document.addEventListener('mousedown', outside, true);
+    }, 0);
+  }
+
+  function removeChipFull() { removeChip(); chipField = null; }
+
+  async function onFocus(e) {
+    if (dismissed || chip) return;
+    const t = e.target;
+    if (!t || t.tagName !== 'INPUT') return;
+    const pass = findPassword();
+    if (!pass) return;
+    // only offer on the password field or its form's username field
+    const userEl = findUsername(pass);
+    if (t !== pass && t !== userEl) return;
+    if (creds === null) {
+      try { creds = await ipcRenderer.invoke('cred-check'); } catch { creds = []; }
+    }
+    if (creds && creds.length) showChip(t, pass);
+  }
+
+  document.addEventListener('focusin', onFocus, { capture: true });
+  window.addEventListener('scroll', reposition, { passive: true, capture: true });
+  window.addEventListener('resize', reposition, { passive: true });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && chip) { dismissed = true; removeChipFull(); }
+  }, { capture: true });
+})();
+
+// Offer to save credentials on login. A plain `submit` event covers classic
+// forms, but most big sites (X, Dropbox, Google…) log in via JS — no form
+// submit ever fires. So we also remember the last password the user typed and
+// flush it on the signals that accompany a JS login: clicking a submit/login
+// control, pressing Enter in the password field, the page hiding, or a
+// client-side navigation (URL change). Captures are deduped in main.
+let lastCred = null; // { username, password } most recently entered
+
+function snapshotCreds(passEl) {
+  const pass =
+    passEl && passEl.value
+      ? passEl
+      : [...document.querySelectorAll('input[type="password"]')].find((p) => p.value);
+  if (!pass || !pass.value) return null;
+  const scope = (pass.closest && pass.closest('form')) || document;
+  const userEl = scope.querySelector(
+    'input[type="email"], input[autocomplete*="username" i], input[autocomplete="email"], input[name*="user" i], input[name*="email" i], input[type="text"], input[type="tel"]'
+  );
+  return { username: (userEl && userEl.value) || '', password: pass.value };
+}
+
+function flushCred(snapshot) {
+  const cred = snapshot || lastCred;
+  if (!cred || !cred.password) return;
+  ipcRenderer.send('cred-captured', {
+    origin: location.origin,
+    username: cred.username || '',
+    password: cred.password,
+  });
+}
+
+// keep the latest typed credentials fresh
+document.addEventListener(
+  'input',
+  (e) => {
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.type === 'password' && t.value) {
+      lastCred = snapshotCreds(t);
+    }
+  },
+  { capture: true, passive: true }
+);
+
+// classic form submit
+window.addEventListener('submit', () => flushCred(snapshotCreds()), { capture: true });
+
+// JS logins: a click on a submit/login-looking control
+document.addEventListener(
+  'click',
+  (e) => {
+    const el = e.target && e.target.closest
+      ? e.target.closest('button, input[type="submit"], [role="button"], a')
+      : null;
+    if (!el) return;
+    const label = (
+      el.innerText ||
+      el.value ||
+      el.getAttribute('aria-label') ||
+      ''
+    ).toLowerCase();
+    const looksLikeLogin =
+      el.type === 'submit' ||
+      /log\s?in|sign\s?in|continue|next|submit|sign\s?up|register/.test(label);
+    if (looksLikeLogin) {
+      const snap = snapshotCreds();
+      if (snap) { lastCred = snap; flushCred(snap); }
+    }
   },
   { capture: true }
 );
+
+// Enter pressed inside a password field
+document.addEventListener(
+  'keydown',
+  (e) => {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.type === 'password' && t.value) {
+      const snap = snapshotCreds(t);
+      lastCred = snap;
+      flushCred(snap);
+    }
+  },
+  { capture: true }
+);
+
+// SPA route change after a JS login (history API) — flush what we last saw
+{
+  const fire = () => setTimeout(() => flushCred(), 0);
+  const wrap = (fn) => function () { const r = fn.apply(this, arguments); fire(); return r; };
+  try {
+    history.pushState = wrap(history.pushState);
+    history.replaceState = wrap(history.replaceState);
+    window.addEventListener('popstate', fire);
+  } catch {}
+}
+
+// leaving the page (full navigation / tab close) — last chance to offer
+window.addEventListener('pagehide', () => flushCred(), { capture: true });
 
 // Report highlighted text so the AI panel can act on it. selectionchange is
 // the only event that reliably fires across ALL pages (plain pages, editors,

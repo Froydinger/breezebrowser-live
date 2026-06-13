@@ -121,6 +121,8 @@
 
     .row-label { font-size: 14px; }
     .row-hint { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+    .key-link { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+    .key-link:hover { text-decoration: underline; }
 
     /* segmented control */
     .seg {
@@ -437,9 +439,17 @@
         <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
           <div>
             <div class="row-label">OpenAI API key — image generation</div>
-            <div class="row-hint">Stored locally on this device only. Lets the AI generate images. Get one at platform.openai.com</div>
+            <div class="row-hint">Bring your own key — stored locally on this device only, never bundled with Breeze. Powers image generation. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="key-link">Get a key →</a></div>
           </div>
           <input id="openaiKey" type="password" placeholder="sk-…"
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%" />
+        </div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="row-label">Tavily API key — web search</div>
+            <div class="row-hint">Bring your own key — stored locally on this device only. Lets the AI cross-reference live web sources (the only feature that leaves your device — and only after you confirm each search). The free tier is plenty. <a href="https://app.tavily.com/home" target="_blank" rel="noopener" class="key-link">Get a key →</a></div>
+          </div>
+          <input id="tavilyKey" type="password" placeholder="tvly-…"
             style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%" />
         </div>
       </div>
@@ -586,6 +596,7 @@
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
       set2('openaiKey', settings.openaiKey);
+      set2('tavilyKey', settings.tavilyKey);
       renderPerms();
     }
 
@@ -619,7 +630,7 @@
 
     // AI text fields — debounced save so we don't spam on every keystroke
     let aiSaveTimer = null;
-    ['userName', 'aiInstructions', 'openaiKey'].forEach((id) => {
+    ['userName', 'aiInstructions', 'openaiKey', 'tavilyKey'].forEach((id) => {
       document.getElementById(id).addEventListener('input', (e) => {
         clearTimeout(aiSaveTimer);
         const key = id, val = e.target.value;

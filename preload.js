@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('breeze', {
   onSidebarPeek: (cb) => ipcRenderer.on('sidebar-peek', (_e, v) => cb(v)),
   toggleAssistant: () => ipcRenderer.send('toggle-assistant'),
   toggleBookmark: () => ipcRenderer.send('toggle-bookmark'),
+  toggleSiteNotif: (origin) => ipcRenderer.send('toggle-site-notif', origin),
   removeBookmark: (url) => ipcRenderer.send('remove-bookmark', url),
   setTheme: (theme) => ipcRenderer.send('set-theme', theme),
   setSetting: (key, value) => ipcRenderer.send('set-setting', { key, value }),
@@ -57,6 +58,7 @@ contextBridge.exposeInMainWorld('breeze', {
 
   aiAsk: (opts) => ipcRenderer.send('ai-ask', opts),
   aiStop: () => ipcRenderer.send('ai-stop'),
+  aiWebConsent: (ok) => ipcRenderer.send('ai-web-consent-reply', ok),
   downloadImage: (src) => ipcRenderer.send('download-image', src),
   aiNewChat: () => ipcRenderer.send('ai-new-chat'),
   chatList: () => ipcRenderer.invoke('chat-list'),
@@ -77,6 +79,7 @@ contextBridge.exposeInMainWorld('breeze', {
   onAIDone: (cb) => ipcRenderer.on('ai-done', () => cb()),
   onAICleared: (cb) => ipcRenderer.on('ai-cleared', () => cb()),
   onAITool: (cb) => ipcRenderer.on('ai-tool', (_e, t) => cb(t)),
+  onAIWebConsent: (cb) => ipcRenderer.on('ai-web-consent', (_e, q) => cb(q)),
   onAIImage: (cb) => ipcRenderer.on('ai-image', (_e, src) => cb(src)),
   onPageSelection: (cb) => ipcRenderer.on('page-selection', (_e, t) => cb(t)),
 });

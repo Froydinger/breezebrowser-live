@@ -327,6 +327,24 @@ function tabURL(t) {
   return t.view ? t.view.webContents.getURL() : '';
 }
 
+// Notifications: per-site override wins, else the browser-wide toggle.
+function notifAllowed(origin) {
+  const saved = (appSettings.permissions || {})[origin]?.notifications;
+  if (saved !== undefined) return saved;
+  return appSettings.webNotifications !== false;
+}
+// Remember which origins actually use notifications, so the URL-bar bell only
+// appears for sites that have asked — no clutter on sites that never notify.
+function markNotifSite(origin) {
+  if (!origin) return;
+  origin = origin.replace(/\/$/, ''); // CHECK handler passes a trailing slash
+  const m = appSettings.notifSites || {};
+  if (m[origin]) return;
+  m[origin] = true;
+  applySetting('notifSites', m);
+  pushState();
+}
+
 function tabState(t) {
   if (t.sleeping) {
     return {
@@ -346,6 +364,8 @@ function tabState(t) {
   const wc = t.view.webContents;
   const url = wc.getURL();
   const isInternal = url.startsWith('file://');
+  let origin = null;
+  try { if (!isInternal) origin = new URL(url).origin; } catch {}
   return {
     id: t.id,
     title: isInternal ? wc.getTitle() || 'New Tab' : wc.getTitle() || 'Loading…',
@@ -358,6 +378,9 @@ function tabState(t) {
     incognito: !!t.incognito,
     sleeping: false,
     groupEid: t.groupEid || null,
+    // URL-bar notification bell: shown only for sites that use notifications
+    notifSite: !!(origin && (appSettings.notifSites || {})[origin]),
+    notifOn: origin ? notifAllowed(origin) : false,
   };
 }
 
@@ -1349,14 +1372,32 @@ ipcMain.on('vault-import-csv', (e, csv) => {
   e.sender.send('vault-imported', added);
 });
 
-// Offer to save credentials captured from a login form submission.
+// Proactive autofill: a page-preload asks if we have a login for its origin.
+// We answer only to the tab's own URL, never incognito, and hand back just
+// what's needed to fill the form (stays in the isolated preload world).
+ipcMain.handle('cred-check', (e) => {
+  if (e.sender.session !== session.defaultSession) return [];
+  const creds = credsForOrigin(e.sender.getURL());
+  return creds.map((c) => ({ username: c.username || '', password: c.password }));
+});
+
+// Offer to save credentials captured from a login (form submit OR the JS-login
+// signals page-preload now sends). Those signals can fire several times for one
+// login, so we dedupe recent identical captures and only show one prompt.
 let credPromptOpen = false;
+let lastCredSig = '';
+let lastCredAt = 0;
 
 ipcMain.on('cred-captured', async (e, { origin, username, password }) => {
   if (credPromptOpen || !origin || !password) return;
   // never prompt for incognito tabs
   if (e.sender.session !== session.defaultSession) return;
   if ((appSettings.neverSavePasswords || []).includes(origin)) return;
+  // collapse the burst of triggers (click + Enter + route change + pagehide)
+  const sig = `${origin} ${username} ${password}`;
+  if (sig === lastCredSig && Date.now() - lastCredAt < 15000) return;
+  lastCredSig = sig;
+  lastCredAt = Date.now();
   const exists = vault.some(
     (c) =>
       credsForOrigin(origin).includes(c) &&
@@ -1642,18 +1683,16 @@ function setupPermissions(ses) {
   // Notifications: a site calls Notification.permission FIRST (sync check) and
   // if it sees 'denied' it shows "blocked, enable in settings" and never asks.
   // So we report notifications as allowed browser-wide by default (toggle in
-  // Settings), unless the site is explicitly blocked. Then native notifications
-  // just work, exactly like a normal browser.
-  function notifAllowed(origin) {
-    const saved = (appSettings.permissions || {})[origin]?.notifications;
-    if (saved !== undefined) return saved;
-    return appSettings.webNotifications !== false;
-  }
+  // Settings), unless the site is explicitly blocked. notifAllowed() lives at
+  // module scope so the URL-bar bell (tabState) can read the same logic.
 
   // synchronous probes (e.g. WebAuthn availability checks, Notification.permission)
   ses.setPermissionCheckHandler((_wc, permission, origin) => {
     if (autoAllow.has(permission)) return true;
-    if (permission === 'notifications') return notifAllowed(origin);
+    if (permission === 'notifications') {
+      if (ses === session.defaultSession) markNotifSite(origin);
+      return notifAllowed(origin);
+    }
     const saved = (appSettings.permissions || {})[origin]?.[permission];
     return saved === true;
   });
@@ -1668,7 +1707,10 @@ function setupPermissions(ses) {
     }
     // notifications follow the browser-wide setting (+ per-site override),
     // no per-request dialog — matches how Chrome/Safari behave once allowed
-    if (permission === 'notifications') return callback(notifAllowed(origin));
+    if (permission === 'notifications') {
+      if (ses === session.defaultSession) markNotifSite(origin);
+      return callback(notifAllowed(origin));
+    }
     const saved = (appSettings.permissions || {})[origin]?.[permission];
     if (saved !== undefined) return callback(saved);
     const { response } = await dialog.showMessageBox(win, {
@@ -1860,24 +1902,39 @@ async function setupAdblock() {
 }
 
 // ---------------------------------------------------------------------------
-// Web lookup for the AI (Tavily) — key lives in .env / env var, never in git
+// Web lookup for the AI (Tavily) — bring-your-own-key (Settings), never bundled
 // ---------------------------------------------------------------------------
 
+// Per-search privacy consent. The renderer shows a confirm card in chat and
+// replies via 'ai-web-consent-reply'; we resolve the pending promise with it.
+let pendingWebConsent = null;
+function requestWebConsent() {
+  // a stray earlier prompt (shouldn't happen — one request at a time) declines
+  if (pendingWebConsent) {
+    pendingWebConsent(false);
+    pendingWebConsent = null;
+  }
+  return new Promise((resolve) => {
+    pendingWebConsent = resolve;
+    win?.webContents.send('ai-web-consent');
+  });
+}
+ipcMain.on('ai-web-consent-reply', (_e, ok) => {
+  if (pendingWebConsent) {
+    const r = pendingWebConsent;
+    pendingWebConsent = null;
+    r(!!ok);
+  }
+});
+
 function getTavilyKey() {
-  // user's own key (Settings) wins, then env var, then a bundled/dev .env
+  // Bring-your-own-key: the user's own key from Settings, stored locally on
+  // this device only. (TAVILY_API_KEY env var is honored for dev convenience.)
+  // No key is ever bundled into the app — nothing to extract from a build.
   if (appSettings.tavilyKey && appSettings.tavilyKey.trim()) {
     return appSettings.tavilyKey.trim();
   }
   if (process.env.TAVILY_API_KEY) return process.env.TAVILY_API_KEY;
-  for (const file of [
-    path.join(__dirname, '.env'),
-    path.join(app.getPath('userData'), '.env'),
-  ]) {
-    try {
-      const m = fs.readFileSync(file, 'utf8').match(/TAVILY_API_KEY\s*=\s*(\S+)/);
-      if (m) return m[1];
-    } catch {}
-  }
   return null;
 }
 
@@ -2192,7 +2249,19 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
   }
 
   // optional: cross-reference with live web results
-  if (useWeb) {
+  let doWeb = useWeb;
+  if (doWeb) {
+    // Privacy gate: a web search is the one action that leaves the device, so
+    // confirm in-chat before each one. Nothing is sent to Tavily until the
+    // user clicks Search; declining falls through to a local-only answer.
+    sendAI({ state: 'awaiting-web-consent' });
+    const consented = await requestWebConsent();
+    if (!consented) {
+      win?.webContents.send('ai-tool', { kind: 'web', label: 'Web search skipped' });
+      doWeb = false;
+    }
+  }
+  if (doWeb) {
     sendAI({ state: 'searching' });
     win?.webContents.send('ai-tool', { kind: 'web', label: 'Searching the web…' });
     const sources = await tavilySearch(text);
@@ -2265,7 +2334,15 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
   sendAI({ state: 'ready' });
 });
 
-ipcMain.on('ai-stop', () => ai.abort?.abort());
+ipcMain.on('ai-stop', () => {
+  // stopping while the web-consent card is up counts as declining
+  if (pendingWebConsent) {
+    const r = pendingWebConsent;
+    pendingWebConsent = null;
+    r(false);
+  }
+  ai.abort?.abort();
+});
 
 // Save an AI-generated image (data: URL or http) to ~/Downloads.
 ipcMain.on('download-image', async (_e, src) => {
@@ -2724,6 +2801,15 @@ ipcMain.on('reload', () => activeWC()?.reload());
 ipcMain.on('toggle-sidebar', () => setSidebar(!sidebarVisible));
 ipcMain.on('toggle-assistant', () => setAssistant(!assistantVisible));
 ipcMain.on('toggle-bookmark', () => toggleBookmark());
+// URL-bar bell: flip this site's notification permission (per-site override)
+ipcMain.on('toggle-site-notif', (_e, origin) => {
+  if (!origin) return;
+  const perms = appSettings.permissions || {};
+  const next = !notifAllowed(origin);
+  perms[origin] = { ...perms[origin], notifications: next };
+  applySetting('permissions', perms);
+  pushState();
+});
 ipcMain.on('remove-bookmark', (_e, url) => {
   bookmarks = bookmarks.filter((b) => b.url !== url);
   saveSettings({ bookmarks });

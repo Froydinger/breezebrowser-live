@@ -413,7 +413,7 @@ body.sidebar-hidden #edge-handle { display: block; }
 /* Bookmark button + bookmarks list                                    */
 /* ------------------------------------------------------------------ */
 
-#btn-bookmark, #btn-clearcache {
+#btn-bookmark, #btn-clearcache, #btn-notif {
   width: 24px;
   height: 24px;
   border: none;
@@ -426,13 +426,20 @@ body.sidebar-hidden #edge-handle { display: block; }
   flex-shrink: 0;
   transition: color 0.15s var(--ease), background 0.15s var(--ease), transform 0.15s var(--ease);
 }
+#btn-notif[hidden] { display: none; }
 
-#btn-bookmark svg, #btn-clearcache svg { width: 14px; height: 14px; }
-#btn-bookmark:hover, #btn-clearcache:hover { background: var(--surface-hover); color: var(--text); }
+#btn-bookmark svg, #btn-clearcache svg, #btn-notif svg { width: 14px; height: 14px; }
+#btn-bookmark:hover, #btn-clearcache:hover, #btn-notif:hover { background: var(--surface-hover); color: var(--text); }
 #btn-clearcache.pop { animation: bump 0.3s var(--ease); color: var(--accent); }
 #btn-bookmark.active { color: var(--accent); }
 #btn-bookmark.active svg path { fill: var(--accent); stroke: var(--accent); }
 #btn-bookmark.pop { animation: bump 0.3s var(--ease); }
+/* bell: accent when notifications are ON, muted + slash when OFF */
+#btn-notif { color: var(--accent); }
+#btn-notif .bell-slash { display: none; }
+#btn-notif.off { color: var(--text-soft); }
+#btn-notif.off .bell-slash { display: block; }
+#btn-notif.pop { animation: bump 0.3s var(--ease); }
 
 #bookmarks-section { flex-shrink: 0; }
 #bookmarks-section.empty { display: none; }
@@ -1431,6 +1438,62 @@ html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
   padding: 4px 11px;
   animation: rise-msg 0.25s var(--ease);
 }
+/* per-search privacy consent card (shown inline in the chat) */
+.ai-web-consent {
+  align-self: stretch;
+  margin: 4px 2px;
+  padding: 14px 15px;
+  border-radius: 16px;
+  background: var(--surface-active);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow: var(--shadow);
+  animation: rise-msg 0.25s var(--ease);
+}
+.ai-web-consent .awc-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ai-web-consent .awc-head svg {
+  width: 15px; height: 15px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.ai-web-consent p {
+  margin: 8px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+.ai-web-consent .awc-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.ai-web-consent button {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 9px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter 0.15s var(--ease), background 0.15s var(--ease);
+}
+.ai-web-consent .awc-skip {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-soft);
+}
+.ai-web-consent .awc-skip:hover { color: var(--text); border-color: var(--text-soft); }
+.ai-web-consent .awc-go {
+  background: var(--accent);
+  color: #fff;
+}
+.ai-web-consent .awc-go:hover { filter: brightness(1.08); }
+
 .ai-tool-chip::before {
   content: '';
   width: 6px; height: 6px;
@@ -1573,15 +1636,20 @@ html.dark #onboard-card { border-color: rgba(255,255,255,0.12); }
 }
 .onboard-list li { font-size: 13.5px; line-height: 1.5; color: var(--text-soft); }
 .onboard-list li b { color: var(--text); }
-#onboard-name {
+#onboard-name, #onboard-openai, #onboard-tavily {
   width: 100%; height: 46px; border: none; outline: none;
   border-radius: 13px; padding: 0 16px; font-size: 15px; font-family: inherit;
   color: var(--text); background: var(--surface);
   margin-bottom: 16px; text-align: center;
   transition: box-shadow 0.2s var(--ease);
 }
-#onboard-name:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+#onboard-openai, #onboard-tavily { font-size: 13px; text-align: left; margin-bottom: 4px; }
+#onboard-name:focus, #onboard-openai:focus, #onboard-tavily:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+}
 .onboard-fine { font-size: 12px !important; opacity: 0.8; }
+.onboard-keylink { color: var(--accent); cursor: pointer; font-weight: 600; }
+.onboard-keylink:hover { text-decoration: underline; }
 
 .onboard-next.primary {
   border: none; cursor: pointer;
