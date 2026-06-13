@@ -2475,21 +2475,95 @@ ipcMain.on('chat-delete', (_e, id) => {
 // Auto update
 // ---------------------------------------------------------------------------
 
+// One shared electron-updater instance; the 'update-downloaded' wiring is
+// attached exactly once so both the automatic and manual checks reuse it.
+let autoUpdaterRef = null;
+function getAutoUpdater() {
+  if (autoUpdaterRef) return autoUpdaterRef;
+  const { autoUpdater } = require('electron-updater');
+  autoUpdater.autoDownload = true;
+  autoUpdater.on('update-downloaded', () => {
+    updateDownloaded = true;
+    if (win) win.webContents.send('update-ready');
+  });
+  autoUpdaterRef = autoUpdater;
+  return autoUpdater;
+}
+
 function setupAutoUpdate() {
-  if (!app.isPackaged) return; // dev mode: skip
+  if (!app.isPackaged) return; // dev mode: electron-updater is inert
   try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.autoDownload = true;
-    autoUpdater.on('update-downloaded', () => {
-      updateDownloaded = true;
-      if (win) win.webContents.send('update-ready');
-    });
-    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+    const au = getAutoUpdater();
+    au.checkForUpdatesAndNotify().catch(() => {}); // silent check on launch
     // re-check every 4 hours while running
-    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+    setInterval(() => au.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
   } catch (err) {
     console.error('Auto-update unavailable:', err.message);
   }
+}
+
+// Menu "Check for Updates…" — same engine, but with explicit user feedback.
+let manualCheckBusy = false;
+async function checkForUpdatesManual() {
+  const v = app.getVersion();
+  if (!app.isPackaged) {
+    dialog.showMessageBox(win, {
+      type: 'info',
+      message: 'Updates are only available in the installed app.',
+      detail: `You're running a development build (v${v}).`,
+      buttons: ['OK'],
+    });
+    return;
+  }
+  if (updateDownloaded) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      message: 'An update is ready to install.',
+      detail: 'Breeze will restart to finish updating.',
+      buttons: ['Restart Now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) { updateDownloaded = false; getAutoUpdater().quitAndInstall(); }
+    return;
+  }
+  if (manualCheckBusy) return;
+  manualCheckBusy = true;
+  let au;
+  try {
+    au = getAutoUpdater();
+  } catch (err) {
+    manualCheckBusy = false;
+    dialog.showMessageBox(win, { type: 'error', message: 'Update check unavailable', detail: err.message, buttons: ['OK'] });
+    return;
+  }
+  const done = () => {
+    manualCheckBusy = false;
+    au.removeListener('update-not-available', onNone);
+    au.removeListener('update-available', onYes);
+    au.removeListener('error', onErr);
+  };
+  const onNone = () => {
+    done();
+    dialog.showMessageBox(win, { type: 'info', message: "You're up to date", detail: `Breeze v${v} is the latest version.`, buttons: ['OK'] });
+  };
+  const onYes = (info) => {
+    done();
+    dialog.showMessageBox(win, {
+      type: 'info',
+      message: `Update available — v${info?.version || ''}`.trim(),
+      detail: "Downloading now. You'll be prompted to restart when it's ready.",
+      buttons: ['OK'],
+    });
+  };
+  const onErr = (err) => {
+    done();
+    dialog.showMessageBox(win, { type: 'error', message: 'Could not check for updates', detail: String((err && err.message) || err), buttons: ['OK'] });
+  };
+  au.once('update-not-available', onNone);
+  au.once('update-available', onYes);
+  au.once('error', onErr);
+  try { await au.checkForUpdates(); } catch { /* 'error' event handles UI */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -2605,7 +2679,25 @@ function createWindow() {
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { label: 'Check for Updates…', click: () => checkForUpdatesManual() },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' },
+            ],
+          },
+        ]
+      : []),
     {
       label: 'File',
       submenu: [
@@ -2781,6 +2873,14 @@ function buildMenu() {
       ],
     },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        // On macOS "Check for Updates…" also lives in the Breeze app menu;
+        // here it gives Windows/Linux a home and a second access point.
+        { label: 'Check for Updates…', click: () => checkForUpdatesManual() },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
