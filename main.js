@@ -86,6 +86,7 @@ const DEFAULT_SETTINGS = {
   userName: '', // given to the AI
   aiInstructions: '', // standing custom instructions for the AI
   openaiKey: '', // optional, for image generation
+  imageProvider: 'openai', // 'openai' (BYOK cloud) | 'local' (on-device SD-Turbo)
   onboarded: false, // first-run setup dialog shown
   webNotifications: true, // sites may show notifications (browser-wide)
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
@@ -2372,6 +2373,19 @@ function humanizeMs(ms) {
 
 // --- AI tools: OpenAI image generation -----------------------------------
 
+// Local on-device image generation (SD-Turbo via onnxruntime-node).
+const localImage = require('./local-image');
+function localImageInstalled() {
+  try { return localImage.isInstalled(app.getPath('userData')); } catch { return false; }
+}
+async function generateLocalImage(prompt) {
+  return localImage.generate(app.getPath('userData'), prompt, (stage, frac) => {
+    if (stage === 'downloading') sendAI({ state: 'downloading-image', progress: frac || 0 });
+    else if (stage === 'loading') sendAI({ state: 'loading-image' });
+    else sendAI({ state: 'generating-image' });
+  });
+}
+
 async function openaiImage(prompt) {
   const key = (appSettings.openaiKey || '').trim();
   if (!key) return { error: 'no-key' };
@@ -2598,16 +2612,28 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
         required: ['prompt'],
       },
       handler: async ({ prompt: imgPrompt }) => {
+        const p = String(imgPrompt || text);
         win?.webContents.send('ai-tool', { kind: 'image', label: 'Generating image…' });
         sendAI({ state: 'generating-image' });
-        const img = await openaiImage(String(imgPrompt || text));
-        sendAI({ state: 'generating' });
-        if (img.error === 'no-key') {
-          return 'Image generation needs an OpenAI API key. Tell the user to add one under Settings → Breeze AI.';
+        try {
+          if (appSettings.imageProvider === 'local') {
+            const dataUrl = await generateLocalImage(p);
+            sendAI({ state: 'generating' });
+            win?.webContents.send('ai-image', dataUrl);
+            return 'The image was generated locally and is now displayed. Briefly say it\'s ready.';
+          }
+          const img = await openaiImage(p);
+          sendAI({ state: 'generating' });
+          if (img.error === 'no-key') {
+            return 'Image generation needs an OpenAI API key (or switch to the local image model in Settings → Breeze AI). Tell the user.';
+          }
+          if (img.error) return `Image generation failed: ${img.error}`;
+          win?.webContents.send('ai-image', img.dataUrl || img.url);
+          return 'The image was generated and is now displayed to the user. Briefly say it\'s ready.';
+        } catch (e) {
+          sendAI({ state: 'generating' });
+          return `Image generation failed: ${e.message}`;
         }
-        if (img.error) return `Image generation failed: ${img.error}`;
-        win?.webContents.send('ai-image', img.dataUrl || img.url);
-        return 'The image was generated and is now displayed to the user. Briefly say it\'s ready.';
       },
     }),
   };
@@ -2693,6 +2719,18 @@ ipcMain.handle('delete-reminder-confirm', async (_e, id) => {
     detail: `"${r.label}"`,
   });
   if (response === 1) removeReminder(id);
+});
+
+// Local image model: status + on-demand download (with progress) for Settings.
+ipcMain.handle('image-model-installed', () => localImageInstalled());
+ipcMain.on('image-model-download', async (e) => {
+  try {
+    await localImage.ensureDownloaded(app.getPath('userData'), (p) =>
+      e.sender.send('image-model-progress', p));
+    e.sender.send('image-model-done', { ok: true });
+  } catch (err) {
+    e.sender.send('image-model-done', { ok: false, error: err.message });
+  }
 });
 
 // Notification overlay: it reports the size it needs, and routes button actions.

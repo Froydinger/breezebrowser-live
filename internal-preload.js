@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   clearBrowsingData: (opts) => ipcRenderer.invoke('clear-browsing-data', opts),
   resetBrowser: () => ipcRenderer.invoke('reset-browser'),
 
+  imageModelInstalled: () => ipcRenderer.invoke('image-model-installed'),
+  imageModelDownload: () => ipcRenderer.send('image-model-download'),
+  onImageModelProgress: (cb) => ipcRenderer.on('image-model-progress', (_e, p) => cb(p)),
+  onImageModelDone: (cb) => ipcRenderer.on('image-model-done', (_e, r) => cb(r)),
+
   isDefaultBrowser: () => ipcRenderer.invoke('is-default-browser'),
   makeDefaultBrowser: () => ipcRenderer.send('make-default-browser'),
   switchToTab: (id) => ipcRenderer.send('switch-to-tab', id),

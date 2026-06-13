@@ -466,13 +466,36 @@
           <textarea id="aiInstructions" rows="3" placeholder="e.g. Be concise and a little sarcastic. I'm a designer. Always give code in TypeScript."
             style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:10px;padding:10px 12px;outline:none;resize:vertical;width:100%"></textarea>
         </div>
-        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div class="row">
           <div>
-            <div class="row-label">OpenAI API key — image generation</div>
-            <div class="row-hint">Bring your own key — stored locally on this device only, never bundled with Breeze. Powers image generation. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="key-link">Get a key →</a></div>
+            <div class="row-label">Image generation</div>
+            <div class="row-hint">How "draw me a…" requests are fulfilled.</div>
+          </div>
+          <div class="seg" id="imageprovider-seg">
+            <button data-v="openai">Cloud (OpenAI)</button>
+            <button data-v="local">Local (on-device)</button>
+          </div>
+        </div>
+        <div class="row" id="openai-key-row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="row-label">OpenAI API key</div>
+            <div class="row-hint">Bring your own key — stored locally on this device only, never bundled with Breeze. Best quality. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="key-link">Get a key →</a></div>
           </div>
           <input id="openaiKey" type="password" placeholder="sk-…"
             style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%" />
+        </div>
+        <div class="row" id="local-image-row" style="flex-direction:column;align-items:stretch;gap:10px;display:none">
+          <div>
+            <div class="row-label">Local image model (SD-Turbo)</div>
+            <div class="row-hint">Runs fully on your Mac — no key, nothing leaves the device. One-time ~2GB download. Lower quality and slower than Cloud.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <button class="dz-btn" id="image-model-btn">Download model</button>
+            <span id="image-model-status" class="row-hint"></span>
+          </div>
+          <div id="image-model-bar" style="display:none;height:6px;background:var(--surface-active);border-radius:99px;overflow:hidden">
+            <div id="image-model-fill" style="height:100%;width:0;background:var(--accent);transition:width .2s"></div>
+          </div>
         </div>
         <div class="row">
           <div>
@@ -666,6 +689,13 @@
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
       set2('openaiKey', settings.openaiKey);
+      const prov = settings.imageProvider || 'openai';
+      document.querySelectorAll('#imageprovider-seg button').forEach((b) =>
+        b.classList.toggle('on', b.dataset.v === prov));
+      const localRow = document.getElementById('local-image-row');
+      const keyRow = document.getElementById('openai-key-row');
+      if (localRow) localRow.style.display = prov === 'local' ? '' : 'none';
+      if (keyRow) keyRow.style.display = prov === 'local' ? 'none' : '';
       renderPerms();
       renderReminders();
     }
@@ -838,6 +868,34 @@
     document.getElementById('reset-browser-btn').addEventListener('click', () => {
       breezeInternal.resetBrowser(); // native confirm dialog handles the rest
     });
+
+    // ----- image generation provider + local model -----
+    document.querySelectorAll('#imageprovider-seg button').forEach((b) =>
+      b.addEventListener('click', () => set('imageProvider', b.dataset.v)));
+    async function refreshImageModel() {
+      const installed = await breezeInternal.imageModelInstalled().catch(() => false);
+      const st = document.getElementById('image-model-status');
+      const btn = document.getElementById('image-model-btn');
+      st.textContent = installed ? '✓ Installed' : 'Not downloaded yet';
+      btn.style.display = installed ? 'none' : '';
+    }
+    document.getElementById('image-model-btn').addEventListener('click', () => {
+      const btn = document.getElementById('image-model-btn');
+      btn.disabled = true; btn.textContent = 'Downloading…';
+      document.getElementById('image-model-bar').style.display = '';
+      breezeInternal.imageModelDownload();
+    });
+    breezeInternal.onImageModelProgress((p) => {
+      document.getElementById('image-model-fill').style.width = Math.round((p || 0) * 100) + '%';
+    });
+    breezeInternal.onImageModelDone((r) => {
+      const btn = document.getElementById('image-model-btn');
+      btn.disabled = false; btn.textContent = 'Download model';
+      document.getElementById('image-model-bar').style.display = 'none';
+      if (r && !r.ok) document.getElementById('image-model-status').textContent = 'Download failed: ' + (r.error || 'unknown');
+      refreshImageModel();
+    });
+    refreshImageModel();
 
     // ----- notifications per-site breakdown -----
     function renderNotifs() {

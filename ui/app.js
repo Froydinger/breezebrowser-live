@@ -1268,6 +1268,16 @@ breeze.onAIStatus((s) => {
     case 'searching':
       aiStatusbar.textContent = 'Searching the web…';
       break;
+    case 'downloading-image': {
+      const pct = Math.round((s.progress || 0) * 100);
+      aiStatusbar.textContent = `Downloading image model (one time) — ${pct}%`;
+      aiProgress.classList.add('show');
+      aiProgressFill.style.width = `${pct}%`;
+      break;
+    }
+    case 'loading-image':
+      aiStatusbar.textContent = 'Loading image model…';
+      break;
     case 'generating-image':
       aiStatusbar.textContent = 'Painting your image…';
       break;
