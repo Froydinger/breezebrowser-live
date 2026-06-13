@@ -274,6 +274,20 @@
     }
     .perm-forget:hover { color: var(--text); background: var(--surface-active); }
     .perm-site .perm-row { padding-left: 28px; }
+    .nav-danger { color: #e5484d !important; }
+    .dz-check { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text); cursor: pointer; }
+    .dz-check input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+    .dz-check em { color: var(--text-soft); font-style: normal; font-size: 12px; }
+    .dz-btn {
+      align-self: flex-start;
+      border: none; border-radius: 9px; cursor: pointer;
+      font-family: inherit; font-size: 12.5px; font-weight: 600;
+      padding: 8px 14px; background: var(--surface-active); color: var(--text);
+    }
+    .dz-btn:hover { background: var(--accent); color: #fff; }
+    .dz-btn.danger { background: #e5484d; color: #fff; }
+    .dz-btn.danger:hover { background: #c93b40; }
+    .dz-done { font-size: 12.5px; color: #30a46c; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -292,6 +306,7 @@
       <button data-nav="privacy">Privacy</button>
       <button data-nav="system">System</button>
       <button data-nav="help">Help &amp; FAQ</button>
+      <button data-nav="danger" class="nav-danger">Danger Zone</button>
     </nav>
     <main id="settings-content">
 
@@ -532,6 +547,32 @@
       </div>
     </section>
 
+    <section data-tab="danger">
+      <h2>Danger Zone</h2>
+      <div class="card">
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
+          <div>
+            <div class="row-label">Clear browsing data</div>
+            <div class="row-hint">Choose what to wipe. This can't be undone.</div>
+          </div>
+          <label class="dz-check"><input type="checkbox" id="clr-cache" checked /> <span>Cached files &amp; images</span></label>
+          <label class="dz-check"><input type="checkbox" id="clr-cookies" /> <span>Cookies &amp; site data <em>(signs you out of sites)</em></span></label>
+          <label class="dz-check"><input type="checkbox" id="clr-history" /> <span>Browsing history</span></label>
+          <button class="dz-btn" id="clear-data-btn">Clear selected data</button>
+          <div class="dz-done" id="clear-done" hidden>✓ Done</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:18px;border:1px solid color-mix(in srgb, #e5484d 45%, transparent)">
+        <div class="row">
+          <div>
+            <div class="row-label" style="color:#e5484d">Reset browser</div>
+            <div class="row-hint">Factory reset — deletes history, cookies, cache, saved passwords, bookmarks, pins, chats, and all settings, then restarts. There's no undo.</div>
+          </div>
+          <button class="dz-btn danger" id="reset-browser-btn">Reset Breeze…</button>
+        </div>
+      </div>
+    </section>
+
     <section data-tab="help">
       <h2>Help &amp; FAQ</h2>
       <div class="card" id="faq">
@@ -588,7 +629,14 @@
     }
     document.querySelectorAll('#settings-nav button').forEach((b) =>
       b.addEventListener('click', () => showTab(b.dataset.nav)));
-    showTab('general');
+    const validTab = (n) => !!document.querySelector(`#settings-nav button[data-nav="${n}"]`);
+    const initialTab = location.hash.replace('#', '');
+    showTab(validTab(initialTab) ? initialTab : 'general');
+    // allow deep-links like settings.html#ai to switch tabs after load too
+    window.addEventListener('hashchange', () => {
+      const n = location.hash.replace('#', '');
+      if (validTab(n)) showTab(n);
+    });
 
     let settings = {};
     let effective = 'light'; // resolved light/dark from main (handles System)
@@ -770,6 +818,26 @@
       }
     }
     breezeInternal.onReminders((list) => { settings.reminders = list; renderReminders(); });
+
+    // ----- danger zone -----
+    document.getElementById('clear-data-btn').addEventListener('click', async () => {
+      const opts = {
+        cache: document.getElementById('clr-cache').checked,
+        cookies: document.getElementById('clr-cookies').checked,
+        history: document.getElementById('clr-history').checked,
+      };
+      if (!opts.cache && !opts.cookies && !opts.history) return;
+      const btn = document.getElementById('clear-data-btn');
+      btn.disabled = true; btn.textContent = 'Clearing…';
+      await breezeInternal.clearBrowsingData(opts);
+      btn.disabled = false; btn.textContent = 'Clear selected data';
+      const done = document.getElementById('clear-done');
+      done.hidden = false;
+      setTimeout(() => { done.hidden = true; }, 2500);
+    });
+    document.getElementById('reset-browser-btn').addEventListener('click', () => {
+      breezeInternal.resetBrowser(); // native confirm dialog handles the rest
+    });
 
     // ----- notifications per-site breakdown -----
     function renderNotifs() {

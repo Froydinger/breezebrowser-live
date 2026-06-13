@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   deleteReminder: (id) => ipcRenderer.send('delete-reminder', id),
   onReminders: (cb) => ipcRenderer.on('reminders-changed', (_e, r) => cb(r)),
 
+  clearBrowsingData: (opts) => ipcRenderer.invoke('clear-browsing-data', opts),
+  resetBrowser: () => ipcRenderer.invoke('reset-browser'),
+
   isDefaultBrowser: () => ipcRenderer.invoke('is-default-browser'),
   makeDefaultBrowser: () => ipcRenderer.send('make-default-browser'),
   switchToTab: (id) => ipcRenderer.send('switch-to-tab', id),

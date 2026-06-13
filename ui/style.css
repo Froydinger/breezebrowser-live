@@ -33,7 +33,13 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--bg-gradient);
+  /* a uniform ~7% accent wash over the base gradient — shows through the
+     transparent sidebar AND the frame ring around the page, so they match. */
+  background:
+    linear-gradient(0deg,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      color-mix(in srgb, var(--accent) 7%, transparent)),
+    var(--bg-gradient);
   color: var(--text);
   user-select: none;
   transition: background 0.4s var(--ease);
@@ -301,6 +307,10 @@ html.dark .tab .close:hover { background: rgba(255, 255, 255, 0.12); }
   justify-content: space-between;
   margin-top: 10px;
   flex-shrink: 0;
+  /* when the sidebar is dragged narrow, let the buttons drop to new rows
+     instead of clipping off the edge; the adblock chip stays put */
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 #adblock-pill {
@@ -502,7 +512,7 @@ body.sidebar-hidden #edge-handle { display: block; }
 html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
 .bookmark .close svg { width: 9px; height: 9px; }
 
-.footer-btns { display: flex; gap: 2px; }
+.footer-btns { display: flex; gap: 2px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ------------------------------------------------------------------ */
 /* Assistant panel                                                     */
@@ -778,14 +788,9 @@ body.resizing #sidebar { transition: none; }
   place-items: center;
 }
 
-.pin.open::after {
-  content: '';
-  position: absolute;
-  bottom: 4px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
+/* Open (but not active) pins get a soft 50% accent outline, not a dot/fill. */
+.pin.open:not(.active) {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 50%, transparent), var(--shadow);
 }
 
 /* ------------------------------------------------------------------ */
@@ -944,7 +949,7 @@ html.dark #ai-input-wrap {
 #ai-progress { margin: 6px 16px 0; }
 
 .pin.active {
-  background: var(--surface-active);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-active));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent), var(--shadow);
 }
 
@@ -1138,7 +1143,40 @@ body.urlbar-top #drag-top { display: none; }
 
 body.urlbar-top #topbar { display: flex; }
 body.sidebar-hidden #topbar { left: 14px; }
+/* leave room at the right for the pinned Breeze corner button */
+body.urlbar-top #topbar { right: 54px; }
 body.assistant-open #topbar { right: 370px; }
+
+/* ------------------------------------------------------------------ */
+/* Breeze corner mark (top-right, opens AI)                            */
+/* ------------------------------------------------------------------ */
+#breeze-corner {
+  position: fixed;
+  top: 11px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  z-index: 30;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: none;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  -webkit-app-region: no-drag;
+  transition: transform 0.12s var(--ease), background 0.15s var(--ease);
+}
+#breeze-corner img { width: 22px; height: 22px; border-radius: 6px; pointer-events: none; }
+#breeze-corner:hover { background: var(--surface-active); }
+#breeze-corner:active { transform: scale(0.9); }
+/* lives in the top URL bar; hidden once the assistant panel is open */
+body.urlbar-top #breeze-corner { display: grid; }
+body.assistant-open #breeze-corner { display: none; }
+/* sidebar url-mode: the page covers the top, so reveal on corner-hover only
+   (main process toggles .corner-peek via cursor polling in fullscreen) */
+body:not(.urlbar-top).corner-peek #breeze-corner { display: grid; top: 10px; }
 
 /* explicit no-drag + own stacking so clicks never fall through to a window
    drag region or the native page layer */

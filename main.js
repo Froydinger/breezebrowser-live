@@ -147,7 +147,7 @@ function contentBounds(left, right) {
       ? SPLIT_BAR_H
       : appSettings.urlBarPosition === 'top'
       ? TOPBAR_HEIGHT
-      : 0) + omniboxOffset;
+      : 0) + omniboxOffset + (cornerPeek ? CORNER_PEEK_H : 0);
   return {
     x: Math.round(left) + CONTENT_PAD,
     y: CONTENT_PAD + top,
@@ -160,40 +160,6 @@ let splitTabId = null; // secondary tab shown beside the active one
 let splitRatio = 0.5; // left pane width fraction
 const SPLIT_DIVIDER = 14; // wide enough to grab (native views can't cover the gap)
 const SPLIT_BAR_H = 44; // per-pane URL-bar strip height while in split view
-const RESPONSIVE_W = 600; // panes narrower than this emulate a mobile viewport
-
-// Make a narrow pane actually responsive: device-emulate so the page sees its
-// true (small) width as the screen — sites switch to mobile/compact layouts
-// instead of just clipping the desktop layout. Cleared when wide again.
-function applyEmulation(t, width, height) {
-  if (!t || !t.view) return;
-  const wc = t.view.webContents;
-  const mobile = width > 0 && width < RESPONSIVE_W;
-  const sig = mobile ? `m${Math.round(width)}x${Math.round(height)}` : 'off';
-  if (t._emuSig === sig) return; // avoid thrashing during drags
-  t._emuSig = sig;
-  try {
-    if (mobile) {
-      wc.enableDeviceEmulation({
-        screenPosition: 'mobile',
-        screenSize: { width: Math.round(width), height: Math.round(height) },
-        viewSize: { width: Math.round(width), height: Math.round(height) },
-        viewPosition: { x: 0, y: 0 },
-        deviceScaleFactor: 0,
-        scale: 1,
-      });
-    } else {
-      wc.disableDeviceEmulation();
-    }
-  } catch {}
-}
-
-function clearEmulation(t) {
-  if (!t || !t.view) return;
-  if (t._emuSig === 'off' || t._emuSig === undefined) { t._emuSig = 'off'; return; }
-  t._emuSig = 'off';
-  try { t.view.webContents.disableDeviceEmulation(); } catch {}
-}
 
 function applyBounds() {
   if (!win) return;
@@ -206,8 +172,6 @@ function applyBounds() {
     const rightX = b.x + leftW + SPLIT_DIVIDER;
     a.view.setBounds({ x: b.x, y: b.y, width: leftW, height: b.height });
     s.view.setBounds({ x: rightX, y: b.y, width: rightW, height: b.height });
-    applyEmulation(a, leftW, b.height);
-    applyEmulation(s, rightW, b.height);
     win.webContents.send('split-divider', {
       x: b.x + leftW,
       y: b.y,
@@ -225,9 +189,7 @@ function applyBounds() {
   }
   win.webContents.send('split-divider', null);
   win.webContents.send('split-bars', null);
-  for (const t of tabs.values()) {
-    if (t.view) { t.view.setBounds(b); clearEmulation(t); }
-  }
+  for (const { view } of tabs.values()) if (view) view.setBounds(b);
 }
 
 function enterSplit(id) {
@@ -353,6 +315,49 @@ function stopEdgePoll() {
     clearInterval(edgePoll);
     edgePoll = null;
   }
+}
+
+// Corner peek: in fullscreen + sidebar-url mode there's no top bar to hold the
+// Breeze mark, and a DOM button can't paint over the native page view — so we
+// poll the cursor (only while fullscreen, never perpetually) and, when it's in
+// the top-right corner, inset the page a little to reveal the button.
+let cornerPeek = false;
+let cornerPoll = null;
+const CORNER_PEEK_H = 46;
+
+function setCornerPeek(v) {
+  if (cornerPeek === v) return;
+  cornerPeek = v;
+  win?.webContents.send('corner-peek', v);
+  applyBounds();
+}
+
+function startCornerPoll() {
+  if (cornerPoll) return;
+  cornerPoll = setInterval(() => {
+    if (!win || win.isDestroyed() || !win.isFocused()) return;
+    // only relevant in fullscreen + sidebar url mode
+    if (!win.isFullScreen() || appSettings.urlBarPosition === 'top') {
+      setCornerPeek(false);
+      return;
+    }
+    try {
+      const cur = screen.getCursorScreenPoint();
+      const b = win.getBounds();
+      const inCorner =
+        cur.y >= b.y && cur.y <= b.y + 60 &&
+        cur.x >= b.x + b.width - 90 && cur.x <= b.x + b.width;
+      setCornerPeek(inCorner);
+    } catch {}
+  }, 200);
+}
+
+function stopCornerPoll() {
+  if (cornerPoll) {
+    clearInterval(cornerPoll);
+    cornerPoll = null;
+  }
+  setCornerPeek(false);
 }
 
 function notifyAIPanel(open) {
@@ -881,7 +886,18 @@ function openInternalTab(url) {
   createTab(url, true);
 }
 
-const openSettingsTab = () => openInternalTab(SETTINGS_URL);
+function openSettingsTab(section) {
+  const hash = section ? `#${section}` : '';
+  for (const id of tabOrder) {
+    const t = tabs.get(id);
+    if ((tabURL(t) || '').startsWith(SETTINGS_URL)) {
+      activateTab(id);
+      if (section) t.view?.webContents.loadURL(SETTINGS_URL + hash);
+      return;
+    }
+  }
+  createTab(SETTINGS_URL + hash, true);
+}
 
 // ---------------------------------------------------------------------------
 // Bookmarks
@@ -2793,7 +2809,9 @@ function createWindow() {
     minHeight: 400,
     title: 'Breeze',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: { x: 18, y: 20 },
+    // y chosen so the lights' vertical center lines up with the sidebar's
+    // top icon row (sidebar padding-top 12 + 40px strip center = ~32).
+    trafficLightPosition: { x: 18, y: 25 },
     backgroundColor: theme === 'dark' ? '#16161a' : '#f2f0ed',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -2808,6 +2826,14 @@ function createWindow() {
     } catch {}
   }
   win.on('resize', applyBounds);
+  win.on('enter-full-screen', () => {
+    win?.webContents.send('app-fullscreen', true);
+    startCornerPoll();
+  });
+  win.on('leave-full-screen', () => {
+    win?.webContents.send('app-fullscreen', false);
+    stopCornerPoll();
+  });
   win.on('closed', () => {
     win = null;
   });
@@ -3246,6 +3272,61 @@ ipcMain.on('delete-history-item', (_e, { url, ts }) => {
   history = history.filter((h) => !(h.url === url && h.ts === ts));
   saveHistorySoon();
 });
+
+// Danger zone: clear browsing data with a custom selection (cache / cookies /
+// history), any combination — like every other browser.
+ipcMain.handle('clear-browsing-data', async (_e, opts = {}) => {
+  const ses = session.defaultSession;
+  try {
+    if (opts.history) {
+      history = [];
+      try { encryptToFile(historyPath(), history); } catch {}
+    }
+    if (opts.cache) {
+      await ses.clearCache();
+      try { await ses.clearStorageData({ storages: ['cachestorage', 'shadercache'] }); } catch {}
+    }
+    if (opts.cookies) {
+      await ses.clearStorageData({ storages: ['cookies'] });
+    }
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+  return { ok: true };
+});
+
+// Danger zone: full factory reset. Confirmed with a native dialog, then wipes
+// everything and restarts so the app comes back truly fresh.
+ipcMain.handle('reset-browser', async () => {
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons: ['Cancel', 'Reset everything'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'Reset Breeze to factory settings?',
+    detail:
+      'This permanently deletes your history, cookies, cache, saved passwords, ' +
+      'downloads list, bookmarks, pins, saved chats, and all settings. This ' +
+      'cannot be undone. Breeze will restart.',
+  });
+  if (response !== 1) return { ok: false, cancelled: true };
+  try {
+    const ses = session.defaultSession;
+    await ses.clearCache();
+    await ses.clearStorageData();
+  } catch {}
+  history = [];
+  downloadList = [];
+  vault = [];
+  for (const p of [historyPath(), legacyHistoryPath(), vaultPath(), downloadsPath(), chatsPath(), settingsPath()]) {
+    try { fs.rmSync(p, { force: true }); } catch {}
+  }
+  // mark a clean exit so the next launch doesn't think it crashed
+  try { markCleanExit(); } catch {}
+  app.relaunch();
+  app.exit(0);
+  return { ok: true };
+});
 ipcMain.handle('get-downloads', () => downloadList);
 ipcMain.on('download-cancel', (_e, id) => downloadItems.get(id)?.cancel());
 ipcMain.on('download-open', (_e, id) => {
@@ -3265,7 +3346,7 @@ ipcMain.on('downloads-clear', () => {
 ipcMain.on('set-setting', (_e, { key, value }) => {
   if (key in DEFAULT_SETTINGS) applySetting(key, value);
 });
-ipcMain.on('open-settings', () => openSettingsTab());
+ipcMain.on('open-settings', (_e, section) => openSettingsTab(section));
 
 // Onboarding is a DOM overlay in the chrome, but native page views always
 // paint ABOVE the DOM — so while onboarding shows we must detach the active
@@ -3369,9 +3450,13 @@ function healStorageIfUnclean() {
     unclean = true;
   }
   if (unclean) {
-    // only the disposable caches — these always rebuild, no data loss
+    // only the disposable caches — these always rebuild, no data loss. The main
+    // network "Cache" is included because a half-written HTTP cache (e.g. after a
+    // hard quit) serves truncated JS/CSS/sprites/fonts → sites render with
+    // missing logos/icons (classic YouTube symptom). It just re-downloads.
     const dir = app.getPath('userData');
     for (const sub of [
+      'Cache',
       'Service Worker',
       'GPUCache',
       'Code Cache',

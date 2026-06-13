@@ -550,9 +550,22 @@ breeze.onState((s) => {
   }
   document.body.classList.toggle('page-loading', !!active?.loading);
   $('#address-wrap').classList.toggle('incognito', !!active?.incognito);
-  if (active?.incognito) address.placeholder = 'Incognito — search privately';
-  else address.placeholder = 'Search or enter URL';
+  addrIncognito = !!active?.incognito;
+  updateAddressPlaceholder();
 });
+
+// Shorten the placeholder to just "Search" when the bar is too narrow to show
+// the full hint, instead of letting the text clip mid-word.
+let addrIncognito = false;
+function updateAddressPlaceholder() {
+  const narrow = address.clientWidth < 150;
+  address.placeholder = narrow
+    ? 'Search'
+    : addrIncognito
+    ? 'Incognito — search privately'
+    : 'Search or enter URL';
+}
+try { new ResizeObserver(updateAddressPlaceholder).observe(address); } catch {}
 
 // ---------------------------------------------------------------------------
 // Address bar
@@ -724,7 +737,10 @@ $('#settings-btn').addEventListener('click', () => breeze.openSettings());
 $('#bookmarks-btn').addEventListener('click', () => breeze.openBookmarks());
 $('#downloads-btn').addEventListener('click', () => breeze.openDownloads());
 $('#history-btn').addEventListener('click', () => breeze.openHistory());
-$('#ai-btn').addEventListener('click', () => breeze.toggleAssistant());
+$('#ai-settings-btn').addEventListener('click', () => breeze.openSettings('ai'));
+$('#breeze-corner').addEventListener('click', () => breeze.toggleAssistant());
+breeze.onFullscreen((on) => document.body.classList.toggle('app-fullscreen', on));
+breeze.onCornerPeek((on) => document.body.classList.toggle('corner-peek', on));
 $('#btn-clearcache').addEventListener('click', () => {
   const btn = $('#btn-clearcache');
   btn.classList.add('pop');
@@ -1398,6 +1414,8 @@ function placeSplitBar(barEl, rect, stripY, barH) {
   barEl.style.width = `${rect.w}px`;
   barEl.style.height = `${barH}px`;
   barEl.dataset.tabId = rect.tabId;
+  // shorten the hint on narrow panes instead of clipping it
+  barEl.querySelector('.sb-input').placeholder = rect.w < 280 ? 'Search' : 'Search or enter URL';
 }
 
 function fillSplitBar(barEl) {
