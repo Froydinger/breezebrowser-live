@@ -941,14 +941,7 @@ function renderLoadedChat(messages) {
   aiEmpty.style.display = 'none';
   for (const m of messages) {
     if (m.role === 'image') {
-      const wrap = document.createElement('div');
-      wrap.className = 'msg ai ai-image-msg';
-      const img = document.createElement('img');
-      img.src = m.src;
-      img.title = 'Click to download';
-      img.addEventListener('click', () => breeze.downloadImage(m.src));
-      wrap.appendChild(img);
-      aiMessages.appendChild(wrap);
+      aiMessages.appendChild(buildAIImageEl(m.src));
     } else if (m.role === 'search') {
       addSearchChip(m);
     } else {
@@ -1030,8 +1023,14 @@ function renderMarkdown(text) {
 
 function setMsgText(el, text) {
   el.dataset.raw = text;
-  if (el.classList.contains('user')) el.textContent = text;
-  else el.innerHTML = renderMarkdown(text);
+  if (el.classList.contains('user')) {
+    el.textContent = text;
+  } else {
+    // backstop: never render leaked chat-template / tool-call artifacts if the
+    // model role-plays the transcript despite the stop triggers
+    const clean = text.replace(/<\/?tool_call>[\s\S]*$/i, '').replace(/<\|im_(start|end)\|>[\s\S]*$/i, '');
+    el.innerHTML = renderMarkdown(clean);
+  }
 }
 
 function addMsg(cls, text) {
@@ -1087,46 +1086,13 @@ function sendAI() {
   aiSend.classList.add('stop');
   aiSend.title = 'Stop';
   clearActivityChips(false); // fresh activity for this request
-  breeze.aiAsk({
-    text,
-    useWeb: aiWebEnabled,
-    useImage: aiImageEnabled,
-    selection: activeSelection,
-  });
+  breeze.aiAsk({ text, selection: activeSelection });
   clearSelectionChip();
-  if (aiImageEnabled) toggleImageMode(); // one-shot
 }
 
 // optional web lookup — the AI cross-references live sources when enabled
-let aiWebEnabled = false;
-const aiWebToggle = $('#ai-web-toggle');
-aiWebToggle.addEventListener('click', () => {
-  aiWebEnabled = !aiWebEnabled;
-  aiWebToggle.classList.toggle('on', aiWebEnabled);
-  updateAIPlaceholder();
-  aiInput.focus();
-});
-
-// image generation mode (OpenAI)
-let aiImageEnabled = false;
-const aiImageToggle = $('#ai-image-toggle');
-function toggleImageMode() {
-  aiImageEnabled = !aiImageEnabled;
-  aiImageToggle.classList.toggle('on', aiImageEnabled);
-  updateAIPlaceholder();
-}
-aiImageToggle.addEventListener('click', () => {
-  toggleImageMode();
-  aiInput.focus();
-});
-
-function updateAIPlaceholder() {
-  aiInput.placeholder = aiImageEnabled
-    ? 'Describe an image to generate…'
-    : aiWebEnabled
-    ? 'Ask with web sources…'
-    : 'Ask about this page…';
-}
+// Web search and image generation are handled by the model itself now (it calls
+// the web_search / generate_image tools from plain language) — no toggles.
 
 // active selection chip
 const selChip = $('#ai-selection-chip');
@@ -1210,18 +1176,27 @@ breeze.onAIWebConsent(() => {
   card.querySelector('.awc-skip').addEventListener('click', () => reply(false));
 });
 
-breeze.onAIImage((src) => {
-  if (currentAIMsg && !currentAIMsg.dataset.raw) currentAIMsg.remove();
-  currentAIMsg = null;
+// AI image bubble with a visible download button (and click-to-download).
+function buildAIImageEl(src) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ai ai-image-msg';
   const img = document.createElement('img');
   img.src = src;
   img.title = 'Click to download';
-  // data: URLs can't open as a tab — download the image instead
   img.addEventListener('click', () => breeze.downloadImage(src));
-  wrap.appendChild(img);
-  aiMessages.appendChild(wrap);
+  const dl = document.createElement('button');
+  dl.className = 'ai-img-dl';
+  dl.title = 'Download image';
+  dl.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  dl.addEventListener('click', (e) => { e.stopPropagation(); breeze.downloadImage(src); });
+  wrap.append(img, dl);
+  return wrap;
+}
+
+breeze.onAIImage((src) => {
+  if (currentAIMsg && !currentAIMsg.dataset.raw) currentAIMsg.remove();
+  currentAIMsg = null;
+  aiMessages.appendChild(buildAIImageEl(src));
   aiMessages.scrollTop = aiMessages.scrollHeight;
   chatMessages.push({ role: 'image', src });
   persistChat();
@@ -1466,5 +1441,45 @@ breeze.onSplitBars((d) => {
   });
 });
 
-breeze.onUpdateReady(() => $('#update-toast').classList.add('show'));
-$('#update-btn').addEventListener('click', () => breeze.installUpdate());
+// Download + update toasts now live in the notification overlay (main process),
+// so they always render above the web view regardless of sidebar state.
+
+// Active (not-yet-fired) reminders, listed at the bottom of the sidebar. Shown
+// only when there are any; cancelling one removes it everywhere.
+const remindersStrip = $('#reminders-strip');
+function relTime(ts) {
+  const mins = Math.round((ts - Date.now()) / 60000);
+  if (mins < 1) return 'in <1 min';
+  if (mins < 60) return `in ${mins} min`;
+  const h = Math.round(mins / 60);
+  if (h < 24) return `in ${h} hr`;
+  const d = Math.round(h / 24);
+  return `in ${d} day${d > 1 ? 's' : ''}`;
+}
+function renderReminders(list) {
+  remindersStrip.textContent = '';
+  const items = (list || []).slice().sort((a, b) => a.fireAt - b.fireAt);
+  remindersStrip.classList.toggle('show', items.length > 0);
+  for (const r of items) {
+    const row = document.createElement('div');
+    row.className = 'reminder-item';
+    const txt = document.createElement('div');
+    txt.className = 'ri-text';
+    const label = document.createElement('div');
+    label.className = 'ri-label';
+    label.textContent = r.label;
+    const when = document.createElement('div');
+    when.className = 'ri-when';
+    when.textContent = relTime(r.fireAt);
+    txt.append(label, when);
+    const x = document.createElement('button');
+    x.className = 'ri-x';
+    x.title = 'Cancel reminder';
+    x.innerHTML = '<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+    x.addEventListener('click', () => breeze.confirmDeleteReminder(r.id));
+    row.append(txt, x);
+    remindersStrip.appendChild(row);
+  }
+}
+breeze.getReminders().then(renderReminders).catch(() => {});
+breeze.onReminders(renderReminders);

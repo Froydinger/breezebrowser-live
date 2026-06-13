@@ -8,8 +8,50 @@ Windows.
 - `main.js` — main process (tabs, sessions, permissions, AI, updater, menu)
 - `preload.js` — chrome-UI bridge · `page-preload.js` — injected into web pages
   · `internal-preload.js` — for internal `file://` pages
-- `ui/` — chrome UI (index.html/app.js/style.css), settings, passwords, etc.
+  · `overlay-preload.js` — for the notification overlay view
+- `ui/` — chrome UI (index.html/app.js/style.css), settings, passwords,
+  `overlay.html` (notification overlay), etc.
 - Build: electron-builder. Local repo is also a GitHub remote (`origin`).
+
+## AI + UI architecture (v2.3.2+) — read before touching the assistant
+
+- **Model:** Qwen2.5 3B Instruct GGUF via node-llama-cpp (Metal). `MODEL_URI` in
+  main.js. Downloaded once to userData/models.
+- **The model drives everything via function-calling** (`defineChatSessionFunction`),
+  NOT regex or UI toggles. Tools defined in the `ai-ask` handler:
+  `web_search` (agentic — opens default engine in a real tab, waits for the
+  results page to settle, reads it, never follows a link), `read_current_page`
+  (only when the question is about the page), `set_reminder`, `generate_image`
+  (OpenAI `gpt-image-1`, needs the user's BYOK key). There are NO web/image
+  toggle buttons in the input — the model decides from plain language.
+- System prompt (`buildSystemPrompt`) injects today's real date + rules: never
+  append years to searches, ask a follow-up when location/info is missing, never
+  fabricate, call tools immediately (don't announce "let me search" then stall).
+  `temperature: 0.5` for tool reliability. 90s watchdog aborts a wedged gen.
+  Do NOT add `<tool_call>` to customStopTriggers — it's Qwen's real tool syntax;
+  visible leaks are stripped renderer-side in `setMsgText`.
+- **Notification overlay** (`overlay.html` + `overlay-preload.js`): a transparent
+  `WebContentsView` pinned above the page views — the ONLY chrome allowed to
+  paint over the web view. Native views always paint above DOM, so all toasts
+  (downloads, update-ready, reminders) live here, not in index.html. Sized to
+  exactly its content (so it never eats page clicks when idle), anchored
+  bottom-left; `positionOverlay`/`raiseOverlay` in main. Plays a synthesized
+  chime on every toast; our native Notifications are `silent:true` to avoid a
+  double-ding.
+- **Reminders:** persisted in `appSettings.reminders`, re-armed on launch,
+  missed ones fire on next launch. Fire as a persistent overlay toast + silent
+  native notification. Pending ones list in the sidebar (`#reminders-strip`) and
+  in Settings → Reminders; the sidebar ✕ confirms via native dialog.
+- **Split view:** per-pane URL bars in a reserved top strip (`SPLIT_BAR_H`),
+  both url-bar modes; `tab-nav`/`tab-navigate` IPC drive a specific tab. Do NOT
+  reintroduce `enableDeviceEmulation` for "responsive" panes — it letterboxed
+  pages; panes are just genuinely narrow.
+- **Breeze corner mark:** fixed top-right in top-bar mode (opens AI); in
+  fullscreen + sidebar-url mode it hover-reveals via a main-process corner
+  cursor-poll (`startCornerPoll`).
+- **Cache heal:** `healStorageIfUnclean` clears the main HTTP `Cache` (plus GPU/
+  code caches) on an unclean shutdown — fixes sites (YouTube) rendering with
+  missing logos/icons after a hard quit.
 
 ## Releasing a new version (do it in this order)
 

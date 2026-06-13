@@ -60,6 +60,7 @@ let bookmarks = []; // [{ title, url }]
 
 const NEWTAB_URL = `file://${path.join(__dirname, 'ui', 'newtab.html')}`;
 const SETTINGS_URL = `file://${path.join(__dirname, 'ui', 'settings.html')}`;
+const OVERLAY_URL = `file://${path.join(__dirname, 'ui', 'overlay.html')}`;
 
 const ENGINES = {
   google: 'https://www.google.com/search?q=%s',
@@ -185,11 +186,13 @@ function applyBounds() {
       left: { tabId: activeTabId, x: b.x, w: leftW },
       right: { tabId: splitTabId, x: rightX, w: rightW },
     });
+    raiseOverlay();
     return;
   }
   win.webContents.send('split-divider', null);
   win.webContents.send('split-bars', null);
   for (const { view } of tabs.values()) if (view) view.setBounds(b);
+  raiseOverlay();
 }
 
 function enterSplit(id) {
@@ -219,6 +222,58 @@ function layout() {
   currentLeft = sidebarVisible || sidebarPeek ? sidebarWidth : 0;
   currentRight = assistantVisible ? ASSISTANT_WIDTH : 0;
   applyBounds();
+}
+
+// ---------------------------------------------------------------------------
+// Notification overlay — a transparent WebContentsView pinned ABOVE the page
+// views so essential toasts (downloads, updates) are always visible, with or
+// without the sidebar. Sized to exactly its content so it never eats page
+// clicks when empty. It's the ONLY chrome allowed to paint over the web view.
+// ---------------------------------------------------------------------------
+let overlayView = null;
+let overlayVisible = false;
+
+function createOverlay() {
+  overlayView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.js'),
+      contextIsolation: true,
+    },
+  });
+  try { overlayView.setBackgroundColor('#00000000'); } catch {}
+  overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  overlayView.webContents.loadURL(OVERLAY_URL);
+  overlayView.webContents.once('did-finish-load', () => {
+    overlayView.webContents.send('overlay-theme', effectiveTheme());
+  });
+  win.contentView.addChildView(overlayView);
+}
+
+function raiseOverlay() {
+  // re-add to make it the top-most child again (page views added later would
+  // otherwise cover it). Only bother while a toast is actually showing.
+  if (overlayView && overlayVisible) {
+    try { win.contentView.addChildView(overlayView); } catch {}
+  }
+}
+
+function positionOverlay(w, h) {
+  if (!overlayView || !win) return;
+  overlayVisible = w > 0 && h > 0;
+  if (!overlayVisible) {
+    overlayView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    return;
+  }
+  // The overlay content has 26px of internal padding (shadow room), so offset
+  // the view by -26 to keep the toast ~12px from the window's bottom-left.
+  const [, ch] = win.getContentSize();
+  overlayView.setBounds({ x: -14, y: ch - h + 14, width: w, height: h });
+  raiseOverlay();
+}
+
+function showToast(toast) {
+  if (!overlayView) return;
+  overlayView.webContents.send('toast', toast);
 }
 
 function animateLayout() {
@@ -376,6 +431,10 @@ function setAssistant(show) {
   if (show) {
     clearTimeout(ai.idleTimer);
     ensureAI(); // kick off model download/load in the background
+    // Move keyboard focus off the native page view to the chrome so the AI
+    // input can take it — otherwise typing still goes to the page (e.g. a new
+    // tab). The renderer focuses #ai-input once it has focus.
+    try { win?.webContents.focus(); } catch {}
   } else {
     scheduleAIIdleUnload(); // free the model after the panel's been closed a while
   }
@@ -1591,6 +1650,8 @@ function setupDownloads(ses) {
     downloadList.unshift(entry);
     downloadItems.set(id, item);
     saveDownloads(); // survive a crash mid-download (shows as interrupted)
+    // visual feedback — sites/images often save silently otherwise
+    showToast({ id, kind: 'download', text: `Download started · ${entry.filename}`, action: 'open-downloads' });
 
     item.on('updated', (_ev, state) => {
       entry.receivedBytes = item.getReceivedBytes();
@@ -1604,6 +1665,12 @@ function setupDownloads(ses) {
       downloadItems.delete(id);
       saveDownloads();
       broadcastDownloads();
+      if (state === 'completed') {
+        showToast({ id, kind: 'download', text: `Downloaded · ${entry.filename}`, action: 'open-downloads' });
+      } else if (state === 'interrupted') {
+        showToast({ id, kind: 'download', text: `Download failed · ${entry.filename}` });
+      }
+      // 'cancelled' → no toast, the user did it on purpose
     });
     broadcastDownloads();
   });
@@ -2123,7 +2190,13 @@ function buildSystemPrompt() {
     'unrelated to the page, do NOT call it — just answer normally.\n' +
     '- set_reminder: call it when the user asks to be reminded of something at a later time. ' +
     'Convert their timing into minutes from now.\n' +
+    '- generate_image: call it when the user asks you to create, draw, or generate a picture/image.\n' +
     'If a question is just general knowledge or chit-chat, answer directly with no tools.\n\n' +
+    'CRITICAL: when you decide to use a tool, call it IMMEDIATELY and silently. Do NOT ' +
+    'write a sentence like "Let me find that" or "I\'ll search for you" and then stop — ' +
+    'that leaves the user hanging. Either call the tool right away (the user already sees a ' +
+    'chip showing you\'re searching) or answer directly. Never announce a search instead of ' +
+    'doing it.\n\n' +
     `Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. ` +
     'Whenever the date or anything time-sensitive matters, use THIS date — never a date from ' +
     'your training. If you genuinely need to know "today", it is right here.\n\n' +
@@ -2131,7 +2204,12 @@ function buildSystemPrompt() {
     '(e.g. "where can I get pizza", "what\'s the weather", "things to do near me") but also ' +
     'any other essential detail — ask a short, friendly follow-up question FIRST instead of ' +
     'guessing or searching with a made-up value. You are allowed and encouraged to ask ' +
-    'follow-ups. Only search once you have what you need.';
+    'follow-ups. As SOON as the user gives you the missing detail (e.g. they reply ' +
+    '"chicago"), call web_search right away with the now-complete query — do NOT answer ' +
+    'from memory.\n\n' +
+    'NEVER fabricate facts, places, businesses, prices, or links. If you did not get them ' +
+    'from a web_search result or the current page, you do not know them — say so. It is ' +
+    'much better to admit you could not find something than to invent it.';
   if (name) p += `\n\nThe user's name is ${name}. Address them by name occasionally, naturally.`;
   if (custom) p += `\n\nThe user gave you these standing instructions — follow them: ${custom}`;
   return p;
@@ -2211,12 +2289,23 @@ function saveReminders(list) {
   pushState();
 }
 
-function fireReminder(id) {
+function fireReminder(id, missed) {
   const r = getReminders().find((x) => x.id === id);
   removeReminder(id, true);
   if (!r) return;
+  // Persistent in-app toast so they can't miss it while using Breeze...
+  showToast({
+    kind: 'reminder',
+    text: (missed ? 'Missed reminder · ' : 'Reminder · ') + r.label,
+    persist: true,
+  });
+  // ...plus a native notification for when Breeze isn't in focus.
   try {
-    const n = new Notification({ title: 'Breeze reminder', body: r.label, silent: false });
+    const n = new Notification({
+      title: missed ? 'Breeze reminder (missed)' : 'Breeze reminder',
+      body: r.label,
+      silent: true, // the overlay toast plays the chime; avoid a double sound
+    });
     n.on('click', () => { win?.show(); win?.focus(); });
     n.show();
   } catch {}
@@ -2246,12 +2335,29 @@ function removeReminder(id, skipNotify) {
   return list;
 }
 
-// On launch: drop ones already past, re-arm the rest.
+// On launch: re-arm the still-future ones, and FIRE any that came due while
+// Breeze was closed so the user is caught up (a short delay lets the window +
+// overlay finish loading first).
 function initReminders() {
   const now = Date.now();
-  const live = getReminders().filter((r) => r.fireAt > now - 1000);
-  if (live.length !== getReminders().length) saveReminders(live);
+  const all = getReminders();
+  const live = all.filter((r) => r.fireAt > now);
+  const missed = all.filter((r) => r.fireAt <= now);
+  // keep only live in storage; missed get fired then dropped
+  saveReminders(live);
   for (const r of live) armReminder(r);
+  if (missed.length) {
+    setTimeout(() => {
+      for (const r of missed) {
+        try {
+          showToast({ kind: 'reminder', text: 'Missed reminder · ' + r.label, persist: true });
+          const n = new Notification({ title: 'Breeze reminder (missed)', body: r.label, silent: true });
+          n.on('click', () => { win?.show(); win?.focus(); });
+          n.show();
+        } catch {}
+      }
+    }, 3500);
+  }
 }
 
 function humanizeMs(ms) {
@@ -2368,16 +2474,36 @@ async function agenticWebSearch(query) {
   if (!t || !t.view) return 'Web search failed to open a tab.';
   const wc = t.view.webContents;
   await waitForLoad(wc);
-  await delay(900); // let JS-heavy SERPs settle
 
   // Read the results page ITSELF — don't open any single result. Modern search
-  // engines (esp. the AI ones) already synthesize an answer + snippets on the
-  // results page, so reading the whole page is both better and keeps the choice
-  // of sources with the search engine, not Breeze.
+  // engines (esp. the AI ones) STREAM their synthesized answer in over a few
+  // seconds AFTER load, so we can't read immediately or we get a near-empty
+  // page (and the model then hallucinates). Wait for the page text to stop
+  // growing (settle) with a ~3s floor and ~8s ceiling.
   aiToolChip(`Reading the ${engineName} results`);
-  const serp = await extractFrom(wc);
+  await delay(1500);
+  let serp = '';
+  const started = Date.now();
+  while (Date.now() - started < 7000) {
+    const t2 = await extractFrom(wc);
+    // settled: a non-trivial page that stopped growing meaningfully
+    if (t2.length > 200 && t2.length - serp.length < 40) { serp = t2; break; }
+    if (t2.length > serp.length) serp = t2;
+    await delay(800);
+  }
+
   let links = [];
   try { links = await wc.executeJavaScript(LINK_EXTRACT, true); } catch {}
+
+  // Guard against the page never producing readable content — better to admit
+  // it than to invent results.
+  if (serp.trim().length < 120 && !links.length) {
+    return (
+      `The ${engineName} results page didn't return readable content in time. ` +
+      `Tell the user you couldn't read the search results this time and suggest ` +
+      `they try again — do NOT make up an answer or list places from memory.`
+    );
+  }
 
   const sourceList = links
     .slice(0, 6)
@@ -2387,35 +2513,16 @@ async function agenticWebSearch(query) {
   return (
     `Live web results for "${query}", read straight from the ${engineName} ` +
     `results page. Base your answer ONLY on what's here, summarize across all of ` +
-    `it, and cite the relevant links as markdown [title](url). Do not invent ` +
-    `facts beyond these results.\n\n` +
+    `it, and cite the relevant links as markdown [title](url). If something isn't ` +
+    `in these results, say you don't know — do NOT invent facts or list places ` +
+    `from memory.\n\n` +
     `RESULTS PAGE CONTENT:\n${serp.slice(0, 6000)}\n\n` +
     `LINKS ON THE PAGE (for citing):\n${sourceList || '(none found)'}`
   );
 }
 
-ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
+ipcMain.on('ai-ask', async (_e, { text, selection }) => {
   if (ai.generating) return;
-
-  // --- Image generation ---
-  if (useImage) {
-    win?.webContents.send('ai-tool', { kind: 'image', label: 'Generating image…' });
-    sendAI({ state: 'generating-image' });
-    const img = await openaiImage(text);
-    if (img.error === 'no-key') {
-      win?.webContents.send(
-        'ai-chunk',
-        'Add your OpenAI API key in Settings → AI to generate images. 🔑'
-      );
-    } else if (img.error) {
-      win?.webContents.send('ai-chunk', `Image generation failed: ${img.error}`);
-    } else {
-      win?.webContents.send('ai-image', img.dataUrl || img.url);
-    }
-    win?.webContents.send('ai-done');
-    sendAI({ state: 'ready' });
-    return;
-  }
 
   if (!(await ensureAI())) return;
   ai.generating = true;
@@ -2426,12 +2533,6 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
   if (selection && selection.trim()) {
     win?.webContents.send('ai-tool', { kind: 'selection', label: 'Using your selected text' });
     prompt = `[The user highlighted this text on the page]\n"${selection.trim().slice(0, 2000)}"\n\n${prompt}`;
-  }
-
-  // The globe toggle is now just a nudge: it strongly hints the model to use
-  // web_search this turn. The model can also call it on its own when useful.
-  if (useWeb) {
-    prompt = `[The user toggled web search on — call web_search for this question.]\n${prompt}`;
   }
 
   sendAI({ state: 'generating' });
@@ -2487,17 +2588,53 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
         return `Reminder set for ${humanizeMs(ms)} from now: "${r.label}".`;
       },
     }),
+    generate_image: def({
+      description:
+        'Generate an image from a text description. Use when the user asks you ' +
+        'to create, draw, make, or generate a picture/image/logo/art.',
+      params: {
+        type: 'object',
+        properties: { prompt: { type: 'string', description: 'a detailed description of the image to create' } },
+        required: ['prompt'],
+      },
+      handler: async ({ prompt: imgPrompt }) => {
+        win?.webContents.send('ai-tool', { kind: 'image', label: 'Generating image…' });
+        sendAI({ state: 'generating-image' });
+        const img = await openaiImage(String(imgPrompt || text));
+        sendAI({ state: 'generating' });
+        if (img.error === 'no-key') {
+          return 'Image generation needs an OpenAI API key. Tell the user to add one under Settings → Breeze AI.';
+        }
+        if (img.error) return `Image generation failed: ${img.error}`;
+        win?.webContents.send('ai-image', img.dataUrl || img.url);
+        return 'The image was generated and is now displayed to the user. Briefly say it\'s ready.';
+      },
+    }),
   };
 
   ai.abort = new AbortController();
+  // Watchdog: a 3B model can occasionally wedge mid-generation and never
+  // return, leaving the panel stuck on "Thinking…". Abort after 90s so the
+  // user gets control back instead of an infinite spinner. (A real search +
+  // answer is well under this.)
+  let watchdogHit = false;
+  const watchdog = setTimeout(() => {
+    watchdogHit = true;
+    try { ai.abort?.abort(); } catch {}
+  }, 90000);
   try {
     await ai.session.prompt(prompt, {
       signal: ai.abort.signal,
       functions,
+      // NOTE: do NOT add '<tool_call>' as a stop trigger — that's Qwen's real
+      // function-call syntax, and stopping on it kills tool use. Leaked/role-
+      // played markers are stripped on the renderer side instead.
       // bounded + penalized generation: small local models loop without this.
       // Roomier cap so answers aren't cut short, still safe from runaways.
       maxTokens: 1700,
-      temperature: 0.75,
+      // lower temp = the model reliably commits to a tool call instead of
+      // writing a chatty "let me search…" preamble and stalling
+      temperature: 0.5,
       topP: 0.9,
       repeatPenalty: {
         penalty: 1.18,
@@ -2525,7 +2662,11 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
         sendAI({ state: 'error', message: err.message });
       }
     }
+    if (watchdogHit) {
+      win?.webContents.send('ai-chunk', '\n\n_(That took too long, so I stopped. Try asking again.)_');
+    }
   }
+  clearTimeout(watchdog);
   ai.generating = false;
   win?.webContents.send('ai-done');
   sendAI({ state: 'ready' });
@@ -2538,6 +2679,30 @@ ipcMain.on('ai-stop', () => {
 // Active reminders for the Settings → Reminders tab.
 ipcMain.handle('get-reminders', () => getReminders());
 ipcMain.on('delete-reminder', (_e, id) => removeReminder(id));
+
+// Cancel a reminder with a confirmation prompt (used by the sidebar ✕).
+ipcMain.handle('delete-reminder-confirm', async (_e, id) => {
+  const r = getReminders().find((x) => x.id === id);
+  if (!r) return;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: ['Keep it', 'Cancel reminder'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'Are you sure you want to cancel this reminder?',
+    detail: `"${r.label}"`,
+  });
+  if (response === 1) removeReminder(id);
+});
+
+// Notification overlay: it reports the size it needs, and routes button actions.
+ipcMain.on('overlay-size', (_e, { w, h }) => positionOverlay(w, h));
+ipcMain.on('overlay-action', (_e, action) => {
+  if (action === 'open-downloads') openInternalTab(DOWNLOADS_URL);
+  else if (action === 'install-update') {
+    if (updateDownloaded) getAutoUpdater().quitAndInstall();
+  }
+});
 
 // Save an AI-generated image (data: URL or http) to ~/Downloads.
 ipcMain.on('download-image', async (_e, src) => {
@@ -2566,8 +2731,9 @@ ipcMain.on('download-image', async (_e, src) => {
     });
     saveDownloads();
     broadcastDownloads();
+    showToast({ kind: 'download', text: `Downloaded · ${name}`, action: 'open-downloads' });
     try {
-      new Notification({ title: 'Image saved', body: name }).show();
+      new Notification({ title: 'Image saved', body: name, silent: true }).show();
     } catch {}
   } catch (err) {
     console.error('Image download failed:', err.message);
@@ -2648,9 +2814,14 @@ function getAutoUpdater() {
   if (autoUpdaterRef) return autoUpdaterRef;
   const { autoUpdater } = require('electron-updater');
   autoUpdater.autoDownload = true;
+  // Detected a newer version (checked on every launch + every 4h) — tell the
+  // user immediately, then again (persistently) once it's downloaded & ready.
+  autoUpdater.on('update-available', (info) => {
+    showToast({ kind: 'update', text: `New version ${info?.version || ''} found — downloading…`.trim() });
+  });
   autoUpdater.on('update-downloaded', () => {
     updateDownloaded = true;
-    if (win) win.webContents.send('update-ready');
+    showToast({ kind: 'update', text: 'Update ready', persist: true });
   });
   autoUpdaterRef = autoUpdater;
   return autoUpdater;
@@ -2759,6 +2930,7 @@ function applyTheme(theme) {
     win.setBackgroundColor(eff === 'dark' ? '#16161a' : '#f2f0ed');
     win.webContents.send('theme', eff);
   }
+  try { overlayView?.webContents.send('overlay-theme', eff); } catch {}
   // internal pages (new tab, settings) follow instantly via their preload
   for (const { view } of tabs.values()) {
     if (view && view.webContents.getURL().startsWith('file://')) {
@@ -2820,6 +2992,7 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
+  createOverlay();
   if (process.platform === 'darwin' && !sidebarVisible) {
     try {
       win.setWindowButtonVisibility(false);

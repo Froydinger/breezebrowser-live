@@ -301,6 +301,48 @@ html.dark .tab .close:hover { background: rgba(255, 255, 255, 0.12); }
   opacity: 0.6;
 }
 
+#reminders-strip {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  flex-shrink: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+#reminders-strip.show { display: flex; }
+.reminder-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-radius: 9px;
+  padding: 6px 6px 6px 10px;
+}
+.reminder-item .ri-text { flex: 1; min-width: 0; }
+.reminder-item .ri-label {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reminder-item .ri-when { font-size: 10.5px; color: var(--text-soft); }
+.reminder-item .ri-x {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.reminder-item .ri-x svg { width: 12px; height: 12px; }
+.reminder-item .ri-x:hover { background: var(--surface-hover); color: var(--text); }
+
 #sidebar-footer {
   display: flex;
   align-items: center;
@@ -367,6 +409,52 @@ html.dark .tab .close:hover { background: rgba(255, 255, 255, 0.12); }
 }
 
 #update-toast.show { bottom: 58px; }
+
+/* download feedback toast — bottom-left over the sidebar (a DOM-safe zone that
+   native web views never cover), click body to view downloads, ✕ to dismiss */
+#dl-toast {
+  position: fixed;
+  left: 14px;
+  bottom: -80px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-active);
+  box-shadow: var(--shadow);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 12px;
+  padding: 8px 8px 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 50;
+  max-width: calc(var(--sidebar-w, 280px) - 14px);
+  transition: bottom 0.35s var(--ease), opacity 0.35s var(--ease);
+  opacity: 0;
+}
+#dl-toast.show { bottom: 104px; opacity: 1; }
+#dl-toast-body {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  min-width: 0;
+}
+#dl-toast-body svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+#dl-toast-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dl-toast-close {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  border-radius: 7px;
+  cursor: pointer;
+}
+#dl-toast-close svg { width: 13px; height: 13px; }
+#dl-toast-close:hover { background: var(--surface-hover); color: var(--text); }
 
 #update-btn {
   border: none;
@@ -669,10 +757,13 @@ html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
   gap: 8px;
   background: var(--surface);
   border-radius: 12px;
-  padding: 8px 8px 8px 13px;
+  padding: 8px 8px 8px 16px;
   box-shadow: var(--shadow);
   transition: box-shadow 0.2s var(--ease), background 0.2s var(--ease);
 }
+/* a touch more breathing room on the left so the text isn't crammed against
+   the edge now that the web/image toggle buttons are gone */
+#ai-input { padding-left: 2px; }
 
 #ai-input-wrap:focus-within {
   background: var(--surface-active);
@@ -1568,7 +1659,26 @@ html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
 }
 
 /* generated image bubble */
-.ai-image-msg { padding: 6px !important; }
+.ai-image-msg { padding: 6px !important; position: relative; }
+.ai-img-dl {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, #000 55%, transparent);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), background 0.15s var(--ease);
+}
+.ai-img-dl svg { width: 16px; height: 16px; }
+.ai-img-dl:hover { background: color-mix(in srgb, #000 75%, transparent); }
+.ai-image-msg:hover .ai-img-dl { opacity: 1; }
 .ai-image-msg img {
   width: 100%;
   border-radius: 12px;
