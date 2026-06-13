@@ -302,18 +302,56 @@ let selTimer = null;
 let lastSel = '';
 let aiPanelOpen = false;
 
+// Selection can live in three places window.getSelection() alone misses:
+//  1. inside <input>/<textarea> (their own selectionStart/End),
+//  2. inside shadow DOM (the active component's shadowRoot.getSelection()),
+//  3. inside same-origin iframes (each frame has its own selection).
+// Walk all of them so the AI sees what the user actually highlighted on any
+// site — React apps, web components, editors included.
+function readAnySelection() {
+  // 1. focused form field with a real text selection
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT')) {
+    try {
+      if (typeof ae.selectionStart === 'number' && ae.selectionEnd > ae.selectionStart) {
+        return ae.value.slice(ae.selectionStart, ae.selectionEnd).trim();
+      }
+    } catch {}
+  }
+  // 2. shadow DOM: descend through open shadow roots that own a selection
+  let root = document;
+  for (let i = 0; i < 6; i++) {
+    let sel = '';
+    try { sel = String(root.getSelection ? root.getSelection() : '').trim(); } catch {}
+    if (sel) return sel;
+    const host = root.activeElement;
+    if (host && host.shadowRoot && host.shadowRoot.getSelection) root = host.shadowRoot;
+    else break;
+  }
+  // 3. top document
+  try {
+    const top = String(window.getSelection() || '').trim();
+    if (top) return top;
+  } catch {}
+  // 4. same-origin iframes
+  for (const frame of document.querySelectorAll('iframe')) {
+    try {
+      const s = String(frame.contentWindow.getSelection() || '').trim();
+      if (s) return s;
+    } catch {} // cross-origin — skip
+  }
+  return '';
+}
+
 function reportSelection() {
   if (!aiPanelOpen) return;
   clearTimeout(selTimer);
   selTimer = setTimeout(() => {
-    let s = '';
-    try {
-      s = String(window.getSelection() || '').trim();
-    } catch {}
+    const s = readAnySelection();
     if (s === lastSel) return;
     lastSel = s;
     ipcRenderer.send('page-selection', s.slice(0, 2000));
-  }, 220);
+  }, 180);
 }
 
 ipcRenderer.on('ai-panel', (_e, open) => {
@@ -326,7 +364,10 @@ ipcRenderer.on('ai-panel', (_e, open) => {
 });
 
 document.addEventListener('selectionchange', reportSelection, { passive: true });
-document.addEventListener('mouseup', reportSelection, { passive: true });
+document.addEventListener('mouseup', reportSelection, { passive: true, capture: true });
+document.addEventListener('keyup', reportSelection, { passive: true, capture: true });
+// fired by <input>/<textarea> when their internal selection changes
+document.addEventListener('select', reportSelection, { passive: true, capture: true });
 
 window.addEventListener(
   'mouseover',

@@ -15,6 +15,33 @@
   <div id="loadbar"><div id="loadbar-fill"></div></div>
   <div id="split-divider"><div class="split-grip"></div></div>
 
+  <!-- Per-pane URL bars shown only in split view (both url-bar modes). Each
+       drives its own tab: back/forward/reload/navigate independently. -->
+  <div class="split-bar" id="split-bar-left" hidden>
+    <button class="sb-nav" data-act="back" title="Back">
+      <svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="sb-nav" data-act="forward" title="Forward">
+      <svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="sb-nav" data-act="reload" title="Reload">
+      <svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <input class="sb-input" type="text" spellcheck="false" autocomplete="off" placeholder="Search or enter URL" />
+  </div>
+  <div class="split-bar" id="split-bar-right" hidden>
+    <button class="sb-nav" data-act="back" title="Back">
+      <svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="sb-nav" data-act="forward" title="Forward">
+      <svg viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="sb-nav" data-act="reload" title="Reload">
+      <svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <input class="sb-input" type="text" spellcheck="false" autocomplete="off" placeholder="Search or enter URL" />
+  </div>
+
   <div id="sidebar">
     <div id="drag-strip">
       <span class="tl-pad"></span>
@@ -226,11 +253,9 @@
       <div class="onboard-step" data-step="4" hidden>
         <div class="onboard-icon">🔑</div>
         <h2>Optional: power up the AI</h2>
-        <p>Breeze never bundles API keys — you bring your own, kept only on this device. Add them now or later in Settings. The local AI works fully without either.</p>
+        <p>Web search needs no key — the AI just uses your browser. Want AI image generation too? Add your own OpenAI key (kept only on this device). Optional — add it now or later in Settings.</p>
         <input id="onboard-openai" type="password" placeholder="OpenAI key (sk-…) — image generation" autocomplete="off" />
         <p class="onboard-fine"><a class="onboard-keylink" data-url="https://platform.openai.com/api-keys">Get a free OpenAI key →</a></p>
-        <input id="onboard-tavily" type="password" placeholder="Tavily key (tvly-…) — web search" autocomplete="off" />
-        <p class="onboard-fine"><a class="onboard-keylink" data-url="https://app.tavily.com/home">Get a free Tavily key →</a></p>
         <button class="onboard-next primary" id="onboard-finish">Start browsing</button>
       </div>
 

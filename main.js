@@ -85,13 +85,13 @@ const DEFAULT_SETTINGS = {
   userName: '', // given to the AI
   aiInstructions: '', // standing custom instructions for the AI
   openaiKey: '', // optional, for image generation
-  tavilyKey: '', // optional, for AI web search
   onboarded: false, // first-run setup dialog shown
   webNotifications: true, // sites may show notifications (browser-wide)
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
   pinSize: 'large', // 'small' | 'medium' | 'large'
   neverSavePasswords: [], // origins the user said "never" for
   permissions: {},
+  reminders: [], // [{ id, label, fireAt }] active reminders, re-armed on launch
 };
 
 const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
@@ -134,10 +134,20 @@ function saveSettings(patch) {
 // Layout (sidebar on the left, assistant on the right, page in the middle)
 // ---------------------------------------------------------------------------
 
+function inSplitMode() {
+  return !!(splitTabId && tabs.get(splitTabId) && splitTabId !== activeTabId);
+}
+
 function contentBounds(left, right) {
   const [w, h] = win.getContentSize();
+  // In split view each pane gets its own in-view URL bar strip (in BOTH url-bar
+  // modes), so we reserve that strip instead of the global top bar.
   const top =
-    (appSettings.urlBarPosition === 'top' ? TOPBAR_HEIGHT : 0) + omniboxOffset;
+    (inSplitMode()
+      ? SPLIT_BAR_H
+      : appSettings.urlBarPosition === 'top'
+      ? TOPBAR_HEIGHT
+      : 0) + omniboxOffset;
   return {
     x: Math.round(left) + CONTENT_PAD,
     y: CONTENT_PAD + top,
@@ -149,6 +159,41 @@ function contentBounds(left, right) {
 let splitTabId = null; // secondary tab shown beside the active one
 let splitRatio = 0.5; // left pane width fraction
 const SPLIT_DIVIDER = 14; // wide enough to grab (native views can't cover the gap)
+const SPLIT_BAR_H = 44; // per-pane URL-bar strip height while in split view
+const RESPONSIVE_W = 600; // panes narrower than this emulate a mobile viewport
+
+// Make a narrow pane actually responsive: device-emulate so the page sees its
+// true (small) width as the screen — sites switch to mobile/compact layouts
+// instead of just clipping the desktop layout. Cleared when wide again.
+function applyEmulation(t, width, height) {
+  if (!t || !t.view) return;
+  const wc = t.view.webContents;
+  const mobile = width > 0 && width < RESPONSIVE_W;
+  const sig = mobile ? `m${Math.round(width)}x${Math.round(height)}` : 'off';
+  if (t._emuSig === sig) return; // avoid thrashing during drags
+  t._emuSig = sig;
+  try {
+    if (mobile) {
+      wc.enableDeviceEmulation({
+        screenPosition: 'mobile',
+        screenSize: { width: Math.round(width), height: Math.round(height) },
+        viewSize: { width: Math.round(width), height: Math.round(height) },
+        viewPosition: { x: 0, y: 0 },
+        deviceScaleFactor: 0,
+        scale: 1,
+      });
+    } else {
+      wc.disableDeviceEmulation();
+    }
+  } catch {}
+}
+
+function clearEmulation(t) {
+  if (!t || !t.view) return;
+  if (t._emuSig === 'off' || t._emuSig === undefined) { t._emuSig = 'off'; return; }
+  t._emuSig = 'off';
+  try { t.view.webContents.disableDeviceEmulation(); } catch {}
+}
 
 function applyBounds() {
   if (!win) return;
@@ -158,18 +203,31 @@ function applyBounds() {
   if (s && s.view && a && a.view && splitTabId !== activeTabId) {
     const leftW = Math.max(120, Math.round((b.width - SPLIT_DIVIDER) * splitRatio));
     const rightW = Math.max(120, b.width - SPLIT_DIVIDER - leftW);
+    const rightX = b.x + leftW + SPLIT_DIVIDER;
     a.view.setBounds({ x: b.x, y: b.y, width: leftW, height: b.height });
-    s.view.setBounds({ x: b.x + leftW + SPLIT_DIVIDER, y: b.y, width: rightW, height: b.height });
+    s.view.setBounds({ x: rightX, y: b.y, width: rightW, height: b.height });
+    applyEmulation(a, leftW, b.height);
+    applyEmulation(s, rightW, b.height);
     win.webContents.send('split-divider', {
       x: b.x + leftW,
       y: b.y,
       h: b.height,
       w: SPLIT_DIVIDER,
     });
+    // Per-pane URL-bar strips sit in the reserved space directly above each view.
+    win.webContents.send('split-bars', {
+      barH: SPLIT_BAR_H,
+      stripY: b.y - SPLIT_BAR_H,
+      left: { tabId: activeTabId, x: b.x, w: leftW },
+      right: { tabId: splitTabId, x: rightX, w: rightW },
+    });
     return;
   }
   win.webContents.send('split-divider', null);
-  for (const { view } of tabs.values()) if (view) view.setBounds(b);
+  win.webContents.send('split-bars', null);
+  for (const t of tabs.values()) {
+    if (t.view) { t.view.setBounds(b); clearEmulation(t); }
+  }
 }
 
 function enterSplit(id) {
@@ -1931,75 +1989,19 @@ async function setupAdblock() {
 }
 
 // ---------------------------------------------------------------------------
-// Web lookup for the AI (Tavily) — bring-your-own-key (Settings), never bundled
-// ---------------------------------------------------------------------------
-
-// Per-search privacy consent. The renderer shows a confirm card in chat and
-// replies via 'ai-web-consent-reply'; we resolve the pending promise with it.
-let pendingWebConsent = null;
-function requestWebConsent() {
-  // a stray earlier prompt (shouldn't happen — one request at a time) declines
-  if (pendingWebConsent) {
-    pendingWebConsent(false);
-    pendingWebConsent = null;
-  }
-  return new Promise((resolve) => {
-    pendingWebConsent = resolve;
-    win?.webContents.send('ai-web-consent');
-  });
-}
-ipcMain.on('ai-web-consent-reply', (_e, ok) => {
-  if (pendingWebConsent) {
-    const r = pendingWebConsent;
-    pendingWebConsent = null;
-    r(!!ok);
-  }
-});
-
-function getTavilyKey() {
-  // Bring-your-own-key: the user's own key from Settings, stored locally on
-  // this device only. (TAVILY_API_KEY env var is honored for dev convenience.)
-  // No key is ever bundled into the app — nothing to extract from a build.
-  if (appSettings.tavilyKey && appSettings.tavilyKey.trim()) {
-    return appSettings.tavilyKey.trim();
-  }
-  if (process.env.TAVILY_API_KEY) return process.env.TAVILY_API_KEY;
-  return null;
-}
-
-async function tavilySearch(query) {
-  const key = getTavilyKey();
-  if (!key) return null;
-  try {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 9000);
-    const res = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ api_key: key, query, max_results: 5 }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(to);
-    const data = await res.json();
-    const results = data.results || [];
-    if (!results.length) return null;
-    return results
-      .map(
-        (r, i) =>
-          `[${i + 1}] ${r.title}\n${r.url}\n${(r.content || '').slice(0, 500)}`
-      )
-      .join('\n\n');
-  } catch {
-    return null;
-  }
-}
-
+// AI web access is agentic now (see agenticWebSearch): the assistant drives the
+// real browser — opening the user's default search engine in a tab and reading
+// it — so there's no third-party API, and no key to bundle or manage.
 // ---------------------------------------------------------------------------
 // Local AI assistant (llama.cpp via node-llama-cpp, Metal-accelerated)
 // ---------------------------------------------------------------------------
 
+// Qwen2.5 3B Instruct — same ~2GB footprint as Llama 3.2 3B but markedly better
+// at function-calling, which is what powers reminders + agentic web search.
+// Stays 100% local (downloaded once, runs on-device via Metal).
 const MODEL_URI =
-  'hf:bartowski/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf';
+  'hf:bartowski/Qwen2.5-3B-Instruct-GGUF/Qwen2.5-3B-Instruct-Q4_K_M.gguf';
+const MODEL_LABEL = 'Qwen2.5 3B';
 
 const ai = {
   ready: false,
@@ -2050,10 +2052,11 @@ async function ensureAI() {
   if (ai.ready || ai.loading) return ai.ready;
   ai.loading = true;
   try {
-    const { getLlama, LlamaChatSession, resolveModelFile } = await import(
+    const { getLlama, LlamaChatSession, resolveModelFile, defineChatSessionFunction } = await import(
       'node-llama-cpp'
     );
     ai.LlamaChatSession = LlamaChatSession;
+    ai.defineChatSessionFunction = defineChatSessionFunction;
 
     sendAI({ state: 'downloading', progress: 0 });
     const modelPath = await resolveModelFile(MODEL_URI, {
@@ -2090,9 +2093,29 @@ function buildSystemPrompt() {
     'useful. Think clever best friend who happens to know everything: you crack the ' +
     'occasional dry joke, you have opinions, and you keep it real. Be conversational ' +
     'and give answers room to breathe — a few helpful sentences, not a terse one-liner ' +
-    "— but don't ramble or pad. When page content or web results are provided, ground " +
-    'your answer in them and cite URLs when you use web sources. Everything you do runs ' +
-    "locally on the user's Mac, and you're quietly proud of that — their data never leaves.";
+    "— but don't ramble or pad. Everything you run does so " +
+    "locally on the user's Mac, and you're quietly proud of that — their data never leaves.\n\n" +
+    'You have tools. Use them ONLY when they actually fit the question — do not assume ' +
+    'every question is about the current web page:\n' +
+    '- web_search: call it when the user asks about current events, facts you are unsure ' +
+    'of, or anything that benefits from up-to-date info. It opens a real search in a tab ' +
+    'and reads the results. Cite the source links you get back as markdown [title](url). ' +
+    "Search with the user's words EXACTLY — never tack on a year or date (do NOT turn " +
+    '"pizza in chicago" into "pizza in chicago 2023"); your training year is not today.\n' +
+    "- read_current_page: call it ONLY when the user's question is clearly about the page " +
+    'they are looking at (e.g. "summarize this", "what does this say"). If the question is ' +
+    'unrelated to the page, do NOT call it — just answer normally.\n' +
+    '- set_reminder: call it when the user asks to be reminded of something at a later time. ' +
+    'Convert their timing into minutes from now.\n' +
+    'If a question is just general knowledge or chit-chat, answer directly with no tools.\n\n' +
+    `Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. ` +
+    'Whenever the date or anything time-sensitive matters, use THIS date — never a date from ' +
+    'your training. If you genuinely need to know "today", it is right here.\n\n' +
+    'If a request is missing information you\'d need to answer well — most often a LOCATION ' +
+    '(e.g. "where can I get pizza", "what\'s the weather", "things to do near me") but also ' +
+    'any other essential detail — ask a short, friendly follow-up question FIRST instead of ' +
+    'guessing or searching with a made-up value. You are allowed and encouraged to ask ' +
+    'follow-ups. Only search once you have what you need.';
   if (name) p += `\n\nThe user's name is ${name}. Address them by name occasionally, naturally.`;
   if (custom) p += `\n\nThe user gave you these standing instructions — follow them: ${custom}`;
   return p;
@@ -2158,49 +2181,74 @@ async function getPageContext() {
   }
 }
 
-// --- AI tools: reminders + OpenAI image generation -----------------------
+// --- Reminders: persisted, re-armed on launch, fired as native notifications -
 
-// Parse natural-language reminders: "remind me in 10 minutes to call mom",
-// "remind me to stretch in 2 hours". Returns { ms, label } or null.
-function parseReminder(text) {
-  const m = text.match(/\bremind\s+me\b/i);
-  if (!m) return null;
-  const t = text.match(/\bin\s+(\d+)\s*(sec|second|min|minute|hour|hr|day)s?\b/i);
-  if (!t) return null;
-  const n = parseInt(t[1], 10);
-  const unit = t[2].toLowerCase();
-  const mult = unit.startsWith('sec')
-    ? 1000
-    : unit.startsWith('min')
-    ? 60000
-    : unit.startsWith('hour') || unit === 'hr'
-    ? 3600000
-    : 86400000;
-  let label = text
-    .replace(/\bremind\s+me\s*(to\s+)?/i, '')
-    .replace(/\bin\s+\d+\s*(sec|second|min|minute|hour|hr|day)s?\b/i, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-  if (!label) label = 'Reminder';
-  return { ms: n * mult, label, human: `${n} ${unit}${n > 1 ? 's' : ''}` };
+const reminderTimers = new Map(); // id -> timeout handle
+
+function getReminders() {
+  return Array.isArray(appSettings.reminders) ? appSettings.reminders : [];
 }
 
-function scheduleReminder(label, ms) {
-  setTimeout(() => {
-    try {
-      const n = new Notification({
-        title: 'Breeze reminder',
-        body: label,
-        silent: false,
-      });
-      n.on('click', () => {
-        win?.show();
-        win?.focus();
-      });
-      n.show();
-    } catch {}
-  }, ms);
+function saveReminders(list) {
+  applySetting('reminders', list);
+  win?.webContents.send('reminders-changed', list);
+  pushState();
 }
+
+function fireReminder(id) {
+  const r = getReminders().find((x) => x.id === id);
+  removeReminder(id, true);
+  if (!r) return;
+  try {
+    const n = new Notification({ title: 'Breeze reminder', body: r.label, silent: false });
+    n.on('click', () => { win?.show(); win?.focus(); });
+    n.show();
+  } catch {}
+}
+
+function armReminder(r) {
+  clearTimeout(reminderTimers.get(r.id));
+  const delay = Math.max(0, r.fireAt - Date.now());
+  // setTimeout caps at ~24.8 days; clamp and it'll re-arm on next launch anyway
+  reminderTimers.set(r.id, setTimeout(() => fireReminder(r.id), Math.min(delay, 2 ** 31 - 1)));
+}
+
+// add a reminder N ms from now; returns the stored record
+function addReminder(label, ms) {
+  const r = { id: `r${Date.now()}${Math.floor(Math.random() * 1000)}`, label: label || 'Reminder', fireAt: Date.now() + ms };
+  const list = [...getReminders(), r];
+  saveReminders(list);
+  armReminder(r);
+  return r;
+}
+
+function removeReminder(id, skipNotify) {
+  clearTimeout(reminderTimers.get(id));
+  reminderTimers.delete(id);
+  const list = getReminders().filter((x) => x.id !== id);
+  saveReminders(list);
+  return list;
+}
+
+// On launch: drop ones already past, re-arm the rest.
+function initReminders() {
+  const now = Date.now();
+  const live = getReminders().filter((r) => r.fireAt > now - 1000);
+  if (live.length !== getReminders().length) saveReminders(live);
+  for (const r of live) armReminder(r);
+}
+
+function humanizeMs(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'less than a minute';
+  if (m < 60) return `${m} minute${m > 1 ? 's' : ''}`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hour${h > 1 ? 's' : ''}`;
+  const d = Math.round(h / 24);
+  return `${d} day${d > 1 ? 's' : ''}`;
+}
+
+// --- AI tools: OpenAI image generation -----------------------------------
 
 async function openaiImage(prompt) {
   const key = (appSettings.openaiKey || '').trim();
@@ -2230,21 +2278,108 @@ async function openaiImage(prompt) {
   }
 }
 
+// --- Agentic web search: drive the REAL browser instead of an API ---------
+// Opens the user's default search engine in a new (visible) tab, waits for it
+// to render, reads the results, then follows the top result and reads that too.
+// No third-party API key — it's just the browser doing what it already does.
+
+function aiToolChip(label) {
+  win?.webContents.send('ai-tool', { kind: 'web', label });
+}
+
+function waitForLoad(wc, timeout = 12000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; cleanup(); resolve(); };
+    const cleanup = () => {
+      clearTimeout(to);
+      try { wc.removeListener('did-finish-load', finish); } catch {}
+      try { wc.removeListener('did-stop-loading', finish); } catch {}
+    };
+    const to = setTimeout(finish, timeout);
+    wc.once('did-finish-load', finish);
+    wc.once('did-stop-loading', finish);
+  });
+}
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Pull the top organic result links off a search-results page, skipping the
+// engine's own domain and obvious non-result chrome.
+const LINK_EXTRACT = `(() => {
+  const eng = location.hostname.replace(/^www\\./, '');
+  const seen = new Set();
+  const out = [];
+  for (const a of document.querySelectorAll('a[href^="http"]')) {
+    let u; try { u = new URL(a.href); } catch { continue; }
+    const h = u.hostname.replace(/^www\\./, '');
+    if (h === eng || h.endsWith('google.com') || h.endsWith('bing.com') ||
+        h.endsWith('duckduckgo.com') || h.endsWith('brave.com') ||
+        h.endsWith('microsoft.com') || h.endsWith('youtube.com/redirect') ||
+        u.pathname.length < 2) continue;
+    const key = u.origin + u.pathname;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const text = (a.innerText || '').trim();
+    if (text.length < 4) continue;
+    out.push({ url: a.href, title: text.slice(0, 120) });
+    if (out.length >= 6) break;
+  }
+  return out;
+})()`;
+
+async function extractFrom(wc) {
+  try {
+    const text = await wc.executeJavaScript(EXTRACT_CONTEXT, true);
+    return String(text || '').slice(0, 6000);
+  } catch { return ''; }
+}
+
+async function agenticWebSearch(query) {
+  const engineUrl = ENGINES[appSettings.searchEngine] || ENGINES.google;
+  const engineName = (appSettings.searchEngine || 'google')
+    .replace(/^./, (c) => c.toUpperCase());
+  const url = engineUrl.replace('%s', encodeURIComponent(query));
+
+  sendAI({ state: 'searching' });
+  aiToolChip(`Searching ${engineName} for "${query.slice(0, 60)}"`);
+  // persistent, clickable record of this agentic search in the chat transcript
+  win?.webContents.send('ai-search', { query, url, engine: engineName });
+
+  // open a real, visible tab so the user watches it happen
+  const id = createTab(url, true);
+  const t = tabs.get(id);
+  if (!t || !t.view) return 'Web search failed to open a tab.';
+  const wc = t.view.webContents;
+  await waitForLoad(wc);
+  await delay(900); // let JS-heavy SERPs settle
+
+  // Read the results page ITSELF — don't open any single result. Modern search
+  // engines (esp. the AI ones) already synthesize an answer + snippets on the
+  // results page, so reading the whole page is both better and keeps the choice
+  // of sources with the search engine, not Breeze.
+  aiToolChip(`Reading the ${engineName} results`);
+  const serp = await extractFrom(wc);
+  let links = [];
+  try { links = await wc.executeJavaScript(LINK_EXTRACT, true); } catch {}
+
+  const sourceList = links
+    .slice(0, 6)
+    .map((l, i) => `[${i + 1}] ${l.title}\n${l.url}`)
+    .join('\n');
+
+  return (
+    `Live web results for "${query}", read straight from the ${engineName} ` +
+    `results page. Base your answer ONLY on what's here, summarize across all of ` +
+    `it, and cite the relevant links as markdown [title](url). Do not invent ` +
+    `facts beyond these results.\n\n` +
+    `RESULTS PAGE CONTENT:\n${serp.slice(0, 6000)}\n\n` +
+    `LINKS ON THE PAGE (for citing):\n${sourceList || '(none found)'}`
+  );
+}
+
 ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
   if (ai.generating) return;
-
-  // --- Reminder shortcut: handle locally, no model needed ---
-  const reminder = parseReminder(text);
-  if (reminder) {
-    scheduleReminder(reminder.label, reminder.ms);
-    win?.webContents.send('ai-tool', { kind: 'reminder', label: `Reminder set for ${reminder.human}` });
-    win?.webContents.send(
-      'ai-chunk',
-      `Done — I'll remind you in ${reminder.human}: "${reminder.label}". 🔔`
-    );
-    win?.webContents.send('ai-done');
-    return;
-  }
 
   // --- Image generation ---
   if (useImage) {
@@ -2277,55 +2412,72 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
     prompt = `[The user highlighted this text on the page]\n"${selection.trim().slice(0, 2000)}"\n\n${prompt}`;
   }
 
-  // optional: cross-reference with live web results
-  let doWeb = useWeb;
-  if (doWeb) {
-    // Privacy gate: a web search is the one action that leaves the device, so
-    // confirm in-chat before each one. Nothing is sent to Tavily until the
-    // user clicks Search; declining falls through to a local-only answer.
-    sendAI({ state: 'awaiting-web-consent' });
-    const consented = await requestWebConsent();
-    if (!consented) {
-      win?.webContents.send('ai-tool', { kind: 'web', label: 'Web search skipped' });
-      doWeb = false;
-    }
+  // The globe toggle is now just a nudge: it strongly hints the model to use
+  // web_search this turn. The model can also call it on its own when useful.
+  if (useWeb) {
+    prompt = `[The user toggled web search on — call web_search for this question.]\n${prompt}`;
   }
-  if (doWeb) {
-    sendAI({ state: 'searching' });
-    win?.webContents.send('ai-tool', { kind: 'web', label: 'Searching the web…' });
-    const sources = await tavilySearch(text);
-    if (sources) {
-      win?.webContents.send('ai-tool', { kind: 'web', label: 'Searched the web' });
-      prompt =
-        `You have these live web search results. Use them as your primary ` +
-        `source and ALWAYS include the relevant source links (as markdown ` +
-        `[title](url)) in your answer:\n${sources}\n[End web results]\n\n` +
-        `Question: ${prompt}`;
-    } else {
-      win?.webContents.send('ai-tool', {
-        kind: 'web',
-        label: getTavilyKey() ? 'No web results' : 'Add a Tavily key in Settings',
-      });
-    }
-  }
+
   sendAI({ state: 'generating' });
 
-  // page context is always included (refreshed when the page changes)
-  {
-    const ctx = await getPageContext();
-    if (ctx && ctx.url !== ai.lastCtxUrl) {
-      win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
-      prompt =
-        `[Current page: "${ctx.title}" — ${ctx.url}]\n` +
-        `[Page content]\n${ctx.text}\n[End page content]\n\n${prompt}`;
-      ai.lastCtxUrl = ctx.url;
-    }
-  }
+  // Tools the model can call. node-llama-cpp runs the handler, feeds the result
+  // back, and continues — so the model decides WHEN the page / web is relevant.
+  const def = ai.defineChatSessionFunction;
+  const functions = {
+    web_search: def({
+      description:
+        'Search the live web and read the results page. Use for current events, ' +
+        'recent facts, prices, local info, or anything you are unsure about. ' +
+        'Returns the full results-page content plus the links found on it to cite.',
+      params: {
+        type: 'object',
+        properties: { query: { type: 'string', description: 'the search query' } },
+        required: ['query'],
+      },
+      handler: async ({ query }) => {
+        try { return await agenticWebSearch(String(query || text)); }
+        catch (e) { return `Web search failed: ${e.message}`; }
+        finally { sendAI({ state: 'generating' }); }
+      },
+    }),
+    read_current_page: def({
+      description:
+        "Read the text of the web page the user is currently looking at. Use ONLY " +
+        "when the user's question is about that page (e.g. summarize/explain this).",
+      params: { type: 'object', properties: {} },
+      handler: async () => {
+        const ctx = await getPageContext();
+        if (!ctx) return 'There is no readable web page open right now.';
+        win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
+        return `Page: "${ctx.title}" — ${ctx.url}\n\n${ctx.text}`;
+      },
+    }),
+    set_reminder: def({
+      description:
+        'Set a reminder that fires a notification later. Convert the user\'s ' +
+        'requested time into whole minutes from now.',
+      params: {
+        type: 'object',
+        properties: {
+          minutes: { type: 'number', description: 'minutes from now until the reminder fires' },
+          label: { type: 'string', description: 'what to remind the user about' },
+        },
+        required: ['minutes', 'label'],
+      },
+      handler: async ({ minutes, label }) => {
+        const ms = Math.max(1, Number(minutes) || 0) * 60000;
+        const r = addReminder(String(label || 'Reminder'), ms);
+        win?.webContents.send('ai-tool', { kind: 'reminder', label: `Reminder set · ${humanizeMs(ms)}` });
+        return `Reminder set for ${humanizeMs(ms)} from now: "${r.label}".`;
+      },
+    }),
+  };
 
   ai.abort = new AbortController();
   try {
     await ai.session.prompt(prompt, {
       signal: ai.abort.signal,
+      functions,
       // bounded + penalized generation: small local models loop without this.
       // Roomier cap so answers aren't cut short, still safe from runaways.
       maxTokens: 1700,
@@ -2364,14 +2516,12 @@ ipcMain.on('ai-ask', async (_e, { text, useWeb, useImage, selection }) => {
 });
 
 ipcMain.on('ai-stop', () => {
-  // stopping while the web-consent card is up counts as declining
-  if (pendingWebConsent) {
-    const r = pendingWebConsent;
-    pendingWebConsent = null;
-    r(false);
-  }
   ai.abort?.abort();
 });
+
+// Active reminders for the Settings → Reminders tab.
+ipcMain.handle('get-reminders', () => getReminders());
+ipcMain.on('delete-reminder', (_e, id) => removeReminder(id));
 
 // Save an AI-generated image (data: URL or http) to ~/Downloads.
 ipcMain.on('download-image', async (_e, src) => {
@@ -2895,8 +3045,7 @@ ipcMain.on('activate-tab', (_e, id) => activateTab(id));
 // Navigating across the internal(file://)<->web boundary must REBUILD the
 // view: the preload is fixed at view creation, and a newtab's internal-preload
 // lacks what web pages need (PiP routing, link pre-warm, creds, AI selection).
-function loadInActiveTab(url) {
-  const t = tabs.get(activeTabId);
+function loadInTab(t, url) {
   if (!t) return;
   if (!t.view) {
     buildView(t, url);
@@ -2918,9 +3067,29 @@ function loadInActiveTab(url) {
   t.view.webContents.focus();
 }
 
+function loadInActiveTab(url) {
+  loadInTab(tabs.get(activeTabId), url);
+}
+
 ipcMain.on('navigate', (_e, input) => {
   const url = toNavigableURL(input);
   if (url) loadInActiveTab(url);
+});
+// Per-pane navigation from the split-view URL bars (operates on a specific tab,
+// not just the active one).
+ipcMain.on('tab-navigate', (_e, { id, input }) => {
+  const t = tabs.get(id);
+  if (!t) return;
+  const url = toNavigableURL(input);
+  if (url) loadInTab(t, url);
+});
+ipcMain.on('tab-nav', (_e, { id, action }) => {
+  const t = tabs.get(id);
+  if (!t || !t.view) return;
+  const wc = t.view.webContents;
+  if (action === 'back') wc.navigationHistory.goBack();
+  else if (action === 'forward') wc.navigationHistory.goForward();
+  else if (action === 'reload') wc.reload();
 });
 ipcMain.on('open-url', (_e, url) => loadInActiveTab(url));
 ipcMain.on('open-url-new-tab', (_e, url) => createTab(url, true));
@@ -3245,6 +3414,7 @@ app.whenReady().then(async () => {
   loadVault();
   loadChats();
   loadDownloads();
+  initReminders();
   setupDownloads(session.defaultSession);
   setupPermissions(session.defaultSession);
   await setupAdblock();

@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('breezeInternal', {
 
   setSitePermission: (origin, permission, value) =>
     ipcRenderer.send('set-site-permission', { origin, permission, value }),
+
+  getReminders: () => ipcRenderer.invoke('get-reminders'),
+  deleteReminder: (id) => ipcRenderer.send('delete-reminder', id),
+  onReminders: (cb) => ipcRenderer.on('reminders-changed', (_e, r) => cb(r)),
+
   isDefaultBrowser: () => ipcRenderer.invoke('is-default-browser'),
   makeDefaultBrowser: () => ipcRenderer.send('make-default-browser'),
   switchToTab: (id) => ipcRenderer.send('switch-to-tab', id),

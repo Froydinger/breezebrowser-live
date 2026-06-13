@@ -1438,6 +1438,32 @@ html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
   padding: 4px 11px;
   animation: rise-msg 0.25s var(--ease);
 }
+/* persistent, clickable agentic-search record inline in the chat */
+.ai-search-chip {
+  align-self: flex-start;
+  max-width: 92%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  animation: rise-msg 0.25s var(--ease);
+}
+.ai-search-chip:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.ai-search-chip:active { transform: scale(0.985); }
+.ai-search-chip svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent); }
+.ai-search-chip .asc-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* per-search privacy consent card (shown inline in the chat) */
 .ai-web-consent {
   align-self: stretch;
@@ -1795,3 +1821,54 @@ body.split-dragging { cursor: col-resize; }
 
 /* mark the split-partner tab */
 .tab.split { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* In split view, the global top URL bar is replaced by per-pane bars. */
+body.split-active #topbar { display: none !important; }
+
+/* Per-pane URL bars: live in the reserved strip above each native pane view
+   (positioned by JS), so they never sit under a native view = no dead zones. */
+.split-bar {
+  position: fixed;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  box-sizing: border-box;
+}
+.split-bar[hidden] { display: none; }
+.split-bar .sb-nav {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  padding: 0;
+}
+.split-bar .sb-nav svg { width: 15px; height: 15px; }
+.split-bar .sb-nav:hover { background: var(--surface-hover); color: var(--text); }
+.split-bar .sb-nav:disabled { opacity: 0.3; cursor: default; }
+.split-bar .sb-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 0 12px;
+  outline: none;
+}
+.split-bar .sb-input:focus {
+  background: var(--surface-active);
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.split-bar .sb-input::placeholder { color: var(--text-soft); }

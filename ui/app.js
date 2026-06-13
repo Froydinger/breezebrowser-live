@@ -10,6 +10,19 @@ const btnBookmark = $('#btn-bookmark');
 let state = { tabs: [], activeTabId: null, bookmarks: [] };
 let addressFocused = false;
 
+// While not editing, show just the site (hostname) — hide the path/query/slug.
+// The full URL comes back the moment the bar is focused for editing.
+function collapseUrl(url) {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'file:') return '';
+    return u.hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Icons
 // ---------------------------------------------------------------------------
@@ -83,8 +96,6 @@ function startOnboarding() {
         if (name) breeze.setSetting('userName', name);
         const openai = $('#onboard-openai').value.trim();
         if (openai) breeze.setSetting('openaiKey', openai);
-        const tavily = $('#onboard-tavily').value.trim();
-        if (tavily) breeze.setSetting('tavilyKey', tavily);
         finishOnboarding();
         return;
       }
@@ -518,7 +529,9 @@ breeze.onState((s) => {
   renderPins();
   renderGroups();
   const active = s.tabs.find((t) => t.id === s.activeTabId);
-  if (active && !addressFocused) address.value = active.url;
+  if (active && !addressFocused) address.value = collapseUrl(active.url);
+  // keep the split-view per-pane bars in sync with navigation
+  if (splitBarGeom) { fillSplitBar(splitBarL); fillSplitBar(splitBarR); }
   btnBack.disabled = !active?.canGoBack;
   btnForward.disabled = !active?.canGoForward;
   const bookmarked =
@@ -547,13 +560,16 @@ breeze.onState((s) => {
 
 address.addEventListener('focus', () => {
   addressFocused = true;
+  // reveal the full URL (with path/slug) for editing
+  const active = state.tabs.find((t) => t.id === state.activeTabId);
+  if (active && active.url) address.value = active.url;
   address.select();
 });
 address.addEventListener('blur', () => {
   addressFocused = false;
   setTimeout(hideSuggestions, 120);
   const active = state.tabs.find((t) => t.id === state.activeTabId);
-  if (active) address.value = active.url;
+  if (active) address.value = collapseUrl(active.url);
 });
 // ---------------------------------------------------------------------------
 // Omnibox suggestions
@@ -917,6 +933,8 @@ function renderLoadedChat(messages) {
       img.addEventListener('click', () => breeze.downloadImage(m.src));
       wrap.appendChild(img);
       aiMessages.appendChild(wrap);
+    } else if (m.role === 'search') {
+      addSearchChip(m);
     } else {
       addMsg(m.role === 'user' ? 'user' : 'ai', m.text);
     }
@@ -1117,6 +1135,30 @@ $('#sel-search').addEventListener('click', () => {
 
 breeze.onAITool((t) => addToolChip(t.label));
 
+// Persistent, clickable record of an agentic web search, inline in the chat.
+// Clicking it re-runs the exact search in a new tab (no caching needed).
+function addSearchChip(s) {
+  aiEmpty.style.display = 'none';
+  const chip = document.createElement('div');
+  chip.className = 'msg ai-search-chip';
+  chip.title = 'Open this search again';
+  chip.innerHTML =
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  const txt = document.createElement('span');
+  txt.className = 'asc-text';
+  txt.textContent = `Searched ${s.engine || 'the web'}: ${s.query}`;
+  chip.appendChild(txt);
+  chip.addEventListener('click', () => breeze.openURLNewTab(s.url));
+  aiMessages.appendChild(chip);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+}
+
+breeze.onAISearch((s) => {
+  addSearchChip(s);
+  chatMessages.push({ role: 'search', query: s.query, url: s.url, engine: s.engine });
+  persistChat();
+});
+
 // Privacy consent: before any web search leaves the device, the main process
 // asks here. Show an inline card with the disclosure + Search/Skip; the click
 // replies and the AI continues (search on Search, local-only on Skip).
@@ -1242,7 +1284,7 @@ breeze.onAIStatus((s) => {
       aiStatusbar.textContent = 'Thinking…';
       break;
     case 'ready':
-      aiStatusbar.textContent = 'Llama 3.2 · local · private';
+      aiStatusbar.textContent = 'Qwen2.5 · local · private';
       break;
     case 'error':
       aiStatusbar.textContent = `Error: ${s.message}`;
@@ -1340,6 +1382,70 @@ window.addEventListener('mouseup', () => {
   if (!splitDragging) return;
   splitDragging = false;
   document.body.classList.remove('split-dragging');
+});
+
+// ---------------------------------------------------------------------------
+// Per-pane URL bars (split view) — each drives its own tab independently.
+// ---------------------------------------------------------------------------
+const splitBarL = $('#split-bar-left');
+const splitBarR = $('#split-bar-right');
+let splitBarGeom = null; // last geometry from main: { barH, stripY, left, right }
+
+function placeSplitBar(barEl, rect, stripY, barH) {
+  barEl.hidden = false;
+  barEl.style.left = `${rect.x}px`;
+  barEl.style.top = `${stripY}px`;
+  barEl.style.width = `${rect.w}px`;
+  barEl.style.height = `${barH}px`;
+  barEl.dataset.tabId = rect.tabId;
+}
+
+function fillSplitBar(barEl) {
+  const id = Number(barEl.dataset.tabId);
+  const tab = (state.tabs || []).find((t) => t.id === id);
+  const input = barEl.querySelector('.sb-input');
+  if (tab && document.activeElement !== input) input.value = collapseUrl(tab.url);
+  barEl.querySelector('[data-act="back"]').disabled = !tab?.canGoBack;
+  barEl.querySelector('[data-act="forward"]').disabled = !tab?.canGoForward;
+}
+
+breeze.onSplitBars((d) => {
+  splitBarGeom = d;
+  if (!d) {
+    splitBarL.hidden = true;
+    splitBarR.hidden = true;
+    return;
+  }
+  placeSplitBar(splitBarL, d.left, d.stripY, d.barH);
+  placeSplitBar(splitBarR, d.right, d.stripY, d.barH);
+  fillSplitBar(splitBarL);
+  fillSplitBar(splitBarR);
+});
+
+[splitBarL, splitBarR].forEach((barEl) => {
+  const input = barEl.querySelector('.sb-input');
+  barEl.querySelectorAll('.sb-nav').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const id = Number(barEl.dataset.tabId);
+      if (id) breeze.tabNav(id, btn.dataset.act);
+    })
+  );
+  input.addEventListener('focus', () => {
+    const id = Number(barEl.dataset.tabId);
+    const tab = (state.tabs || []).find((t) => t.id === id);
+    if (tab) input.value = tab.url; // reveal the full URL while editing
+    input.select();
+  });
+  input.addEventListener('blur', () => fillSplitBar(barEl));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && input.value.trim()) {
+      const id = Number(barEl.dataset.tabId);
+      if (id) breeze.tabNavigate(id, input.value.trim());
+      input.blur();
+    } else if (e.key === 'Escape') {
+      input.blur();
+    }
+  });
 });
 
 breeze.onUpdateReady(() => $('#update-toast').classList.add('show'));

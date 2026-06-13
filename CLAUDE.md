@@ -1,7 +1,9 @@
 # Breeze Browser — build & release guide
 
-Electron (Chromium 136 / Electron 36) browser with a local Llama 3.2 AI, native
-ad blocking, password vault, and zero tracking. macOS (Apple Silicon) + Windows.
+Electron (Chromium 136 / Electron 36) browser with a local Qwen2.5 3B AI
+(function-calling: agentic in-browser web search, reminders, page reading),
+native ad blocking, password vault, and zero tracking. macOS (Apple Silicon) +
+Windows.
 
 - `main.js` — main process (tabs, sessions, permissions, AI, updater, menu)
 - `preload.js` — chrome-UI bridge · `page-preload.js` — injected into web pages
@@ -89,8 +91,15 @@ Install `/tmp/btest/*.dmg` (right-click → Open first time), then Check for Upd
 - No perpetual CSS animations / no `setInterval` busy loops on the main thread —
   they spiked idle GPU/CPU. Gate animations on active-state classes. See
   [[breeze-no-perpetual-animations]].
-- API keys (OpenAI, Tavily) are bring-your-own-key, stored locally, NEVER
-  bundled. Don't reintroduce a `.env` key fallback.
+- AI web search is AGENTIC (v2.3.0+): the model calls a `web_search` function
+  (node-llama-cpp function-calling) and the main process opens the user's default
+  search engine in a real tab, waits for load, scrapes it, and follows the top
+  result. No Tavily, no API key, no `.env` fallback — don't reintroduce one.
+  Reminders + page-reading are also model tools now (set_reminder /
+  read_current_page), NOT regex. Page content is only injected when the model
+  asks for it, so unrelated questions aren't treated as page/search queries.
+- The OpenAI key (image generation only) is bring-your-own-key, stored locally,
+  NEVER bundled.
 - Web Push (server-sent push, `PushManager.subscribe`) does NOT work — Electron
   ships without Google's GCM/FCM keys. Local notifications and Breeze reminders
   DO work (generated on-device). This is an Electron limitation, not a bug.
