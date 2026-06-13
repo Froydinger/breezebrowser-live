@@ -327,9 +327,20 @@ function tabURL(t) {
   return t.view ? t.view.webContents.getURL() : '';
 }
 
-// Notifications: per-site override wins, else the browser-wide toggle.
+// Normalize an origin to a single canonical key. Chromium's permission CHECK
+// handler hands us a trailing-slash form ("https://x.com/") while the REQUEST
+// handler and the URL-bar use new URL().origin ("https://x.com"). Storing both
+// caused split-brain (check said granted, request said denied → enable hung).
+function originKey(o) {
+  try { return new URL(o).origin; } catch { return String(o || '').replace(/\/+$/, ''); }
+}
+// Notifications per-origin state: true | false | undefined (undecided).
+function notifState(origin) {
+  return (appSettings.permissions || {})[originKey(origin)]?.notifications;
+}
+// Effective allow used by the URL-bar bell and sync checks.
 function notifAllowed(origin) {
-  const saved = (appSettings.permissions || {})[origin]?.notifications;
+  const saved = notifState(origin);
   if (saved !== undefined) return saved;
   return appSettings.webNotifications !== false;
 }
@@ -337,7 +348,7 @@ function notifAllowed(origin) {
 // appears for sites that have asked — no clutter on sites that never notify.
 function markNotifSite(origin) {
   if (!origin) return;
-  origin = origin.replace(/\/$/, ''); // CHECK handler passes a trailing slash
+  origin = originKey(origin);
   const m = appSettings.notifSites || {};
   if (m[origin]) return;
   m[origin] = true;
@@ -1680,11 +1691,12 @@ function setupPermissions(ses) {
     'publickey-credentials-get', // WebAuthn / passkeys
     'publickey-credentials-create',
   ]);
-  // Notifications: a site calls Notification.permission FIRST (sync check) and
-  // if it sees 'denied' it shows "blocked, enable in settings" and never asks.
-  // So we report notifications as allowed browser-wide by default (toggle in
-  // Settings), unless the site is explicitly blocked. notifAllowed() lives at
-  // module scope so the URL-bar bell (tabState) can read the same logic.
+  // Notifications: the sync CHECK reports the current effective state (a site
+  // reads Notification.permission first). The async REQUEST is where we show a
+  // Chrome-style Allow/Block prompt the first time a site actually asks, then
+  // remember the per-site choice. The global toggle in Settings is a master
+  // kill-switch. notifAllowed()/originKey() live at module scope so the
+  // URL-bar bell (tabState) reads exactly the same state.
 
   // synchronous probes (e.g. WebAuthn availability checks, Notification.permission)
   ses.setPermissionCheckHandler((_wc, permission, origin) => {
@@ -1705,11 +1717,28 @@ function setupPermissions(ses) {
     } catch {
       return callback(false);
     }
-    // notifications follow the browser-wide setting (+ per-site override),
-    // no per-request dialog — matches how Chrome/Safari behave once allowed
     if (permission === 'notifications') {
       if (ses === session.defaultSession) markNotifSite(origin);
-      return callback(notifAllowed(origin));
+      // master kill-switch off → deny without nagging
+      if (appSettings.webNotifications === false) return callback(false);
+      // already decided for this site → honor it silently
+      const decided = notifState(origin);
+      if (decided !== undefined) return callback(decided);
+      // first real request → ask, Chrome-style, and remember the choice
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        message: `Allow ${origin.replace(/^https?:\/\//, '')} to send you notifications?`,
+        detail: 'You can change this anytime with the bell in the address bar.',
+        buttons: ['Allow', 'Block'],
+        defaultId: 0,
+        cancelId: 1,
+      });
+      const allow = response === 0;
+      const perms = appSettings.permissions || {};
+      perms[origin] = { ...perms[origin], notifications: allow };
+      applySetting('permissions', perms);
+      pushState();
+      return callback(allow);
     }
     const saved = (appSettings.permissions || {})[origin]?.[permission];
     if (saved !== undefined) return callback(saved);
