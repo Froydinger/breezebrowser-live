@@ -60,6 +60,9 @@
       "identity": "Breeze Signing",
       "hardenedRuntime": false
     },
+    "dmg": {
+      "artifactName": "Breeze-${arch}.${ext}"
+    },
     "win": {
       "target": [
         {
@@ -70,7 +73,8 @@
           ]
         }
       ],
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "artifactName": "Breeze-Setup.${ext}"
     },
     "publish": {
       "provider": "github",
