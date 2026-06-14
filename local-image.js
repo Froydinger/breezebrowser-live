@@ -16,14 +16,19 @@ const https = require('https');
 // fp16 ONNX export purpose-built for in-browser/onnx use (same files the
 // onnxruntime-web SD-Turbo demo uses). Each entry may have an external weights
 // file (.onnx_data) that ORT loads automatically when it sits beside the .onnx.
-const HF_BASE = 'https://huggingface.co/schmuell/sd-turbo-ort-web/resolve/main';
+// Plain fp32 Optimum export — standard ops that run on the CPU EP in
+// onnxruntime-node. (The *-ort-web fp16 builds fail to load, and the
+// onnxruntime/sd-turbo build is CUDA-only: com.microsoft.NhwcConv.) ~5GB.
+const HF_BASE = 'https://huggingface.co/ykeee/sd-turbo-onnx-fp32/resolve/main';
 const MODEL_FILES = [
   { rel: 'text_encoder/model.onnx', url: `${HF_BASE}/text_encoder/model.onnx` },
   { rel: 'unet/model.onnx', url: `${HF_BASE}/unet/model.onnx` },
-  { rel: 'unet/model.onnx_data', url: `${HF_BASE}/unet/model.onnx_data`, optional: true },
+  { rel: 'unet/model.onnx_data', url: `${HF_BASE}/unet/model.onnx_data` }, // external weights
   { rel: 'vae_decoder/model.onnx', url: `${HF_BASE}/vae_decoder/model.onnx` },
 ];
-const TOKENIZER_ID = 'Xenova/sd-turbo'; // CLIP tokenizer (transformers.js caches it)
+// SD-Turbo uses the standard CLIP BPE tokenizer; this transformers.js repo has
+// a ready tokenizer.json. Tiny (~2MB), fetched once then cached in userData.
+const TOKENIZER_ID = 'Xenova/clip-vit-large-patch14';
 
 // ---- pipeline constants (tune after first on-device test) ------------------
 const LATENT_W = 64, LATENT_H = 64;      // 512x512 output
@@ -88,26 +93,59 @@ function randn(n, scale = 1) {
   return out;
 }
 
-// ---- download -------------------------------------------------------------
-function download(url, dest, onProgress) {
+// ---- download (resumable + retried; big files over flaky links) ------------
+function downloadOnce(url, dest, onProgress) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const tmp = dest + '.part';
-    const file = fs.createWriteStream(tmp);
-    const req = https.get(url, { headers: { 'user-agent': 'Breeze' } }, (res) => {
+    let start = 0;
+    try { start = fs.statSync(tmp).size; } catch {}
+    const headers = { 'user-agent': 'Breeze' };
+    if (start > 0) headers.Range = `bytes=${start}-`;
+
+    let settled = false;
+    let file = null;
+    const fail = (e) => { if (settled) return; settled = true; try { file && file.close(); } catch {} reject(e); };
+
+    const req = https.get(url, { headers }, (res) => {
+      // redirect — re-issue (resume headers re-derived from .part on disk)
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        file.close(); fs.rmSync(tmp, { force: true });
-        return download(res.headers.location, dest, onProgress).then(resolve, reject);
+        res.resume();
+        return downloadOnce(res.headers.location, dest, onProgress).then(resolve, fail);
       }
-      if (res.statusCode !== 200) { file.close(); fs.rmSync(tmp, { force: true }); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
-      const total = parseInt(res.headers['content-length'] || '0', 10);
-      let got = 0;
+      if (res.statusCode === 416) { // range not satisfiable → already complete
+        try { fs.renameSync(tmp, dest); } catch {}
+        settled = true; return resolve();
+      }
+      if (res.statusCode !== 200 && res.statusCode !== 206) {
+        res.resume(); return fail(new Error(`HTTP ${res.statusCode} for ${url}`));
+      }
+      const append = res.statusCode === 206;
+      file = fs.createWriteStream(tmp, { flags: append ? 'a' : 'w' });
+      file.on('error', fail);
+      const total = (append ? start : 0) + parseInt(res.headers['content-length'] || '0', 10);
+      let got = append ? start : 0;
       res.on('data', (c) => { got += c.length; if (total) onProgress?.(got / total); });
+      res.on('error', fail);
       res.pipe(file);
-      file.on('finish', () => file.close(() => { fs.renameSync(tmp, dest); resolve(); }));
+      file.on('finish', () => {
+        if (settled) return; settled = true;
+        file.close(() => { try { fs.renameSync(tmp, dest); resolve(); } catch (e) { reject(e); } });
+      });
     });
-    req.on('error', (e) => { file.close(); fs.rmSync(tmp, { force: true }); reject(e); });
+    req.on('error', fail);
+    req.setTimeout(90000, () => req.destroy(new Error('download timeout')));
   });
+}
+
+async function download(url, dest, onProgress, tries = 5) {
+  for (let i = 0; i < tries; i++) {
+    try { return await downloadOnce(url, dest, onProgress); }
+    catch (e) {
+      if (i === tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1))); // backoff, then resume
+    }
+  }
 }
 
 // Download all model files, reporting overall progress 0..1.
@@ -129,9 +167,17 @@ async function ensureDownloaded(userDataPath, onProgress) {
 async function loadSessions(userDataPath) {
   if (ai.sessions) return;
   ort = ort || require('onnxruntime-node');
-  if (!AutoTokenizer) ({ AutoTokenizer } = await import('@huggingface/transformers'));
   const dir = modelsDir(userDataPath);
-  const opt = { executionProviders: ['cpu'] }; // coreml can be added after testing
+  if (!AutoTokenizer) {
+    const tf = await import('@huggingface/transformers');
+    AutoTokenizer = tf.AutoTokenizer;
+    // cache the tiny tokenizer in userData (the app dir is read-only in a build)
+    try { tf.env.cacheDir = path.join(dir, 'hf-cache'); tf.env.allowLocalModels = false; } catch {}
+  }
+  // graphOptimizationLevel 'disabled': these models are exported/optimized for
+  // onnxruntime-web; node's default graph fusions reference nodes that don't
+  // exist in them and throw at init. Disabling fusions loads them as-is.
+  const opt = { executionProviders: ['cpu'], graphOptimizationLevel: 'disabled' };
   ai.sessions = {
     text: await ort.InferenceSession.create(path.join(dir, 'text_encoder/model.onnx'), opt),
     unet: await ort.InferenceSession.create(path.join(dir, 'unet/model.onnx'), opt),
@@ -155,42 +201,50 @@ async function generate(userDataPath, prompt, onProgress) {
 
     const { Tensor } = ort;
 
-    // 1) tokenize + text encode
+    // 1) tokenize + text encode (fp32 export → fp32 I/O throughout)
     const enc = await ai.tokenizer(prompt, { padding: 'max_length', max_length: MAX_TOKENS, truncation: true });
     const ids = BigInt64Array.from(Array.from(enc.input_ids.data, (x) => BigInt(x)));
     const textOut = await ai.sessions.text.run({
       input_ids: new Tensor('int64', ids, [1, MAX_TOKENS]),
     });
-    const hidden = textOut[ai.sessions.text.outputNames[0]]; // last_hidden_state
+    const hidden = textOut[ai.sessions.text.outputNames[0]]; // last_hidden_state (fp32)
 
     // 2) latents
     const latentLen = 4 * LATENT_H * LATENT_W;
-    let latents = randn(latentLen, SIGMA);
+    const latents = randn(latentLen, SIGMA);
     const scaled = new Float32Array(latentLen);
     const denom = Math.sqrt(SIGMA * SIGMA + 1);
     for (let i = 0; i < latentLen; i++) scaled[i] = latents[i] / denom;
 
-    // 3) one UNet step (fp16 I/O for this export)
-    const sampleT = new Tensor('float16', toF16Array(scaled), [1, 4, LATENT_H, LATENT_W]);
-    const tT = new Tensor('float16', toF16Array(new Float32Array([999])), [1]);
-    const hiddenT = hidden.type === 'float16'
-      ? hidden
-      : new Tensor('float16', toF16Array(hidden.data), hidden.dims);
-    const unetOut = await ai.sessions.unet.run({
-      sample: sampleT, timestep: tT, encoder_hidden_states: hiddenT,
+    // 3) one UNet step. This export wants a SCALAR timestep (0-dim). dtype varies
+    // (int64 vs float32) — try float32 first, fall back to int64 on a type error.
+    const sampleT = new Tensor('float32', scaled, [1, 4, LATENT_H, LATENT_W]);
+    const hiddenT = new Tensor('float32', Float32Array.from(hidden.data), hidden.dims);
+    const runUnet = (tsType) => ai.sessions.unet.run({
+      sample: sampleT,
+      timestep: tsType === 'int64'
+        ? new Tensor('int64', BigInt64Array.from([999n]), [])
+        : new Tensor('float32', Float32Array.from([999]), []),
+      encoder_hidden_states: hiddenT,
     });
-    const noise = fromF16Array(unetOut[ai.sessions.unet.outputNames[0]].data);
+    let unetOut;
+    try { unetOut = await runUnet('float32'); }
+    catch (e) {
+      if (/int64|type|timestep/i.test(e.message)) unetOut = await runUnet('int64');
+      else throw e;
+    }
+    const noise = unetOut[ai.sessions.unet.outputNames[0]].data;
 
-    // Euler 1-step (epsilon): denoised = latents - sigma * noise
+    // Euler 1-step (epsilon): denoised = latents - sigma*noise, then VAE-scaled
     const denoised = new Float32Array(latentLen);
     for (let i = 0; i < latentLen; i++) denoised[i] = (latents[i] - SIGMA * noise[i]) / VAE_SCALE;
 
     // 4) VAE decode → [1,3,512,512] in [-1,1]
     const vaeOut = await ai.sessions.vae.run({
-      latent_sample: new Tensor('float16', toF16Array(denoised), [1, 4, LATENT_H, LATENT_W]),
+      latent_sample: new Tensor('float32', denoised, [1, 4, LATENT_H, LATENT_W]),
     });
     const imgTensor = vaeOut[ai.sessions.vae.outputNames[0]];
-    const img = imgTensor.type === 'float16' ? fromF16Array(imgTensor.data) : imgTensor.data;
+    const img = imgTensor.data;
     const W = imgTensor.dims[3], H = imgTensor.dims[2];
 
     // 5) CHW [-1,1] → RGBA PNG
