@@ -466,14 +466,6 @@
           <textarea id="aiInstructions" rows="3" placeholder="e.g. Be concise and a little sarcastic. I'm a designer. Always give code in TypeScript."
             style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:10px;padding:10px 12px;outline:none;resize:vertical;width:100%"></textarea>
         </div>
-        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
-          <div>
-            <div class="row-label">OpenAI API key — image generation</div>
-            <div class="row-hint">Bring your own key — stored locally on this device only, never bundled with Breeze. Powers image generation. <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="key-link">Get a key →</a></div>
-          </div>
-          <input id="openaiKey" type="password" placeholder="sk-…"
-            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%" />
-        </div>
         <div class="row">
           <div>
             <div class="row-label">Web search</div>
@@ -585,8 +577,8 @@
           <p>Open the assistant (⌘E), then highlight any text on the page. It appears as a chip above the input and becomes the focus of your next question. Hit the magnifier on the chip to web-search that exact text instead.</p>
         </details>
         <details>
-          <summary>Search the web &amp; generate images</summary>
-          <p>Just ask — when a question needs live info, Breeze AI opens your default search engine in a tab, reads the results, and answers with sources. <b>No API key needed.</b> Toggle the <b>globe</b> to force a search for any question. The <b>image</b> icon generates a picture (needs your own OpenAI key, set under <b>Breeze AI</b> above).</p>
+          <summary>Search the web</summary>
+          <p>Just ask — when a question needs live info, Breeze AI opens your default search engine in a tab, reads the results, and answers with sources. <b>No API key needed.</b></p>
         </details>
         <details>
           <summary>Set a reminder</summary>
@@ -665,7 +657,6 @@
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
-      set2('openaiKey', settings.openaiKey);
       renderPerms();
       renderReminders();
     }
@@ -700,7 +691,7 @@
 
     // AI text fields — debounced save so we don't spam on every keystroke
     let aiSaveTimer = null;
-    ['userName', 'aiInstructions', 'openaiKey'].forEach((id) => {
+    ['userName', 'aiInstructions'].forEach((id) => {
       document.getElementById(id).addEventListener('input', (e) => {
         clearTimeout(aiSaveTimer);
         const key = id, val = e.target.value;

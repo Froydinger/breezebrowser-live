@@ -21,9 +21,9 @@ Windows.
   NOT regex or UI toggles. Tools defined in the `ai-ask` handler:
   `web_search` (agentic — opens default engine in a real tab, waits for the
   results page to settle, reads it, never follows a link), `read_current_page`
-  (only when the question is about the page), `set_reminder`, `generate_image`
-  (OpenAI `gpt-image-1`, needs the user's BYOK key). There are NO web/image
-  toggle buttons in the input — the model decides from plain language.
+  (only when the question is about the page), and `set_reminder`. There are NO
+  toggle buttons in the input — the model decides from plain language. Image
+  generation was removed (local SD too slow on CPU; OpenAI path dropped too).
 - System prompt (`buildSystemPrompt`) injects today's real date + rules: never
   append years to searches, ask a follow-up when location/info is missing, never
   fabricate, call tools immediately (don't announce "let me search" then stall).
@@ -140,8 +140,7 @@ Install `/tmp/btest/*.dmg` (right-click → Open first time), then Check for Upd
   Reminders + page-reading are also model tools now (set_reminder /
   read_current_page), NOT regex. Page content is only injected when the model
   asks for it, so unrelated questions aren't treated as page/search queries.
-- The OpenAI key (image generation only) is bring-your-own-key, stored locally,
-  NEVER bundled.
+- Image generation has been removed entirely (no local SD, no OpenAI key).
 - Web Push (server-sent push, `PushManager.subscribe`) does NOT work — Electron
   ships without Google's GCM/FCM keys. Local notifications and Breeze reminders
   DO work (generated on-device). This is an Electron limitation, not a bug.

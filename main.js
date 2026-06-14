@@ -86,7 +86,6 @@ const DEFAULT_SETTINGS = {
   neverSavePasswords: [], // origins the user declined to save for
   userName: '', // given to the AI
   aiInstructions: '', // standing custom instructions for the AI
-  openaiKey: '', // optional, for image generation
   onboarded: false, // first-run setup dialog shown
   webNotifications: true, // sites may show notifications (browser-wide)
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
@@ -2191,7 +2190,6 @@ function buildSystemPrompt() {
     'unrelated to the page, do NOT call it — just answer normally.\n' +
     '- set_reminder: call it when the user asks to be reminded of something at a later time. ' +
     'Convert their timing into minutes from now.\n' +
-    '- generate_image: call it when the user asks you to create, draw, or generate a picture/image.\n' +
     'If a question is just general knowledge or chit-chat, answer directly with no tools.\n\n' +
     'CRITICAL: when you decide to use a tool, call it IMMEDIATELY and silently. Do NOT ' +
     'write a sentence like "Let me find that" or "I\'ll search for you" and then stop — ' +
@@ -2369,36 +2367,6 @@ function humanizeMs(ms) {
   if (h < 48) return `${h} hour${h > 1 ? 's' : ''}`;
   const d = Math.round(h / 24);
   return `${d} day${d > 1 ? 's' : ''}`;
-}
-
-// --- AI tools: OpenAI image generation -----------------------------------
-
-async function openaiImage(prompt) {
-  const key = (appSettings.openaiKey || '').trim();
-  if (!key) return { error: 'no-key' };
-  try {
-    const res = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-image-1',
-        prompt,
-        n: 1,
-        size: '1024x1024',
-      }),
-    });
-    const data = await res.json();
-    if (data.error) return { error: data.error.message || 'OpenAI error' };
-    const d = data.data && data.data[0];
-    if (d?.b64_json) return { dataUrl: `data:image/png;base64,${d.b64_json}` };
-    if (d?.url) return { url: d.url };
-    return { error: 'No image returned' };
-  } catch (e) {
-    return { error: e.message };
-  }
 }
 
 // --- Agentic web search: drive the REAL browser instead of an API ---------
@@ -2589,28 +2557,6 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
         return `Reminder set for ${humanizeMs(ms)} from now: "${r.label}".`;
       },
     }),
-    generate_image: def({
-      description:
-        'Generate an image from a text description. Use when the user asks you ' +
-        'to create, draw, make, or generate a picture/image/logo/art.',
-      params: {
-        type: 'object',
-        properties: { prompt: { type: 'string', description: 'a detailed description of the image to create' } },
-        required: ['prompt'],
-      },
-      handler: async ({ prompt: imgPrompt }) => {
-        win?.webContents.send('ai-tool', { kind: 'image', label: 'Generating image…' });
-        sendAI({ state: 'generating-image' });
-        const img = await openaiImage(String(imgPrompt || text));
-        sendAI({ state: 'generating' });
-        if (img.error === 'no-key') {
-          return 'Image generation needs an OpenAI API key. Tell the user to add one under Settings → Breeze AI.';
-        }
-        if (img.error) return `Image generation failed: ${img.error}`;
-        win?.webContents.send('ai-image', img.dataUrl || img.url);
-        return 'The image was generated and is now displayed to the user. Briefly say it\'s ready.';
-      },
-    }),
   };
 
   ai.abort = new AbortController();
@@ -2705,41 +2651,6 @@ ipcMain.on('overlay-action', (_e, action) => {
   }
 });
 
-// Save an AI-generated image (data: URL or http) to ~/Downloads.
-ipcMain.on('download-image', async (_e, src) => {
-  try {
-    const dir = app.getPath('downloads');
-    const name = `breeze-image-${Date.now()}.png`;
-    const dest = path.join(dir, name);
-    if (src.startsWith('data:')) {
-      const b64 = src.split(',')[1] || '';
-      fs.writeFileSync(dest, Buffer.from(b64, 'base64'));
-    } else {
-      const res = await fetch(src);
-      const buf = Buffer.from(await res.arrayBuffer());
-      fs.writeFileSync(dest, buf);
-    }
-    // surface it in the downloads list + notify
-    downloadList.unshift({
-      id: downloadSeq++,
-      filename: name,
-      path: dest,
-      url: src.startsWith('data:') ? 'AI-generated image' : src,
-      totalBytes: fs.statSync(dest).size,
-      receivedBytes: fs.statSync(dest).size,
-      state: 'completed',
-      ts: Date.now(),
-    });
-    saveDownloads();
-    broadcastDownloads();
-    showToast({ kind: 'download', text: `Downloaded · ${name}`, action: 'open-downloads' });
-    try {
-      new Notification({ title: 'Image saved', body: name, silent: true }).show();
-    } catch {}
-  } catch (err) {
-    console.error('Image download failed:', err.message);
-  }
-});
 ipcMain.on('ai-new-chat', () => {
   if (ai.ready && !ai.generating) {
     newChat();

@@ -94,8 +94,6 @@ function startOnboarding() {
       if (btn.id === 'onboard-finish') {
         const name = $('#onboard-name').value.trim();
         if (name) breeze.setSetting('userName', name);
-        const openai = $('#onboard-openai').value.trim();
-        if (openai) breeze.setSetting('openaiKey', openai);
         finishOnboarding();
         return;
       }
@@ -941,7 +939,7 @@ function renderLoadedChat(messages) {
   aiEmpty.style.display = 'none';
   for (const m of messages) {
     if (m.role === 'image') {
-      aiMessages.appendChild(buildAIImageEl(m.src));
+      continue; // image generation was removed; skip any legacy saved images
     } else if (m.role === 'search') {
       addSearchChip(m);
     } else {
@@ -1092,7 +1090,7 @@ function sendAI() {
 
 // optional web lookup — the AI cross-references live sources when enabled
 // Web search and image generation are handled by the model itself now (it calls
-// the web_search / generate_image tools from plain language) — no toggles.
+// the web_search tool from plain language) — no toggles.
 
 // active selection chip
 const selChip = $('#ai-selection-chip');
@@ -1176,32 +1174,6 @@ breeze.onAIWebConsent(() => {
   card.querySelector('.awc-skip').addEventListener('click', () => reply(false));
 });
 
-// AI image bubble with a visible download button (and click-to-download).
-function buildAIImageEl(src) {
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ai ai-image-msg';
-  const img = document.createElement('img');
-  img.src = src;
-  img.title = 'Click to download';
-  img.addEventListener('click', () => breeze.downloadImage(src));
-  const dl = document.createElement('button');
-  dl.className = 'ai-img-dl';
-  dl.title = 'Download image';
-  dl.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  dl.addEventListener('click', (e) => { e.stopPropagation(); breeze.downloadImage(src); });
-  wrap.append(img, dl);
-  return wrap;
-}
-
-breeze.onAIImage((src) => {
-  if (currentAIMsg && !currentAIMsg.dataset.raw) currentAIMsg.remove();
-  currentAIMsg = null;
-  aiMessages.appendChild(buildAIImageEl(src));
-  aiMessages.scrollTop = aiMessages.scrollHeight;
-  chatMessages.push({ role: 'image', src });
-  persistChat();
-});
-
 aiSend.addEventListener('click', () => {
   if (aiGenerating) breeze.aiStop();
   else sendAI();
@@ -1267,9 +1239,6 @@ breeze.onAIStatus((s) => {
       break;
     case 'searching':
       aiStatusbar.textContent = 'Searching the web…';
-      break;
-    case 'generating-image':
-      aiStatusbar.textContent = 'Painting your image…';
       break;
     case 'generating':
       aiStatusbar.textContent = 'Thinking…';

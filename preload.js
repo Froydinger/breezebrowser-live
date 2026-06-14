@@ -66,7 +66,6 @@ contextBridge.exposeInMainWorld('breeze', {
   aiAsk: (opts) => ipcRenderer.send('ai-ask', opts),
   aiStop: () => ipcRenderer.send('ai-stop'),
   aiWebConsent: (ok) => ipcRenderer.send('ai-web-consent-reply', ok),
-  downloadImage: (src) => ipcRenderer.send('download-image', src),
   aiNewChat: () => ipcRenderer.send('ai-new-chat'),
   chatList: () => ipcRenderer.invoke('chat-list'),
   chatLoad: (id) => ipcRenderer.invoke('chat-load', id),
@@ -90,6 +89,5 @@ contextBridge.exposeInMainWorld('breeze', {
   onAITool: (cb) => ipcRenderer.on('ai-tool', (_e, t) => cb(t)),
   onAISearch: (cb) => ipcRenderer.on('ai-search', (_e, s) => cb(s)),
   onAIWebConsent: (cb) => ipcRenderer.on('ai-web-consent', (_e, q) => cb(q)),
-  onAIImage: (cb) => ipcRenderer.on('ai-image', (_e, src) => cb(src)),
   onPageSelection: (cb) => ipcRenderer.on('page-selection', (_e, t) => cb(t)),
 });
