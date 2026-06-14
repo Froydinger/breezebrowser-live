@@ -115,7 +115,7 @@ function applySettings(s) {
   if (s.sidebarWidth) {
     document.documentElement.style.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
   }
-  if (s.urlBarPosition) applyUrlBarMode(s.urlBarPosition);
+  applyUrlBarMode(s.urlBarPosition || 'top');
   if (s.theme) {
     themePref = s.theme;
     updateThemeIcon();
