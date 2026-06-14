@@ -763,7 +763,7 @@ html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
 }
 /* a touch more breathing room on the left so the text isn't crammed against
    the edge now that the web/image toggle buttons are gone */
-#ai-input { padding-left: 2px; }
+#ai-input { padding-left: 7px; }
 
 #ai-input-wrap:focus-within {
   background: var(--surface-active);
@@ -1486,7 +1486,7 @@ body.page-loading #loadbar-fill { animation-play-state: running; }
 
 #ai-input {
   align-self: center;
-  padding: 4px 0;
+  padding: 4px 0 4px 8px; /* nudge text/placeholder off the left edge */
 }
 
 #ai-send {

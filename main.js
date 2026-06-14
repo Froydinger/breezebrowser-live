@@ -2504,6 +2504,22 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
     prompt = `[The user highlighted this text on the page]\n"${selection.trim().slice(0, 2000)}"\n\n${prompt}`;
   }
 
+  // Proactively read the current page when the question clearly refers to it
+  // ("this", "this page", "summarize", "tl;dr"…) so the model never has to ask
+  // "which page?" or wait to be told to look. Only when a readable page exists.
+  const refersToPage =
+    /\b(this|that|the page|this page|here|above|below|the (article|site|video|story|post)|summar(y|ize|ise)|tl;?dr|recap|explain (this|it)|read (this|it)|what(?:'s| is) (this|it))\b/i.test(text);
+  if (refersToPage && !(selection && selection.trim())) {
+    const ctx = await getPageContext();
+    if (ctx) {
+      win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
+      prompt =
+        `[Current page: "${ctx.title}" — ${ctx.url}]\n[Page content]\n${ctx.text}\n` +
+        `[End page content]\n\n${prompt}`;
+      ai.lastCtxUrl = ctx.url;
+    }
+  }
+
   sendAI({ state: 'generating' });
 
   // Tools the model can call. node-llama-cpp runs the handler, feeds the result
