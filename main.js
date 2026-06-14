@@ -43,6 +43,7 @@ const CONTENT_PAD = 10; // breathing room around the page, Arc-style
 let win = null;
 let blocker = null;
 let updateDownloaded = false;
+let installingUpdate = false; // set before quitAndInstall so we don't hard-exit
 
 const tabs = new Map(); // id -> { id, view, favicon }
 let tabOrder = [];
@@ -2700,7 +2701,7 @@ ipcMain.on('overlay-size', (_e, { w, h }) => positionOverlay(w, h));
 ipcMain.on('overlay-action', (_e, action) => {
   if (action === 'open-downloads') openInternalTab(DOWNLOADS_URL);
   else if (action === 'install-update') {
-    if (updateDownloaded) getAutoUpdater().quitAndInstall();
+    if (updateDownloaded) { installingUpdate = true; getAutoUpdater().quitAndInstall(); }
   }
 });
 
@@ -2861,7 +2862,7 @@ async function checkForUpdatesManual() {
       defaultId: 0,
       cancelId: 1,
     });
-    if (response === 0) { updateDownloaded = false; getAutoUpdater().quitAndInstall(); }
+    if (response === 0) { updateDownloaded = false; installingUpdate = true; getAutoUpdater().quitAndInstall(); }
     return;
   }
   if (manualCheckBusy) return;
@@ -3319,6 +3320,7 @@ ipcMain.on('pin-tab', (_e, id) => pinTab(id));
 ipcMain.on('set-theme', (_e, theme) => applySetting('theme', theme));
 ipcMain.on('install-update', () => {
   if (!updateDownloaded) return;
+  installingUpdate = true;
   const { autoUpdater } = require('electron-updater');
   autoUpdater.quitAndInstall();
 });
@@ -3725,7 +3727,16 @@ app.on('before-quit', () => {
 });
 
 // belt-and-suspenders: also flush on hard process signals
-app.on('will-quit', markCleanExit);
+app.on('will-quit', () => {
+  markCleanExit();
+  // node-llama-cpp's native (Metal/GGML) worker can throw during Node's
+  // FreeEnvironment teardown → SIGABRT crash report on an otherwise clean quit.
+  // We've already disposed + flushed, so hard-exit before that teardown runs.
+  // (Skip during an update install — Squirrel needs the graceful quit to swap.)
+  if (!installingUpdate) {
+    setTimeout(() => { try { app.exit(0); } catch {} }, 120);
+  }
+});
 process.on('exit', markCleanExit);
 
 // Backstop: if any native thread still pins the process after quit, end it.
