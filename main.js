@@ -2268,29 +2268,14 @@ const ai = {
 };
 
 // The 3B model holds ~2GB resident and the Metal backend spins the GPU/fans.
-// Unload it after the assistant has been idle/closed for a while; it reloads
-// transparently on next use.
-const AI_IDLE_MS = 4 * 60 * 1000;
 
-function disposeAI() {
-  clearTimeout(ai.idleTimer);
-  if (ai.generating || ai.loading) return;
-  try {
-    ai.session?.dispose();
-    ai.sequence?.dispose();
-    ai.context?.dispose();
-    ai.model?.dispose();
-  } catch {}
-  ai.session = ai.sequence = ai.context = ai.model = null;
-  ai.ready = false;
-  ai.lastCtxUrl = null;
-}
-
+// We deliberately DO NOT unload the model on idle anymore. Disposing the native
+// llama/GGML (Metal) objects from a timer raced with the Metal backend and
+// crashed the main process (SIGSEGV in V8/GGML after idle) — the same class of
+// native-teardown bug we hit on quit. We pre-warm and keep the model resident
+// for instant replies, so idle disposal was both pointless and dangerous.
 function scheduleAIIdleUnload() {
-  clearTimeout(ai.idleTimer);
-  // only unload while the assistant panel is closed
-  if (assistantVisible) return;
-  ai.idleTimer = setTimeout(disposeAI, AI_IDLE_MS);
+  // intentionally a no-op — keep the model warm.
 }
 
 function sendAI(status) {
