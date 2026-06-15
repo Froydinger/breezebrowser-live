@@ -72,6 +72,10 @@ const NEWTAB_URL = `file://${path.join(__dirname, 'ui', 'newtab.html')}`;
 // within the rolling window (redirect loop / runaway location.reload()).
 const RELOAD_STORM_LIMIT = 10;
 const RELOAD_STORM_WINDOW_MS = 6000;
+// Slower grind: catches sites that quietly reload every couple seconds forever
+// (e.g. some Adobe auth/redirect flows) without tripping the fast burst limit.
+const RELOAD_STORM_SLOW_LIMIT = 14;
+const RELOAD_STORM_SLOW_MS = 40000;
 const SETTINGS_URL = `file://${path.join(__dirname, 'ui', 'settings.html')}`;
 const UPDATES_URL = `file://${path.join(__dirname, 'ui', 'updates.html')}`;
 const OVERLAY_URL = `file://${path.join(__dirname, 'ui', 'overlay.html')}`;
@@ -799,12 +803,19 @@ function buildView(t, url) {
   wc.on('did-start-navigation', (_e, navUrl, _inPlace, isMain) => {
     if (isMain) t.lastNavUrl = navUrl;
   });
-  wc.on('will-navigate', () => { t.loadTimes = []; t.stormStopped = false; });
+  wc.on('will-navigate', () => { t.loadTimes = []; t.loadTimesSlow = []; t.stormStopped = false; });
   wc.on('did-start-loading', () => {
     const now = Date.now();
     t.loadTimes = (t.loadTimes || []).filter((x) => now - x < RELOAD_STORM_WINDOW_MS);
     t.loadTimes.push(now);
-    if (!t.stormStopped && t.loadTimes.length >= RELOAD_STORM_LIMIT) {
+    // Two windows: a fast burst (10 in 6s) AND a slower grind (some sites, like
+    // a few Adobe flows, reload every couple seconds forever — under the burst
+    // limit but still a runaway). The slow window catches those.
+    t.loadTimesSlow = (t.loadTimesSlow || []).filter((x) => now - x < RELOAD_STORM_SLOW_MS);
+    t.loadTimesSlow.push(now);
+    const burst = t.loadTimes.length >= RELOAD_STORM_LIMIT;
+    const grind = t.loadTimesSlow.length >= RELOAD_STORM_SLOW_LIMIT;
+    if (!t.stormStopped && (burst || grind)) {
       t.stormStopped = true;
       try { wc.stop(); } catch {}
       showReloadStormPage(t);
@@ -3457,7 +3468,7 @@ ipcMain.on('activate-tab', (_e, id) => activateTab(id));
 function loadInTab(t, url) {
   if (!t) return;
   if (t.id === activeTabId) autoDockAI(); // navigating the page docks a FS chat
-  t.loadTimes = []; t.stormStopped = false; // explicit nav re-arms the guard
+  t.loadTimes = []; t.loadTimesSlow = []; t.stormStopped = false; // explicit nav re-arms the guard
   if (!t.view) {
     buildView(t, url);
     win.contentView.addChildView(t.view);
