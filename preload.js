@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld('breeze', {
   mediaPiP: (id) => ipcRenderer.send('media-pip', id),
   installUpdate: () => ipcRenderer.send('install-update'),
   getInit: () => ipcRenderer.invoke('get-init'),
+  onWhatsNew: (cb) => ipcRenderer.on('whats-new', (_e, d) => cb(d)),
   getSuggestions: (q) => ipcRenderer.invoke('get-suggestions', q),
 
   aiAsk: (opts) => ipcRenderer.send('ai-ask', opts),

@@ -1750,6 +1750,41 @@ html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
 #onboard.hidden { display: none; }
 #onboard.visible { opacity: 1; }
 
+/* What's-new popup reuses the onboarding card styling */
+#whatsnew {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2);
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+  -webkit-app-region: no-drag;
+}
+#whatsnew.hidden { display: none; }
+#whatsnew.visible { opacity: 1; }
+#whatsnew-card {
+  position: relative;
+  width: min(460px, 90vw);
+  padding: 38px 38px 30px;
+  border-radius: 26px;
+  text-align: center;
+  background: color-mix(in srgb, var(--surface-active) 92%, transparent);
+  backdrop-filter: blur(30px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.6),
+    0 0 80px -30px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: onboard-pop 0.5s var(--ease);
+}
+html.dark #whatsnew-card { border-color: rgba(255,255,255,0.12); }
+#whatsnew h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
+#whatsnew #wn-version { color: var(--accent); }
+#whatsnew p { font-size: 14.5px; line-height: 1.6; color: var(--text-soft); margin-bottom: 18px; }
+#whatsnew .onboard-list { margin-bottom: 26px; }
+
 .onboard-glow {
   position: absolute;
   width: 600px; height: 600px;

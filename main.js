@@ -110,6 +110,7 @@ const DEFAULT_SETTINGS = {
   savedTabs: [], // URLs persisted from the previous session, restored on launch
   uncapFrameRate: true, // disable the 60fps render cap (launch flag; restart to apply)
   flattenFullscreenCorners: true, // square corners in fullscreen → hw video overlay
+  lastSeenVersion: '', // version the user last saw the "what's new" popup for
 };
 
 const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
@@ -3005,6 +3006,18 @@ function createWindow() {
     // page view would paint over it. So defer the first tab until onboarding
     // finishes (see the 'onboarding-active' handler).
     if (appSettings.onboarded) restoreSessionOrNewTab();
+    // One-shot "what's new" popup after an update. Only for already-onboarded
+    // users (never on a brand-new install) and only when the version changed.
+    // BREEZE_WHATSNEW_FROM forces it for testing without touching real settings.
+    const curV = app.getVersion();
+    const force = process.env.BREEZE_WHATSNEW_FROM;
+    const seenV = force || appSettings.lastSeenVersion || '';
+    if (force || (appSettings.onboarded && seenV !== curV)) {
+      win.webContents.send('whats-new', { version: curV, from: seenV || null });
+    }
+    if (!force && (appSettings.lastSeenVersion || '') !== curV) {
+      applySetting('lastSeenVersion', curV);
+    }
   });
 }
 
