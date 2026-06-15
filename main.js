@@ -66,6 +66,10 @@ let currentRight = 0;
 let bookmarks = []; // [{ title, url }]
 
 const NEWTAB_URL = `file://${path.join(__dirname, 'ui', 'newtab.html')}`;
+// Reload-storm guard: stop a tab that loads its main frame this many times
+// within the rolling window (redirect loop / runaway location.reload()).
+const RELOAD_STORM_LIMIT = 10;
+const RELOAD_STORM_WINDOW_MS = 6000;
 const SETTINGS_URL = `file://${path.join(__dirname, 'ui', 'settings.html')}`;
 const OVERLAY_URL = `file://${path.join(__dirname, 'ui', 'overlay.html')}`;
 
@@ -707,9 +711,10 @@ function buildView(t, url) {
   wc.on('context-menu', (_e, p) => showPageContextMenu(wc, p));
   // Auto-recover transient main-frame load failures (the "had to reload"
   // cases) — retry once, then leave it alone so real errors still surface.
-  wc.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+  wc.on('did-fail-load', (_e, errorCode, desc, _url, isMainFrame) => {
     if (!isMainFrame) return;
     if (errorCode === -3) return; // ERR_ABORTED (user navigated away)
+    t.lastError = { code: errorCode, desc }; // remembered for the storm page
     if (t.didAutoRetry) return;
     t.didAutoRetry = true;
     setTimeout(() => {
@@ -721,6 +726,29 @@ function buildView(t, url) {
     // a freshly loaded page has a fresh preload — restore selection tracking
     if (assistantVisible && t.id === activeTabId) {
       try { wc.send('ai-panel', true); } catch {}
+    }
+  });
+
+  // Reload-storm guard: a redirect loop or runaway location.reload() can pin a
+  // tab reloading forever. Count main-frame loads in a rolling window; once it
+  // crosses the threshold, stop the page and show an error (with the last
+  // network error, if any). An explicit user navigation resets the budget.
+  t.loadTimes = [];
+  t.stormStopped = false;
+  t.lastError = null;
+  t.lastNavUrl = '';
+  wc.on('did-start-navigation', (_e, navUrl, _inPlace, isMain) => {
+    if (isMain) t.lastNavUrl = navUrl;
+  });
+  wc.on('will-navigate', () => { t.loadTimes = []; t.stormStopped = false; });
+  wc.on('did-start-loading', () => {
+    const now = Date.now();
+    t.loadTimes = (t.loadTimes || []).filter((x) => now - x < RELOAD_STORM_WINDOW_MS);
+    t.loadTimes.push(now);
+    if (!t.stormStopped && t.loadTimes.length >= RELOAD_STORM_LIMIT) {
+      t.stormStopped = true;
+      try { wc.stop(); } catch {}
+      showReloadStormPage(t);
     }
   });
   wc.on('media-started-playing', () => {
@@ -3263,6 +3291,7 @@ ipcMain.on('activate-tab', (_e, id) => activateTab(id));
 // lacks what web pages need (PiP routing, link pre-warm, creds, AI selection).
 function loadInTab(t, url) {
   if (!t) return;
+  t.loadTimes = []; t.stormStopped = false; // explicit nav re-arms the guard
   if (!t.view) {
     buildView(t, url);
     win.contentView.addChildView(t.view);
@@ -3285,6 +3314,56 @@ function loadInTab(t, url) {
 
 function loadInActiveTab(url) {
   loadInTab(tabs.get(activeTabId), url);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Renders the "something went wrong" page after a reload storm is stopped.
+// Static self-contained HTML (no preload needed) loaded as a data URL; the
+// Try-again link points at the original URL so a click re-arms the guard via
+// will-navigate and gives the page a fresh budget.
+function showReloadStormPage(t) {
+  const wc = t.view?.webContents;
+  if (!wc) return;
+  const target = t.lastNavUrl || '';
+  let host = target;
+  try { host = new URL(target).host || target; } catch {}
+  const err = t.lastError;
+  const detail = err
+    ? `Network error: ${escapeHtml(err.desc || 'failed to load')} (${err.code})`
+    : 'The page kept reloading itself and was stopped to protect your browser.';
+  const retry = /^https?:/i.test(target)
+    ? `<a class="btn" href="${escapeHtml(target)}">Try again</a>`
+    : '';
+  const html = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  html,body { height:100%; margin:0; }
+  body { display:grid; place-items:center; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    background:#f2f0ed; color:#1c1c1e; }
+  @media (prefers-color-scheme: dark) { body { background:#16161a; color:#ececf1; } }
+  .card { max-width:440px; text-align:center; padding:0 28px; }
+  .icon { font-size:46px; margin-bottom:14px; }
+  h1 { font-size:22px; font-weight:700; letter-spacing:-0.4px; margin:0 0 10px; }
+  p { font-size:14.5px; line-height:1.6; opacity:0.8; margin:0 0 8px; }
+  .host { font-weight:600; opacity:1; word-break:break-all; }
+  .detail { font-size:13px; opacity:0.65; margin-top:6px; }
+  .btn { display:inline-block; margin-top:22px; padding:11px 22px; border-radius:12px;
+    background:#5b7cfa; color:#fff; text-decoration:none; font-size:14.5px; font-weight:600; }
+  .btn:active { transform:scale(0.97); }
+</style></head>
+<body><div class="card">
+  <div class="icon">🥴</div>
+  <h1>Something went wrong</h1>
+  <p>Breeze stopped <span class="host">${escapeHtml(host || 'this page')}</span> after it reloaded too many times in a row.</p>
+  <p class="detail">${detail}</p>
+  ${retry}
+</div></body></html>`;
+  wc.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
 }
 
 ipcMain.on('navigate', (_e, input) => {
