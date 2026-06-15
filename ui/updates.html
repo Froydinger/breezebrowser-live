@@ -41,7 +41,7 @@
     .rel::before { content: ''; position: absolute; left: -7px; top: 4px; width: 12px; height: 12px;
       border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--bg); }
     .rel.minor::before { background: var(--soft); width: 9px; height: 9px; left: -5.5px; }
-    .ver { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+    .ver { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
     .ver b { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
     .ver .tag { font-size: 11px; font-weight: 700; color: #fff; background: var(--accent);
       padding: 2px 8px; border-radius: 99px; }
@@ -71,12 +71,23 @@
       transform: translateX(-120%); animation: hero-shine 1.5s var(--ease) 0.4s 1 forwards;
     }
     @keyframes hero-shine { to { transform: translateX(120%); } }
-    .hero-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(8px); }
+    .hero-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(8px); z-index: 0; }
     .hero-orb.o1 { width: 220px; height: 220px; top: -90px; right: -60px; background: radial-gradient(circle, rgba(255,255,255,0.35), transparent 70%); animation: orb-drift-a 11s ease-in-out infinite alternate; }
     .hero-orb.o2 { width: 160px; height: 160px; bottom: -80px; left: -40px; background: radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%); animation: orb-drift-b 13s ease-in-out infinite alternate; }
     @keyframes orb-drift-a { from { transform: translate(0,0); } to { transform: translate(-30px, 24px); } }
     @keyframes orb-drift-b { from { transform: translate(0,0); } to { transform: translate(26px, -20px); } }
-    .hero > * { position: relative; z-index: 1; }
+    /* content sits above the orbs — scoped so the orbs stay absolutely placed */
+    .hero-icon, .hero-pill, .hero-title, .hero-list { position: relative; z-index: 1; }
+    .hero-icon {
+      width: 62px; height: 62px; border-radius: 17px; margin-bottom: 18px;
+      display: grid; place-items: center;
+      background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
+      animation: icon-pop 0.7s var(--ease) 0.15s backwards, icon-bob 3.4s ease-in-out 1.1s infinite;
+    }
+    .hero-icon svg { width: 33px; height: 33px; stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    @keyframes icon-pop { 0% { opacity: 0; transform: scale(0.4) rotate(-12deg); } 60% { transform: scale(1.12) rotate(5deg); } 100% { opacity: 1; transform: none; } }
+    @keyframes icon-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
     .hero-pill {
       display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
       background: rgba(255,255,255,0.22); padding: 5px 12px; border-radius: 99px; margin-bottom: 14px;
@@ -87,6 +98,10 @@
     .hero-list li { font-size: 14px; line-height: 1.55; color: rgba(255,255,255,0.92); padding-left: 18px; position: relative; }
     .hero-list li::before { content: '→'; position: absolute; left: 0; color: #fff; }
     .hero-list li b { color: #fff; font-weight: 700; }
+    /* small icon chip on each past release */
+    .rel-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px;
+      background: color-mix(in srgb, var(--accent) 14%, transparent); flex-shrink: 0; }
+    .rel-icon svg { width: 13px; height: 13px; stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .past-head { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
       color: var(--soft); margin: 0 0 22px 2px; }
   </style>
@@ -103,69 +118,94 @@
   </div>
 
   <script>
+    // Lucide icons (inline so the page works fully offline & private).
+    const ICONS = {
+      'search-check': '<path d="m8 11 2 2 4-4"/><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+      'refresh-cw': '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+      'zap': '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+      'book-open': '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+      'sparkles': '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+      'newspaper': '<path d="M15 18h-5"/><path d="M18 14h-8"/><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M10 6h8v4h-8V6Z"/>',
+      'cpu': '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
+      'bot': '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+      'maximize': '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+      'share': '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
+      'rocket': '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+      'history': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+      'bell': '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+      'columns': '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
+      'lightbulb': '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+      'download': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+    };
+    const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.sparkles}</svg>`;
+
     const RELEASES = [
-      { v: '2.9.4', major: true, title: 'Reads the whole answer', items: [
+      { v: '2.9.5', major: true, icon: 'sparkles', title: 'A changelog with character', items: [
+        'Every update now gets its own <b>icon and a bit of motion</b> — no more plain glowing tile.',
+        'Fixed a layout slip that left the featured card mostly empty.' ] },
+      { v: '2.9.4', major: true, icon: 'search-check', title: 'Reads the whole answer', items: [
         'When searching the web, the assistant now <b>waits for streaming results to finish</b> before reading them — so it stops grabbing half-loaded answers and getting them wrong.',
         'Smart about it: settles fast once a page stops moving, but gives slow, streaming search engines the time they need.' ] },
-      { v: '2.9.3', major: true, title: 'Clean model switching', items: [
+      { v: '2.9.3', major: true, icon: 'refresh-cw', title: 'Clean model switching', items: [
         'Changing your AI model now <b>restarts Breeze cleanly</b> to load it — and <b>reopens your tabs</b> automatically, so you don\'t lose your place.',
         'A quick confirm first, so it never restarts on you by surprise.' ] },
-      { v: '2.9.2', major: true, title: 'Replies you can count on', items: [
+      { v: '2.9.2', major: true, icon: 'zap', title: 'Replies you can count on', items: [
         '<b>Warms up before you type</b> — the model loads right after download, so it\'s ready the moment you ask. No more spinning on "thinking."',
         '<b>Never fires into a cold model</b> — if it\'s still warming up, your message waits and sends automatically the instant it\'s ready.',
         '<b>The full 7B is the default for everyone</b> — the smaller model is now an opt-in for slower machines (with a clear "it\'s weaker at summaries" heads-up).',
         '<b>Fixed garbled summaries</b> — longer pages no longer overflow and splice errors into the answer.' ] },
-      { v: '2.9.1', major: true, title: 'Find the changelog anytime', items: [
+      { v: '2.9.1', major: true, icon: 'book-open', title: 'Find the changelog anytime', items: [
         '<b>What\'s New in Settings</b> — jump to this page from <b>Settings → Help &amp; FAQ</b> whenever you like, not just after an update.',
         '<b>A little sparkle</b> — the featured update up top now has some life to it. ✨' ] },
-      { v: '2.9.0', major: true, title: 'Snappier, calmer, all-Qwen', items: [
+      { v: '2.9.0', major: true, icon: 'cpu', title: 'Snappier, calmer, all-Qwen', items: [
         '<b>One brain family, two sizes</b> — both the fast and smart models are now Qwen2.5 (3B and 7B). Rock-solid at tools, no more stalls.',
         '<b>No more crash-report popup on quit</b> — ⌘Q, Finder → Quit, and updates now exit cleanly.',
         '<b>This changelog got fancy</b> — the latest release now gets the spotlight up top. 👋' ] },
-      { v: '2.8.0', major: true, title: 'This very page', items: [
+      { v: '2.8.0', major: true, icon: 'newspaper', title: 'This very page', items: [
         'Updates now open to a <b>changelog page you can revisit</b> — not a popup that vanishes. Visit it anytime by typing <b>/updates</b> or via <b>Help → What\'s New</b>.',
         'Backfilled the full history so you can see where Breeze started and how far it\'s come.' ] },
-      { v: '2.7.0', major: true, title: 'Pick your AI brain', items: [
+      { v: '2.7.0', major: true, icon: 'cpu', title: 'Pick your AI brain', items: [
         'Breeze now matches the AI model to your device — a smart <b>Qwen2.5 7B</b> for powerful Macs, or a fast, light <b>Qwen2.5 3B</b> for everything else.',
         'A friendly picker recommends the best fit for your machine after each big update — your choice, always.',
         'Switch models anytime in <b>Settings → AI</b>.' ] },
-      { v: '2.6.0', major: true, title: 'A smarter, more capable assistant', items: [
+      { v: '2.6.0', major: true, icon: 'bot', title: 'A smarter, more capable assistant', items: [
         'Upgraded the local model for sharper answers and better instruction-following.',
         '<b>"Go to that site"</b> — tell the assistant to open a page (e.g. "go to winthenight.org and summarize") and it actually opens and reads it.',
         'The model now downloads quietly at launch, so it\'s ready when you are.',
         'A soft, deep tone the moment the assistant starts replying.' ] },
-      { v: '2.5.0', major: true, title: 'Fullscreen AI chat', items: [
+      { v: '2.5.0', major: true, icon: 'maximize', title: 'Fullscreen AI chat', items: [
         'Ask from any new tab — hit ↵ to chat, ⌘↵ to search the web instead; a real link just goes there.',
         'The chat opens fullscreen and isolated (no page context), then <b>auto-docks</b> into the sidebar the moment it searches or you open a page.',
         'Expand or dock the assistant anytime with a button.' ] },
-      { v: '2.4.0', major: true, title: 'Sharing & a tidier URL bar', items: [
+      { v: '2.4.0', major: true, icon: 'share', title: 'Sharing & a tidier URL bar', items: [
         'One-click <b>copy link</b> button, plus a <b>share</b> button (native macOS share sheet).',
         'Fixed the new-tab theme flicker on open.' ] },
-      { v: '2.3.13', title: 'Per-tab Performance Mode 🚀', items: [
+      { v: '2.3.13', icon: 'rocket', title: 'Per-tab Performance Mode', items: [
         'Right-click any sidebar tab → <b>Performance Mode</b> for smoother cloud gaming and video on that tab (hardware video overlay + no background throttling).' ] },
-      { v: '2.3.9', title: 'Reopen your tabs', items: [
+      { v: '2.3.9', icon: 'history', title: 'Reopen your tabs', items: [
         'Breeze can restore the tabs you had open when you quit — ask each time, always, or never.' ] },
-      { v: '2.3.0', major: true, title: 'On-device AI, reimagined', items: [
+      { v: '2.3.0', major: true, icon: 'bot', title: 'On-device AI, reimagined', items: [
         'Switched to <b>Qwen2.5</b> with agentic web search — the assistant opens a real search, reads the results, and cites sources, all locally.',
         'Reminders, split-view URL bars, and a more reliable assistant.' ] },
-      { v: '2.2.0', title: 'Updates, notifications & passwords', items: [
+      { v: '2.2.0', icon: 'bell', title: 'Updates, notifications & passwords', items: [
         'Manual "Check for Updates", website notifications with per-site control, password capture & autofill, and proper code signing.' ] },
-      { v: '2.1.0', major: true, title: 'Split screen & a real dashboard', items: [
+      { v: '2.1.0', major: true, icon: 'columns', title: 'Split screen & a real dashboard', items: [
         'Split view with a draggable divider, drag-to-reorder tabs, collapsible tab groups, a tabbed Settings dashboard, and AI chat history.' ] },
-      { v: '2.0.0', major: true, title: 'Breeze grows a brain', items: [
+      { v: '2.0.0', major: true, icon: 'lightbulb', title: 'Breeze grows a brain', items: [
         'The big one: a private, on-device AI assistant with personality, page-reading, and reminders — plus first-run onboarding, safe-quit, and storage auto-heal.' ] },
-      { v: '1.5.0', title: 'Imports & a publishable build', items: [
+      { v: '1.5.0', icon: 'download', title: 'Imports & a publishable build', items: [
         'Import from Chrome, Arc, Dia, and Safari; hardened ad-blocking; the first shareable build of Breeze.' ] },
     ];
 
     const log = document.getElementById('log');
     const [latest, ...past] = RELEASES;
 
-    // The newest release gets a big, celebratory hero card.
+    // The newest release gets a big, celebratory hero card with its icon.
     const hero = document.createElement('div');
     hero.className = 'hero';
     hero.innerHTML =
       '<div class="hero-orb o1"></div><div class="hero-orb o2"></div>' +
+      `<div class="hero-icon">${ic(latest.icon)}</div>` +
       `<span class="hero-pill">✨ Just landed · v${latest.v}</span>` +
       `<h2 class="hero-title">${latest.title}</h2>` +
       `<ul class="hero-list">${latest.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
@@ -180,7 +220,7 @@
       const el = document.createElement('div');
       el.className = 'rel' + (r.major ? '' : ' minor');
       el.innerHTML =
-        `<div class="ver"><b>v${r.v}</b>${r.major ? '<span class="tag">Major</span>' : ''}</div>` +
+        `<div class="ver"><span class="rel-icon">${ic(r.icon)}</span><b>v${r.v}</b>${r.major ? '<span class="tag">Major</span>' : ''}</div>` +
         `<h3>${r.title}</h3>` +
         `<ul>${r.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
       log.appendChild(el);
