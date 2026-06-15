@@ -2293,6 +2293,26 @@ function sendAI(status) {
   win?.webContents.send('ai-status', status);
 }
 
+// Pre-download the model FILE at launch (not loaded into RAM) so the user
+// never waits on a multi-GB download when they first open the assistant. The
+// file is cached, so this is a no-op on later launches. ensureAI awaits this
+// before its own download so the two never race into a double download.
+let modelPrefetch = null;
+function prefetchModel() {
+  if (ai.ready || ai.loading || modelPrefetch) return modelPrefetch;
+  modelPrefetch = (async () => {
+    try {
+      const { resolveModelFile } = await import('node-llama-cpp');
+      await resolveModelFile(MODEL_URI, {
+        directory: path.join(app.getPath('userData'), 'models'),
+        onProgress: ({ downloadedSize, totalSize }) =>
+          sendAI({ state: 'downloading', progress: totalSize ? downloadedSize / totalSize : 0 }),
+      });
+    } catch { /* ensureAI will surface any real error when the panel opens */ }
+  })();
+  return modelPrefetch;
+}
+
 async function ensureAI() {
   if (ai.ready || ai.loading) return ai.ready;
   ai.loading = true;
@@ -2304,6 +2324,7 @@ async function ensureAI() {
     ai.defineChatSessionFunction = defineChatSessionFunction;
 
     sendAI({ state: 'downloading', progress: 0 });
+    if (modelPrefetch) { try { await modelPrefetch; } catch {} } // reuse the launch download
     const modelPath = await resolveModelFile(MODEL_URI, {
       directory: path.join(app.getPath('userData'), 'models'),
       onProgress: ({ downloadedSize, totalSize }) =>
@@ -3925,6 +3946,10 @@ app.whenReady().then(async () => {
   createWindow();
   setupAutoUpdate();
   warmConnections();
+  // Start pulling the AI model in the background so it's ready (or already
+  // downloaded) by the time the user opens the assistant. Delayed so it doesn't
+  // contend with first-paint / page loads.
+  setTimeout(() => { try { prefetchModel(); } catch {} }, 4000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
