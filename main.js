@@ -18,6 +18,11 @@ const fs = require('fs');
 // before the video plays on first load).
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+// Uncap Chromium's 60fps software render ceiling so high-refresh displays
+// (120/144Hz) can actually run at full rate — helps cloud gaming and smooth
+// scrolling. No idle cost: frames are only produced when something changes.
+app.commandLine.appendSwitch('disable-frame-rate-limit');
+
 // Make sure OS dialogs and menus say "Breeze", never "Electron"
 app.setName('Breeze');
 
@@ -641,8 +646,16 @@ function buildView(t, url) {
   wc.on('enter-html-full-screen', () => {
     const [width, height] = win.getContentSize();
     view.setBounds({ x: 0, y: 0, width, height });
+    // Flatten corners in fullscreen so the compositor can use the zero-copy
+    // hardware video overlay (rounded corners block it) — lower GPU/power and
+    // a touch less latency for cloud gaming & fullscreen video. Corners are
+    // off-screen here anyway, so there's no visual cost.
+    try { view.setBorderRadius(0); } catch {}
   });
-  wc.on('leave-html-full-screen', applyBounds);
+  wc.on('leave-html-full-screen', () => {
+    applyBounds();
+    try { view.setBorderRadius(12); } catch {} // restore the rounded look
+  });
   // incognito tabs never touch history
   wc.on('did-navigate', (_e, navUrl) => {
     t.didAutoRetry = false; // each navigation gets its own one retry
