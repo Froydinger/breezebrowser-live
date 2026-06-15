@@ -647,6 +647,11 @@ function buildView(t, url) {
   try {
     view.setBorderRadius(t.perfMode ? 0 : 12);
   } catch {} // older Electron: no rounded corners, no problem
+  // Paint the view's backing the theme color so internal pages (new tab) don't
+  // flash white for a frame before their HTML paints.
+  if (isInternal) {
+    try { view.setBackgroundColor(effectiveTheme() === 'dark' ? '#16161a' : '#f2f0ed'); } catch {}
+  }
 
   const wc = view.webContents;
   // Reapply Performance Mode if this tab had it on (e.g. after waking).
@@ -3387,6 +3392,22 @@ ipcMain.on('tab-nav', (_e, { id, action }) => {
   else if (action === 'reload') wc.reload();
 });
 ipcMain.on('open-url', (_e, url) => loadInActiveTab(url));
+ipcMain.on('copy-text', (_e, text) => {
+  if (text) try { clipboard.writeText(String(text)); } catch {}
+});
+// Native share. macOS gets the real share sheet (ShareMenu); elsewhere we fall
+// back to copying the link (no cross-platform share API in Electron).
+ipcMain.on('share-url', (_e, url) => {
+  if (!url) return;
+  if (process.platform === 'darwin') {
+    try {
+      const { ShareMenu } = require('electron');
+      new ShareMenu({ urls: [url] }).popup({ window: win });
+      return;
+    } catch {}
+  }
+  try { clipboard.writeText(String(url)); } catch {}
+});
 ipcMain.on('open-url-new-tab', (_e, url) => createTab(url, true));
 ipcMain.on('go-back', () => activeWC()?.navigationHistory.goBack());
 ipcMain.on('go-forward', () => activeWC()?.navigationHistory.goForward());
@@ -3419,6 +3440,9 @@ ipcMain.on('install-update', () => {
   const { autoUpdater } = require('electron-updater');
   autoUpdater.quitAndInstall();
 });
+// Synchronous theme lookup so internal pages can paint the right theme on the
+// very first frame (no light→dark flash). Used by internal-preload.
+ipcMain.on('get-theme-sync', (e) => { e.returnValue = effectiveTheme(); });
 ipcMain.handle('get-init', () => ({
   theme: effectiveTheme(),
   sidebarVisible,

@@ -522,7 +522,7 @@ body.sidebar-hidden #edge-handle { display: block; }
 /* Bookmark button + bookmarks list                                    */
 /* ------------------------------------------------------------------ */
 
-#btn-bookmark, #btn-clearcache, #btn-notif {
+#btn-bookmark, #btn-clearcache, #btn-notif, #btn-share, #btn-copylink {
   width: 24px;
   height: 24px;
   border: none;
@@ -537,8 +537,16 @@ body.sidebar-hidden #edge-handle { display: block; }
 }
 #btn-notif[hidden] { display: none; }
 
-#btn-bookmark svg, #btn-clearcache svg, #btn-notif svg { width: 14px; height: 14px; }
-#btn-bookmark:hover, #btn-clearcache:hover, #btn-notif:hover { background: var(--surface-hover); color: var(--text); }
+#btn-bookmark svg, #btn-clearcache svg, #btn-notif svg, #btn-share svg, #btn-copylink svg { width: 14px; height: 14px; }
+#btn-bookmark:hover, #btn-clearcache:hover, #btn-notif:hover, #btn-share:hover, #btn-copylink:hover { background: var(--surface-hover); color: var(--text); }
+
+/* copy-link button: the left icon. Shows a checkmark briefly after copying. */
+#btn-copylink { margin-left: -2px; }
+#btn-copylink .copied-tick { display: none; color: var(--accent); }
+#btn-copylink.copied svg:first-child { display: none; }
+#btn-copylink.copied .copied-tick { display: block; }
+#btn-copylink.copied { color: var(--accent); }
+#btn-share.pop { animation: bump 0.3s var(--ease); color: var(--accent); }
 #btn-clearcache.pop { animation: bump 0.3s var(--ease); color: var(--accent); }
 #btn-bookmark.active { color: var(--accent); }
 #btn-bookmark.active svg path { fill: var(--accent); stroke: var(--accent); }

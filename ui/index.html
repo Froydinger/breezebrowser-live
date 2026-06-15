@@ -78,7 +78,10 @@
     </div>
 
     <div id="address-wrap">
-      <svg id="address-icon" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <button id="btn-copylink" title="Copy link">
+        <svg viewBox="0 0 16 16"><path d="M6.8 9.2a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 1 0-3.4-3.4l-1 1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.2 6.8a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 1 0 3.4 3.4l1-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg class="copied-tick" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <input id="address" type="text" placeholder="Search or enter URL" spellcheck="false" autocomplete="off" />
       <button id="btn-notif" title="Notifications for this site" hidden>
         <svg viewBox="0 0 16 16"><path d="M8 2a3.2 3.2 0 0 0-3.2 3.2c0 3-1.3 3.8-1.3 4.6 0 .4.3.7.8.7h7.4c.5 0 .8-.3.8-.7 0-.8-1.3-1.6-1.3-4.6A3.2 3.2 0 0 0 8 2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.6 13a1.5 1.5 0 0 0 2.8 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line class="bell-slash" x1="3" y1="3" x2="13" y2="13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -88,6 +91,9 @@
       </button>
       <button id="btn-bookmark" title="Bookmark this page (⌘D)">
         <svg viewBox="0 0 16 16"><path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11l-4.02 2.84a.3.3 0 0 1-.48-.24V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="btn-share" title="Share…">
+        <svg viewBox="0 0 16 16"><path d="M8 10.5V3M5.6 5.2 8 2.8l2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.6 7.3H4A1.5 1.5 0 0 0 2.5 8.8v3.4A1.5 1.5 0 0 0 4 13.7h8a1.5 1.5 0 0 0 1.5-1.5V8.8A1.5 1.5 0 0 0 12 7.3h-.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div id="suggestions"></div>
     </div>
@@ -267,13 +273,13 @@
   <div id="whatsnew" class="hidden">
     <div class="onboard-glow"></div>
     <div id="whatsnew-card">
-      <div class="onboard-icon">🥴</div>
-      <h2>No more reload gremlins <span id="wn-version"></span></h2>
-      <p>Some pages get stuck reloading themselves forever. Not anymore:</p>
+      <div class="onboard-icon">🔗</div>
+      <h2>Share &amp; copy, sorted <span id="wn-version"></span></h2>
+      <p>The URL bar grew up a little:</p>
       <ul class="onboard-list">
-        <li>🛑 <b>Runaway-reload guard</b> — if a page loops or spams reloads, Breeze pumps the brakes instead of melting your CPU.</li>
-        <li>🧭 <b>Tells you what happened</b> — you get a tidy "something went wrong" page, with the network error if there was one.</li>
-        <li>↩️ <b>One-click retry</b> — think it was a fluke? Hit Try again and you're back in business.</li>
+        <li>🔗 <b>Copy link in one click</b> — the old search magnifier was redundant, so it's now a copy button (with a satisfying ✓).</li>
+        <li>📤 <b>Share button</b> — fire off the macOS share sheet straight from the bar, next to your bookmark star.</li>
+        <li>✨ <b>No more new-tab flash</b> — opening a new tab no longer flickers light-then-dark.</li>
       </ul>
       <button class="onboard-next primary" id="whatsnew-close">Sweet, let's go →</button>
     </div>

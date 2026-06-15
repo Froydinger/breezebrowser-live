@@ -872,6 +872,31 @@ btnBookmark.addEventListener('click', () => {
   breeze.toggleBookmark();
 });
 
+// current page URL for copy/share (empty on internal pages like the new tab)
+function activeUrl() {
+  const active = state.tabs?.find((t) => t.id === state.activeTabId);
+  return active && active.url ? active.url : '';
+}
+
+const btnCopyLink = $('#btn-copylink');
+btnCopyLink.addEventListener('click', () => {
+  const url = activeUrl();
+  if (!url) return;
+  breeze.copyText(url);
+  btnCopyLink.classList.add('copied');
+  setTimeout(() => btnCopyLink.classList.remove('copied'), 1100);
+});
+
+const btnShare = $('#btn-share');
+btnShare.addEventListener('click', () => {
+  const url = activeUrl();
+  if (!url) return;
+  btnShare.classList.remove('pop');
+  void btnShare.offsetWidth;
+  btnShare.classList.add('pop');
+  breeze.shareUrl(url);
+});
+
 // ---------------------------------------------------------------------------
 // Sidebar + theme
 // ---------------------------------------------------------------------------

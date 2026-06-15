@@ -1,7 +1,13 @@
 // Preload for Breeze's internal pages (new tab, settings).
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Resolved once, synchronously, at preload time — so internal pages can apply
+// the right theme class BEFORE first paint and avoid a light→dark flash.
+let initialTheme = 'light';
+try { initialTheme = ipcRenderer.sendSync('get-theme-sync') || 'light'; } catch {}
+
 contextBridge.exposeInMainWorld('breezeInternal', {
+  theme: initialTheme,
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getSuggestions: (q) => ipcRenderer.invoke('get-suggestions', q),
   setSetting: (key, value) => ipcRenderer.send('set-setting', { key, value }),

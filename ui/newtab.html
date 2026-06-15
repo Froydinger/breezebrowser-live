@@ -3,6 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <title>New Tab</title>
+  <script>
+    // Apply theme synchronously BEFORE first paint to avoid a light→dark flash.
+    try {
+      var t = window.breezeInternal && breezeInternal.theme;
+      var dark = t === 'dark' ||
+        (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      if (dark) document.documentElement.classList.add('dark');
+    } catch (e) {}
+  </script>
   <style>
     :root {
       --text: #2a2a2e;
