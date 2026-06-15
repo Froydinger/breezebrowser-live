@@ -1147,6 +1147,7 @@ function sendAI() {
   aiInput.value = '';
   aiInput.style.height = 'auto';
   currentAIMsg = addMsg('ai thinking', '');
+  _repliedTone = false;
   aiGenerating = true;
   aiSend.classList.add('stop');
   aiSend.title = 'Stop';
@@ -1265,8 +1266,31 @@ aiInput.addEventListener('input', () => {
   aiInput.style.height = Math.min(aiInput.scrollHeight, 120) + 'px';
 });
 
+// A soft, deep tone the moment the assistant starts replying.
+let _toneCtx = null;
+let _repliedTone = false;
+function playReplyTone() {
+  try {
+    _toneCtx = _toneCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _toneCtx;
+    if (ctx.state === 'suspended') ctx.resume();
+    const t0 = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(180, t0);
+    o.frequency.exponentialRampToValueAtTime(120, t0 + 0.28);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.13, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t0); o.stop(t0 + 0.52);
+  } catch {}
+}
+
 breeze.onAIChunk((chunk) => {
   if (!currentAIMsg) currentAIMsg = addMsg('ai', '');
+  if (!_repliedTone) { _repliedTone = true; playReplyTone(); }
   currentAIMsg.classList.remove('thinking');
   setMsgText(currentAIMsg, (currentAIMsg.dataset.raw || '') + chunk);
   aiMessages.scrollTop = aiMessages.scrollHeight;
@@ -1293,13 +1317,15 @@ breeze.onAIStatus((s) => {
   switch (s.state) {
     case 'downloading': {
       const pct = Math.round((s.progress || 0) * 100);
-      aiStatusbar.textContent = `Downloading model (one time) — ${pct}%`;
+      aiStatusbar.textContent = `Getting ready — downloading model (one time) ${pct}%`;
       aiProgress.classList.add('show');
       aiProgressFill.style.width = `${pct}%`;
       break;
     }
     case 'loading':
-      aiStatusbar.textContent = 'Loading model…';
+      aiStatusbar.textContent = 'Almost ready — warming up the model…';
+      aiProgress.classList.add('show');
+      aiProgressFill.style.width = '100%';
       break;
     case 'awaiting-web-consent':
       aiStatusbar.textContent = 'Waiting for your OK to search…';

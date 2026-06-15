@@ -492,6 +492,19 @@ function autoDockAI() {
   if (aiFullscreen) setAIFullscreen(false);
 }
 
+// ⌘E / menu toggle. On the new-tab page there's no point opening the sidebar
+// assistant — the new tab IS the assistant — so just focus its input instead.
+function toggleAssistant() {
+  const t = tabs.get(activeTabId);
+  const onNewTab = t && tabURL(t).startsWith(NEWTAB_URL);
+  if (!assistantVisible && onNewTab) {
+    try { t.view?.webContents.focus(); } catch {}
+    try { t.view?.webContents.send('focus-newtab-input'); } catch {}
+    return;
+  }
+  setAssistant(!assistantVisible);
+}
+
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
@@ -2232,8 +2245,8 @@ async function setupAdblock() {
 // at function-calling, which is what powers reminders + agentic web search.
 // Stays 100% local (downloaded once, runs on-device via Metal).
 const MODEL_URI =
-  'hf:bartowski/Qwen2.5-3B-Instruct-GGUF/Qwen2.5-3B-Instruct-Q4_K_M.gguf';
-const MODEL_LABEL = 'Qwen2.5 3B';
+  'hf:bartowski/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf';
+const MODEL_LABEL = 'Qwen2.5 7B';
 
 const ai = {
   ready: false,
@@ -2337,6 +2350,10 @@ function buildSystemPrompt() {
     "- read_current_page: call it ONLY when the user's question is clearly about the page " +
     'they are looking at (e.g. "summarize this", "what does this say"). If the question is ' +
     'unrelated to the page, do NOT call it — just answer normally.\n' +
+    '- open_page: call it when the user names a site or asks you to go to / open / visit / pull ' +
+    'up a specific address (e.g. "go to winthenight.org", "open example.com and summarize it"). ' +
+    'It opens the page and returns its text. If they asked you to then summarize or act on it, ' +
+    'do that with the text you get back — in ONE flow, without asking "which page?".\n' +
     '- set_reminder: call it when the user asks to be reminded of something at a later time. ' +
     'Convert their timing into minutes from now.\n' +
     'If a question is just general knowledge or chit-chat, answer directly with no tools.\n\n' +
@@ -2671,6 +2688,16 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
 
   sendAI({ state: 'generating' });
 
+  // Per-turn tool-call budget. Small local models can loop calling web_search
+  // forever (each ~8s) and blow past the watchdog without ever answering — so
+  // we cap calls and, once spent, tell the model to answer with what it has.
+  let searchCount = 0;
+  let readCount = 0;
+  let openCount = 0;
+  const MAX_SEARCHES = 3;
+  const MAX_READS = 2;
+  const MAX_OPENS = 2;
+
   // Tools the model can call. node-llama-cpp runs the handler, feeds the result
   // back, and continues — so the model decides WHEN the page / web is relevant.
   const def = ai.defineChatSessionFunction;
@@ -2686,6 +2713,9 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
         required: ['query'],
       },
       handler: async ({ query }) => {
+        if (++searchCount > MAX_SEARCHES) {
+          return 'You have already searched enough this turn. Do NOT search again — answer the user now with what you already have.';
+        }
         try { return await agenticWebSearch(String(query || text)); }
         catch (e) { return `Web search failed: ${e.message}`; }
         finally { sendAI({ state: 'generating' }); }
@@ -2697,11 +2727,39 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
         "when the user's question is about that page (e.g. summarize/explain this).",
       params: { type: 'object', properties: {} },
       handler: async () => {
-        if (aiFullscreen) return 'The assistant is in fullscreen mode, so it has no page to read right now.';
+        if (++readCount > MAX_READS) return 'You already read the page. Answer now with what you have.';
+        if (aiFullscreen) return 'No page is open to read (the chat is fullscreen). If the user named a site, use open_page first.';
         const ctx = await getPageContext();
-        if (!ctx) return 'There is no readable web page open right now.';
+        if (!ctx) return 'There is no readable web page open right now. If the user named a site, use open_page to open it first.';
         win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
         return `Page: "${ctx.title}" — ${ctx.url}\n\n${ctx.text}`;
+      },
+    }),
+    open_page: def({
+      description:
+        'Open a web page in the browser when the user asks you to go to / open / visit / pull up a ' +
+        'specific site or URL (e.g. "go to winthenight.org", "open example.com and summarize it"). ' +
+        'Opens it in a tab, waits for it to load, and returns its text so you can act on it.',
+      params: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'the URL or domain to open, e.g. example.com or https://example.com/page' } },
+        required: ['url'],
+      },
+      handler: async ({ url }) => {
+        if (++openCount > MAX_OPENS) return 'You already opened a page this turn. Read or answer with what you have.';
+        const target = toNavigableURL(String(url || ''));
+        if (!target) return `"${url}" doesn't look like a valid web address.`;
+        win?.webContents.send('ai-tool', { kind: 'page', label: `Opening ${String(url).replace(/^https?:\/\//, '')}` });
+        const id = createTab(target, true); // opens + activates (docks a fullscreen chat)
+        const t = tabs.get(id);
+        if (!t?.view) return 'Failed to open the page.';
+        try { await waitForLoad(t.view.webContents); } catch {}
+        await delay(600);
+        const ctx = await getPageContext();
+        if (ctx && ctx.text) {
+          return `Opened "${ctx.title}" — ${ctx.url}\n\nPage content:\n${ctx.text.slice(0, 6000)}`;
+        }
+        return `Opened ${target}, but couldn't read its text. Tell the user it's open.`;
       },
     }),
     set_reminder: def({
@@ -3190,7 +3248,7 @@ function buildMenu() {
         {
           label: 'Toggle Assistant',
           accelerator: 'CmdOrCtrl+E',
-          click: () => setAssistant(!assistantVisible),
+          click: () => toggleAssistant(),
         },
         {
           label: 'Focus Address Bar',
@@ -3460,7 +3518,7 @@ ipcMain.on('go-back', () => activeWC()?.navigationHistory.goBack());
 ipcMain.on('go-forward', () => activeWC()?.navigationHistory.goForward());
 ipcMain.on('reload', () => activeWC()?.reload());
 ipcMain.on('toggle-sidebar', () => setSidebar(!sidebarVisible));
-ipcMain.on('toggle-assistant', () => setAssistant(!assistantVisible));
+ipcMain.on('toggle-assistant', () => toggleAssistant());
 ipcMain.on('ai-fullscreen-set', (_e, on) => setAIFullscreen(on));
 // What's-new popup dismissed → reattach the active (and split) page view.
 ipcMain.on('whats-new-done', () => {

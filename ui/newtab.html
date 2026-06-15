@@ -253,6 +253,10 @@
       breezeInternal.getSettings().then(applySettings);
       breezeInternal.onSettings(applySettings);
       breezeInternal.onTheme(applyTheme);
+      if (breezeInternal.onFocusInput) breezeInternal.onFocusInput(() => {
+        const i = document.getElementById('q');
+        if (i) { i.focus(); i.select(); }
+      });
     }
 
     function tick() {

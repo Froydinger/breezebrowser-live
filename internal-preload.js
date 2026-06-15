@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   makeDefaultBrowser: () => ipcRenderer.send('make-default-browser'),
   switchToTab: (id) => ipcRenderer.send('switch-to-tab', id),
   askAI: (text) => ipcRenderer.send('ai-ask-from-newtab', text),
+  onFocusInput: (cb) => ipcRenderer.on('focus-newtab-input', () => cb()),
 
   importSources: () => ipcRenderer.invoke('import-sources'),
   importFromBrowser: (path, kind, target) =>
