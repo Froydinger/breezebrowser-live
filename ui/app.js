@@ -67,11 +67,11 @@ breeze.onWhatsNew((data) => {
   if (!el) return;
   const v = $('#wn-version');
   if (v && data && data.version) v.textContent = 'v' + data.version;
-  breeze.onboardingActive(true); // detach page view so the popup is visible
+  // Page views are already detached in the main process before this fires.
   el.classList.remove('hidden');
   requestAnimationFrame(() => el.classList.add('visible'));
   $('#whatsnew-close').addEventListener('click', () => {
-    breeze.onboardingActive(false); // re-attach the page view
+    breeze.whatsNewDone(); // re-attach the page view(s)
     el.classList.remove('visible');
     setTimeout(() => el.classList.add('hidden'), 450);
   }, { once: true });

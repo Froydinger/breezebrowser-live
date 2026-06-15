@@ -3107,6 +3107,12 @@ function createWindow() {
     const force = process.env.BREEZE_WHATSNEW_FROM;
     const seenV = force || appSettings.lastSeenVersion || '';
     if (force || (appSettings.onboarded && seenV !== curV)) {
+      // Detach page views HERE (synchronously, after restore) so the popup is
+      // never covered — restored tabs attach a real page view, and relying on a
+      // renderer round-trip to detach raced with that (resume users missed it).
+      for (const t of tabs.values()) {
+        if (t.view) { try { win.contentView.removeChildView(t.view); } catch {} }
+      }
       win.webContents.send('whats-new', { version: curV, from: seenV || null });
     }
     if (!force && (appSettings.lastSeenVersion || '') !== curV) {
@@ -3456,6 +3462,16 @@ ipcMain.on('reload', () => activeWC()?.reload());
 ipcMain.on('toggle-sidebar', () => setSidebar(!sidebarVisible));
 ipcMain.on('toggle-assistant', () => setAssistant(!assistantVisible));
 ipcMain.on('ai-fullscreen-set', (_e, on) => setAIFullscreen(on));
+// What's-new popup dismissed → reattach the active (and split) page view.
+ipcMain.on('whats-new-done', () => {
+  const a = tabs.get(activeTabId);
+  const s = splitTabId ? tabs.get(splitTabId) : null;
+  for (const v of [a, s]) {
+    if (v?.view) { try { win.contentView.addChildView(v.view); } catch {} }
+  }
+  applyBounds();
+  raiseOverlay();
+});
 // New-tab Dia input → send a chat: open the assistant fullscreen and submit.
 ipcMain.on('ai-ask-from-newtab', (_e, text) => {
   const t = String(text || '').trim();

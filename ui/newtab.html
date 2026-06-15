@@ -292,7 +292,7 @@
       if (!window.breezeInternal || !breezeInternal.askAI) { go(q); return; }
       breezeInternal.askAI(q);
       input.value = '';
-      input.placeholder = 'Sent to Breeze ✦';
+      input.placeholder = 'Sent to Breeze';
       hideSug();
       setTimeout(updateHint, 1400);
     }
@@ -300,7 +300,7 @@
     const hintEl = document.getElementById('hint');
     function updateHint() {
       const q = input.value.trim();
-      if (input.placeholder === 'Sent to Breeze ✦') input.placeholder = 'Ask Breeze, or type a URL';
+      if (input.placeholder === 'Sent to Breeze') input.placeholder = 'Ask Breeze, or type a URL';
       hintEl.textContent = !q
         ? ''
         : isURL(q)

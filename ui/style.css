@@ -663,6 +663,7 @@ html.dark .bookmark .close:hover { background: rgba(255,255,255,0.12); }
 }
 
 .ai-title svg { width: 15px; height: 15px; color: var(--accent); }
+.ai-title-logo { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; }
 .ai-header-btns { display: flex; gap: 2px; }
 
 #ai-messages {
@@ -1872,6 +1873,12 @@ html.dark #onboard-card { border-color: rgba(255,255,255,0.12); }
 .onboard-icon {
   font-size: 40px; margin-bottom: 14px;
   filter: drop-shadow(0 6px 20px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+/* Brand logo used in place of star icons (onboarding steps + what's-new) */
+.brand-icon {
+  width: 50px; height: 50px; margin: 0 auto 16px; display: block;
+  border-radius: 13px;
+  filter: drop-shadow(0 8px 24px color-mix(in srgb, var(--accent) 45%, transparent));
 }
 #onboard h1 { font-size: 27px; font-weight: 700; letter-spacing: -0.6px; margin-bottom: 12px; }
 #onboard h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
