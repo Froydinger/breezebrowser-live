@@ -58,6 +58,9 @@ breeze.getInit().then(({ theme, sidebarVisible, settings }) => {
   setSidebarVisible(sidebarVisible);
   if (settings) applySettings(settings);
   if (settings && !settings.onboarded) startOnboarding();
+  // Onboarded already? Offer the AI model picker if they haven't chosen one yet.
+  // (New users get it right after onboarding finishes instead.)
+  else setTimeout(maybePromptModel, 800);
 });
 
 // What's-new popup after an update. Native page views paint over the DOM, so

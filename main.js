@@ -73,6 +73,7 @@ const NEWTAB_URL = `file://${path.join(__dirname, 'ui', 'newtab.html')}`;
 const RELOAD_STORM_LIMIT = 10;
 const RELOAD_STORM_WINDOW_MS = 6000;
 const SETTINGS_URL = `file://${path.join(__dirname, 'ui', 'settings.html')}`;
+const UPDATES_URL = `file://${path.join(__dirname, 'ui', 'updates.html')}`;
 const OVERLAY_URL = `file://${path.join(__dirname, 'ui', 'overlay.html')}`;
 
 const ENGINES = {
@@ -1085,6 +1086,8 @@ function activeWC() {
 function toNavigableURL(input) {
   const q = input.trim();
   if (!q) return null;
+  // Internal shortcut: /updates (or breeze://updates) opens the changelog page.
+  if (/^\/?updates$/i.test(q) || /^breeze:\/\/updates$/i.test(q)) return UPDATES_URL;
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(q)) return q;
   if (q === 'localhost' || q.startsWith('localhost:')) return `http://${q}`;
   if (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' ')) return `https://${q}`;
@@ -3211,17 +3214,12 @@ function createWindow() {
     // One-shot "what's new" popup after an update. Only for already-onboarded
     // users (never on a brand-new install) and only when the version changed.
     // BREEZE_WHATSNEW_FROM forces it for testing without touching real settings.
+    // After an update, open the changelog page (replaces the old one-shot
+    // popup — now it's a real page the user can revisit any time via /updates).
     const curV = app.getVersion();
     const force = process.env.BREEZE_WHATSNEW_FROM;
-    const seenV = force || appSettings.lastSeenVersion || '';
-    if (force || (appSettings.onboarded && seenV !== curV)) {
-      // Detach page views HERE (synchronously, after restore) so the popup is
-      // never covered — restored tabs attach a real page view, and relying on a
-      // renderer round-trip to detach raced with that (resume users missed it).
-      for (const t of tabs.values()) {
-        if (t.view) { try { win.contentView.removeChildView(t.view); } catch {} }
-      }
-      win.webContents.send('whats-new', { version: curV, from: seenV || null });
+    if (force || (appSettings.onboarded && (appSettings.lastSeenVersion || '') !== curV)) {
+      openInternalTab(UPDATES_URL);
     }
     if (!force && (appSettings.lastSeenVersion || '') !== curV) {
       applySetting('lastSeenVersion', curV);
@@ -3429,6 +3427,8 @@ function buildMenu() {
     {
       role: 'help',
       submenu: [
+        { label: "What's New", click: () => openInternalTab(UPDATES_URL) },
+        { type: 'separator' },
         // On macOS "Check for Updates…" also lives in the Breeze app menu;
         // here it gives Windows/Linux a home and a second access point.
         { label: 'Check for Updates…', click: () => checkForUpdatesManual() },

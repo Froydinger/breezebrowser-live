@@ -403,6 +403,7 @@
       if (idx >= 0 && items[idx]) { accept(items[idx]); return; } // a picked suggestion navigates
       const q = input.value.trim();
       if (!q) return;
+      if (/^\/?updates$/i.test(q)) { location.href = 'updates.html'; return; } // changelog
       if (isURL(q)) go(q);  // a .com etc → just navigate
       else chat(q);         // a question → ask the assistant
     });
