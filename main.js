@@ -18,18 +18,11 @@ const fs = require('fs');
 // before the video plays on first load).
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-// Uncap Chromium's 60fps software render ceiling so high-refresh displays
-// (120/144Hz) can actually run at full rate — helps cloud gaming and smooth
-// scrolling. No idle cost: frames are only produced when something changes.
-// On by default; user can disable it in Settings → Performance (needs restart,
-// since it's a launch flag). Read the file directly — settingsPath/loadSettings
-// aren't initialized this early (const TDZ), and this runs before app.whenReady.
-let uncapFrameRate = true;
-try {
-  const _s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
-  if (_s && _s.uncapFrameRate === false) uncapFrameRate = false;
-} catch {}
-if (uncapFrameRate) app.commandLine.appendSwitch('disable-frame-rate-limit');
+// NOTE: we deliberately do NOT use `disable-frame-rate-limit`. It uncaps
+// requestAnimationFrame, not just the compositor — rAF-driven libraries like
+// Framer Motion then run their loops unbounded, pegging the main thread and
+// causing jank/freezes across the web. The marginal high-refresh gain isn't
+// worth breaking web animations. Removed in v2.3.12. Don't reintroduce it.
 
 // Make sure OS dialogs and menus say "Breeze", never "Electron"
 app.setName('Breeze');
@@ -108,7 +101,6 @@ const DEFAULT_SETTINGS = {
   reminders: [], // [{ id, label, fireAt }] active reminders, re-armed on launch
   restoreTabs: 'ask', // 'ask' | 'always' | 'never' — reopen last session's tabs
   savedTabs: [], // URLs persisted from the previous session, restored on launch
-  uncapFrameRate: true, // disable the 60fps render cap (launch flag; restart to apply)
   flattenFullscreenCorners: true, // square corners in fullscreen → hw video overlay
   lastSeenVersion: '', // version the user last saw the "what's new" popup for
 };
