@@ -57,14 +57,25 @@
       position: relative; overflow: hidden;
       border-radius: 22px; padding: 30px 30px 26px; margin-bottom: 44px;
       color: #fff;
-      background: linear-gradient(135deg, #5b7cfa 0%, #7c5bfa 45%, #b65bfa 100%);
+      background: linear-gradient(120deg, #5b7cfa, #7c5bfa, #b65bfa, #5b9dfa, #5b7cfa);
+      background-size: 300% 300%;
       box-shadow: 0 24px 60px -18px color-mix(in srgb, var(--accent) 70%, transparent);
-      animation: hero-pop 0.6s var(--ease);
+      animation: hero-pop 0.6s var(--ease), hero-flow 14s ease-in-out infinite;
     }
     @keyframes hero-pop { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+    /* gentle gradient drift + a one-time shine sweep — fun, but cheap (one element) */
+    @keyframes hero-flow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    .hero::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.35) 50%, transparent 65%);
+      transform: translateX(-120%); animation: hero-shine 1.5s var(--ease) 0.4s 1 forwards;
+    }
+    @keyframes hero-shine { to { transform: translateX(120%); } }
     .hero-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(8px); }
-    .hero-orb.o1 { width: 220px; height: 220px; top: -90px; right: -60px; background: radial-gradient(circle, rgba(255,255,255,0.35), transparent 70%); }
-    .hero-orb.o2 { width: 160px; height: 160px; bottom: -80px; left: -40px; background: radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%); }
+    .hero-orb.o1 { width: 220px; height: 220px; top: -90px; right: -60px; background: radial-gradient(circle, rgba(255,255,255,0.35), transparent 70%); animation: orb-drift-a 11s ease-in-out infinite alternate; }
+    .hero-orb.o2 { width: 160px; height: 160px; bottom: -80px; left: -40px; background: radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%); animation: orb-drift-b 13s ease-in-out infinite alternate; }
+    @keyframes orb-drift-a { from { transform: translate(0,0); } to { transform: translate(-30px, 24px); } }
+    @keyframes orb-drift-b { from { transform: translate(0,0); } to { transform: translate(26px, -20px); } }
     .hero > * { position: relative; z-index: 1; }
     .hero-pill {
       display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
@@ -93,6 +104,9 @@
 
   <script>
     const RELEASES = [
+      { v: '2.9.1', major: true, title: 'Find the changelog anytime', items: [
+        '<b>What\'s New in Settings</b> — jump to this page from <b>Settings → Help &amp; FAQ</b> whenever you like, not just after an update.',
+        '<b>A little sparkle</b> — the featured update up top now has some life to it. ✨' ] },
       { v: '2.9.0', major: true, title: 'Snappier, calmer, all-Qwen', items: [
         '<b>One brain family, two sizes</b> — both the fast and smart models are now Qwen2.5 (3B and 7B). Rock-solid at tools, no more stalls.',
         '<b>No more crash-report popup on quit</b> — ⌘Q, Finder → Quit, and updates now exit cleanly.',

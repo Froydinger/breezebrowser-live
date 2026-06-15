@@ -599,6 +599,15 @@
 
     <section data-tab="help">
       <h2>Help &amp; FAQ</h2>
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" id="whatsnew-row" style="cursor:pointer">
+          <div>
+            <div class="row-label">✨ What's new in Breeze</div>
+            <div class="row-hint">See the latest update and the full changelog</div>
+          </div>
+          <span style="color:var(--text-soft);font-size:18px">›</span>
+        </div>
+      </div>
       <div class="card" id="faq">
         <details>
           <summary>How does Breeze AI work?</summary>
@@ -722,6 +731,7 @@
       b.addEventListener('click', () => set('pinSize', b.dataset.v)));
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
+    document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
     document.getElementById('aiModel').addEventListener('change', (e) => {
       const v = e.target.value;
