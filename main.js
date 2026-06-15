@@ -98,6 +98,8 @@ const DEFAULT_SETTINGS = {
   neverSavePasswords: [], // origins the user said "never" for
   permissions: {},
   reminders: [], // [{ id, label, fireAt }] active reminders, re-armed on launch
+  restoreTabs: 'ask', // 'ask' | 'always' | 'never' — reopen last session's tabs
+  savedTabs: [], // URLs persisted from the previous session, restored on launch
 };
 
 const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
@@ -452,6 +454,34 @@ function setAssistant(show) {
 function tabURL(t) {
   if (t.sleeping) return t.saved?.url || '';
   return t.view ? t.view.webContents.getURL() : '';
+}
+
+// Collect the URLs of the current session's restorable tabs, in tab order.
+// Skips incognito tabs (never persisted) and internal file:// pages (new-tab,
+// settings, etc. — nothing worth reopening). Used for tab restore on launch.
+function captureSessionTabs() {
+  const urls = [];
+  for (const id of tabOrder) {
+    const t = tabs.get(id);
+    if (!t || t.incognito) continue;
+    const u = tabURL(t);
+    if (!u || u.startsWith('file://') || u.startsWith('about:')) continue;
+    urls.push(u);
+  }
+  return urls;
+}
+
+// Open the previous session's saved tabs (if any), else a single new tab.
+// Consumed once: the saved list is cleared after restoring, then re-saved on
+// the next quit — so a crash still restores, but a clean session won't loop.
+function restoreSessionOrNewTab() {
+  const saved = Array.isArray(appSettings.savedTabs) ? appSettings.savedTabs : [];
+  if (!saved.length) {
+    createTab();
+    return;
+  }
+  saved.forEach((url, i) => createTab(url, i === 0));
+  saveSettings({ savedTabs: [] });
 }
 
 // Normalize an origin to a single canonical key. Chromium's permission CHECK
@@ -2962,7 +2992,7 @@ function createWindow() {
     // On first run the onboarding overlay (DOM) must be visible — but a native
     // page view would paint over it. So defer the first tab until onboarding
     // finishes (see the 'onboarding-active' handler).
-    if (appSettings.onboarded) createTab();
+    if (appSettings.onboarded) restoreSessionOrNewTab();
   });
 }
 
@@ -3480,7 +3510,7 @@ ipcMain.on('onboarding-active', (_e, active) => {
   } else {
     // onboarding finished — create the first tab now (or re-show the existing)
     if (tabOrder.length === 0) {
-      createTab();
+      restoreSessionOrNewTab();
     } else {
       const t = tabs.get(activeTabId);
       if (t?.view) {
@@ -3640,6 +3670,43 @@ app.on('open-url', (e, url) => {
 });
 
 app.on('before-quit', () => {
+  // Tab session restore. Decide whether to remember this session's tabs.
+  // Done first, while the window + views are still alive (the disposal below
+  // tears the AI down but tabs are untouched). app.exit() bypasses before-quit,
+  // so the reset-relaunch path never reaches here.
+  try {
+    const urls = captureSessionTabs();
+    const mode = appSettings.restoreTabs || 'ask';
+    if (installingUpdate) {
+      // Auto-quit for an update: can't prompt. Preserve tabs unless the user
+      // has explicitly opted out, so they come back to where they were.
+      saveSettings({ savedTabs: mode === 'never' ? [] : urls });
+    } else if (mode === 'never' || urls.length === 0) {
+      if ((appSettings.savedTabs || []).length) saveSettings({ savedTabs: [] });
+    } else if (mode === 'always') {
+      saveSettings({ savedTabs: urls });
+    } else {
+      // 'ask' — prompt once, with a "remember my choice" checkbox that flips
+      // the mode to always/never so we never nag again unless they want it.
+      const { response, checkboxChecked } = dialog.showMessageBoxSync(win, {
+        type: 'question',
+        buttons: ['Reopen Tabs', "Don't Reopen"],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Quit Breeze',
+        message: `Reopen your ${urls.length} ${urls.length === 1 ? 'tab' : 'tabs'} next time?`,
+        detail: 'Breeze can restore the pages you have open when you launch again.',
+        checkboxLabel: 'Remember my choice',
+        checkboxChecked: false,
+        noLink: true,
+      });
+      const reopen = response === 0;
+      const patch = { savedTabs: reopen ? urls : [] };
+      if (checkboxChecked) patch.restoreTabs = reopen ? 'always' : 'never';
+      saveSettings(patch);
+    }
+  } catch {}
+
   // persist everything, including any in-flight download (as interrupted)
   try {
     fs.writeFileSync(
