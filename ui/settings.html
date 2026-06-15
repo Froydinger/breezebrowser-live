@@ -490,10 +490,9 @@
         <div class="row">
           <div>
             <div class="row-label">AI model</div>
-            <div class="row-hint" id="aiModelHint">7B is the default and recommended. Only pick 3B if 7B is too slow — it's weaker, especially at summarizing. Switching downloads the new model.</div>
+            <div class="row-hint" id="aiModelHint">7B is the default. Only pick 3B if 7B is too slow — it's weaker, especially at summarizing. Switching restarts Breeze (your tabs reopen).</div>
           </div>
           <select id="aiModel">
-            <option value="">Recommended (Qwen2.5 7B)</option>
             <option value="smart">Smart · Qwen2.5 7B (~4.7 GB)</option>
             <option value="fast">Fast · Qwen2.5 3B — weaker ⚠️ (~2 GB)</option>
           </select>
@@ -694,7 +693,7 @@
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
       document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
-      document.getElementById('aiModel').value = settings.aiModel || '';
+      document.getElementById('aiModel').value = settings.aiModel === 'fast' ? 'fast' : 'smart';
       document.getElementById('flattenFullscreenCorners').checked = settings.flattenFullscreenCorners !== false;
       // AI fields: don't clobber while the user is actively typing in them
       const ae = document.activeElement;
@@ -734,12 +733,9 @@
     document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
     document.getElementById('aiModel').addEventListener('change', (e) => {
-      const v = e.target.value;
-      settings.aiModel = v;
-      // 'smart'/'fast' go through setAIModel (persists + swaps the download);
-      // 'recommended' just clears the explicit choice.
-      if (v === 'smart' || v === 'fast') breezeInternal.setAIModel(v);
-      else breezeInternal.setSetting('aiModel', '');
+      // setAIModel confirms + restarts (preserving tabs) when a model is already
+      // loaded; the dropdown reverts itself if the user cancels.
+      breezeInternal.setAIModel(e.target.value);
     });
     document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });

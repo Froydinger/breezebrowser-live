@@ -3573,24 +3573,37 @@ ipcMain.handle('get-model-info', () => ({
   chosen: !!MODELS[appSettings.aiModel],
   models: MODELS,
 }));
-// Switch tiers: persist, tear down the loaded model, and prefetch the new one
-// so it's ready next time the panel opens.
-ipcMain.on('set-ai-model', (_e, tier) => {
+// Switch tiers. If a model is already loaded, the only RELIABLE way to swap is
+// a clean restart (in-place native model swapping is flaky) — so we confirm,
+// preserve the open tabs (non-destructive), and relaunch. The very first pick
+// (no model loaded yet) just warms up live, no restart needed.
+ipcMain.on('set-ai-model', async (_e, tier) => {
   if (!MODELS[tier]) return;
-  if (appSettings.aiModel === tier && MODELS[appSettings.aiModel]) {
-    warmUpModel(); // already on it — make sure it's warming
+  if (appSettings.aiModel === tier) { warmUpModel(); return; }
+
+  const modelLoaded = ai.ready || ai.model || ai.loading;
+  if (modelLoaded) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Cancel', 'Switch & Restart'],
+      defaultId: 1,
+      cancelId: 0,
+      message: `Switch to ${MODELS[tier].label}?`,
+      detail: 'Breeze will restart to load the new model cleanly. Your open tabs will reopen.',
+    });
+    if (response !== 1) {
+      win?.webContents.send('settings', appSettings); // revert the Settings dropdown
+      return;
+    }
+    applySetting('aiModel', tier);
+    try { saveSettings({ savedTabs: captureSessionTabs() }); } catch {} // reopen tabs
+    markCleanExit();
+    app.relaunch();
+    app.exit(0);
     return;
   }
+  // No model loaded yet (first-run pick) — warm the chosen one up live.
   applySetting('aiModel', tier);
-  // drop the current model, then warm up the new one
-  try { ai.abort?.abort(); } catch {}
-  try { ai.session?.dispose(); } catch {}
-  try { ai.sequence?.dispose(); } catch {}
-  try { ai.context?.dispose(); } catch {}
-  try { ai.model?.dispose(); } catch {}
-  ai.session = ai.sequence = ai.context = ai.model = null;
-  ai.ready = false;
-  ai.generating = false;
   warmUpModel();
 });
 ipcMain.handle('ai-ready', () => ai.ready);
