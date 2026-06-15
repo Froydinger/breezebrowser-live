@@ -56,6 +56,13 @@ Windows.
 ## Releasing a new version (do it in this order)
 
 1. Make changes. Bump `version` in `package.json` (semver, e.g. 2.2.4 → 2.2.5).
+   - **ALWAYS update the what's-new popup** (`#whatsnew` in `ui/index.html`) with
+     a fresh, CHEEKY message describing what changed in THIS version. It shows
+     once per version to already-onboarded users on first launch after updating
+     (gated on `lastSeenVersion`; wired via the `whats-new` IPC in main.js →
+     `breeze.onWhatsNew` in app.js). Keep the playful tone, 2–4 bullets, real
+     user-facing changes only. Test without touching real settings:
+     `BREEZE_WHATSNEW_FROM=<oldver> npx electron .` forces the popup.
 2. `git add -A && git commit -m "vX.Y.Z: …"` then `git push`.
 3. Build + publish to GitHub:
    ```
