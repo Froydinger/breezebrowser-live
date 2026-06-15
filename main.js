@@ -13,6 +13,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 // Media can start without a user gesture (fixes YouTube needing a refresh
 // before the video plays on first load).
@@ -108,6 +109,7 @@ const DEFAULT_SETTINGS = {
   savedTabs: [], // URLs persisted from the previous session, restored on launch
   flattenFullscreenCorners: true, // square corners in fullscreen → hw video overlay
   lastSeenVersion: '', // version the user last saw the "what's new" popup for
+  aiModel: '', // '' = use device recommendation; else 'smart' | 'fast'
 };
 
 const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
@@ -2243,10 +2245,37 @@ async function setupAdblock() {
 
 // Qwen2.5 3B Instruct — same ~2GB footprint as Llama 3.2 3B but markedly better
 // at function-calling, which is what powers reminders + agentic web search.
-// Stays 100% local (downloaded once, runs on-device via Metal).
-const MODEL_URI =
-  'hf:bartowski/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf';
-const MODEL_LABEL = 'Qwen2.5 7B';
+// Stays 100% local (downloaded once, runs on-device via Metal/CPU).
+// Two tiers — a smart 7B for capable machines, a fast 3B for everything else.
+const MODELS = {
+  smart: {
+    uri: 'hf:bartowski/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+    label: 'Qwen2.5 7B',
+    size: '~4.7 GB',
+    blurb: 'Smartest answers and most reliable at tasks like “summarize this page.” Best on Apple Silicon Macs with 16 GB+.',
+  },
+  fast: {
+    uri: 'hf:bartowski/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+    label: 'Llama 3.2 3B',
+    size: '~2 GB',
+    blurb: 'Lighter and quicker, great for chat and rewrites. Best for 8 GB Macs, Intel Macs, and Windows.',
+  },
+};
+
+// Recommend a tier from the device: only Apple Silicon with ample RAM gets the
+// 7B; everything else (8GB Macs, Intel, Windows on CPU) gets the snappy 3B.
+function recommendedTier() {
+  const gb = os.totalmem() / 1e9;
+  const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
+  return appleSilicon && gb >= 15 ? 'smart' : 'fast';
+}
+// The effective tier: the user's explicit choice, else the recommendation.
+function currentTier() {
+  return MODELS[appSettings.aiModel] ? appSettings.aiModel : recommendedTier();
+}
+function currentModel() {
+  return MODELS[currentTier()];
+}
 
 const ai = {
   ready: false,
@@ -2303,7 +2332,7 @@ function prefetchModel() {
   modelPrefetch = (async () => {
     try {
       const { resolveModelFile } = await import('node-llama-cpp');
-      await resolveModelFile(MODEL_URI, {
+      await resolveModelFile(currentModel().uri, {
         directory: path.join(app.getPath('userData'), 'models'),
         onProgress: ({ downloadedSize, totalSize }) =>
           sendAI({ state: 'downloading', progress: totalSize ? downloadedSize / totalSize : 0 }),
@@ -2325,7 +2354,7 @@ async function ensureAI() {
 
     sendAI({ state: 'downloading', progress: 0 });
     if (modelPrefetch) { try { await modelPrefetch; } catch {} } // reuse the launch download
-    const modelPath = await resolveModelFile(MODEL_URI, {
+    const modelPath = await resolveModelFile(currentModel().uri, {
       directory: path.join(app.getPath('userData'), 'models'),
       onProgress: ({ downloadedSize, totalSize }) =>
         sendAI({
@@ -3541,6 +3570,36 @@ ipcMain.on('reload', () => activeWC()?.reload());
 ipcMain.on('toggle-sidebar', () => setSidebar(!sidebarVisible));
 ipcMain.on('toggle-assistant', () => toggleAssistant());
 ipcMain.on('ai-fullscreen-set', (_e, on) => setAIFullscreen(on));
+// Model picker (welcome/update modal + Settings). Returns tiers, the device
+// recommendation, the current effective tier, and whether the user has chosen.
+ipcMain.handle('get-model-info', () => ({
+  recommended: recommendedTier(),
+  current: currentTier(),
+  chosen: !!MODELS[appSettings.aiModel],
+  models: MODELS,
+}));
+// Switch tiers: persist, tear down the loaded model, and prefetch the new one
+// so it's ready next time the panel opens.
+ipcMain.on('set-ai-model', (_e, tier) => {
+  if (!MODELS[tier]) return;
+  if (appSettings.aiModel === tier && MODELS[appSettings.aiModel]) {
+    // already on it — still make sure it's downloading
+    prefetchModel();
+    return;
+  }
+  applySetting('aiModel', tier);
+  // drop the current model + any in-flight prefetch, then fetch the new one
+  try { ai.abort?.abort(); } catch {}
+  try { ai.session?.dispose(); } catch {}
+  try { ai.sequence?.dispose(); } catch {}
+  try { ai.context?.dispose(); } catch {}
+  try { ai.model?.dispose(); } catch {}
+  ai.session = ai.sequence = ai.context = ai.model = null;
+  ai.ready = false;
+  ai.generating = false;
+  modelPrefetch = null;
+  prefetchModel();
+});
 // What's-new popup dismissed → reattach the active (and split) page view.
 ipcMain.on('whats-new-done', () => {
   const a = tabs.get(activeTabId);
@@ -3946,10 +4005,12 @@ app.whenReady().then(async () => {
   createWindow();
   setupAutoUpdate();
   warmConnections();
-  // Start pulling the AI model in the background so it's ready (or already
-  // downloaded) by the time the user opens the assistant. Delayed so it doesn't
-  // contend with first-paint / page loads.
-  setTimeout(() => { try { prefetchModel(); } catch {} }, 4000);
+  // Once the user has chosen a model, pull it in the background at launch so
+  // it's ready before they open the assistant. Before they've chosen, we wait
+  // for their pick in the welcome/update model modal instead of auto-pulling.
+  setTimeout(() => {
+    try { if (MODELS[appSettings.aiModel]) prefetchModel(); } catch {}
+  }, 4000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

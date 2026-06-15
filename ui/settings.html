@@ -489,6 +489,17 @@
         </div>
         <div class="row">
           <div>
+            <div class="row-label">AI model</div>
+            <div class="row-hint" id="aiModelHint">Larger = smarter; smaller = faster. Switching downloads the new model.</div>
+          </div>
+          <select id="aiModel">
+            <option value="">Recommended for this device</option>
+            <option value="smart">Smart · Qwen2.5 7B (~4.7 GB)</option>
+            <option value="fast">Fast · Llama 3.2 3B (~2 GB)</option>
+          </select>
+        </div>
+        <div class="row">
+          <div>
             <div class="row-label">Web search</div>
             <div class="row-hint">No key needed. When the assistant needs live info it opens your default search engine in a tab, reads the results, and answers with sources — all in your own browser.</div>
           </div>
@@ -674,6 +685,7 @@
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
       document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
+      document.getElementById('aiModel').value = settings.aiModel || '';
       document.getElementById('flattenFullscreenCorners').checked = settings.flattenFullscreenCorners !== false;
       // AI fields: don't clobber while the user is actively typing in them
       const ae = document.activeElement;
@@ -711,6 +723,14 @@
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
+    document.getElementById('aiModel').addEventListener('change', (e) => {
+      const v = e.target.value;
+      settings.aiModel = v;
+      // 'smart'/'fast' go through setAIModel (persists + swaps the download);
+      // 'recommended' just clears the explicit choice.
+      if (v === 'smart' || v === 'fast') breezeInternal.setAIModel(v);
+      else breezeInternal.setSetting('aiModel', '');
+    });
     document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
 

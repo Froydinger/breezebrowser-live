@@ -1825,6 +1825,48 @@ html.dark #adblock-pop { border-color: rgba(255,255,255,0.1); }
   animation: onboard-pop 0.5s var(--ease);
 }
 html.dark #whatsnew-card { border-color: rgba(255,255,255,0.12); }
+/* Model picker modal — reuses the glassy whats-new look */
+#model-modal {
+  position: fixed; inset: 0; z-index: 101;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2);
+  opacity: 0; transition: opacity 0.4s var(--ease);
+  -webkit-app-region: no-drag;
+}
+#model-modal.hidden { display: none; }
+#model-modal.visible { opacity: 1; }
+#model-card {
+  position: relative; width: min(480px, 92vw);
+  padding: 36px 34px 28px; border-radius: 26px; text-align: center;
+  background: color-mix(in srgb, var(--surface-active) 92%, transparent);
+  backdrop-filter: blur(30px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.6),
+    0 0 80px -30px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: onboard-pop 0.5s var(--ease);
+}
+html.dark #model-card { border-color: rgba(255,255,255,0.12); }
+#model-card h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 10px; }
+#model-card p { font-size: 14px; line-height: 1.55; color: var(--text-soft); margin-bottom: 18px; }
+#model-options { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.model-opt {
+  border: 1.5px solid var(--border, rgba(0,0,0,0.08)); background: var(--surface);
+  border-radius: 14px; padding: 14px 16px; cursor: pointer; font-family: inherit;
+  transition: border-color 0.15s var(--ease), transform 0.12s var(--ease), background 0.15s var(--ease);
+}
+.model-opt:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent); transform: translateY(-1px); }
+.model-opt.recommended { border-color: var(--accent); }
+.model-opt-head { display: flex; align-items: center; gap: 8px; }
+.model-opt-name { font-size: 15px; font-weight: 700; color: var(--text); }
+.model-opt-badge {
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--accent);
+  padding: 2px 8px; border-radius: 99px;
+}
+.model-opt-size { font-size: 12.5px; color: var(--accent); font-weight: 600; margin: 2px 0 6px; }
+.model-opt-blurb { font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
+.model-fine { font-size: 12px !important; opacity: 0.7; margin: 16px 0 0 !important; }
+
 #whatsnew h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 12px; }
 #whatsnew #wn-version { color: var(--accent); }
 #whatsnew p { font-size: 14.5px; line-height: 1.6; color: var(--text-soft); margin-bottom: 18px; }
