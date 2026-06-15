@@ -111,7 +111,7 @@
       } catch {}
     }
 
-    function addToast({ id, kind, text, action, persist }) {
+    function addToast({ id, kind, text, action, persist, ready }) {
       playChime();
       // de-dupe by id (e.g. a download's started→done update reuses the row)
       if (id != null) {
@@ -129,7 +129,9 @@
       if (action) body.addEventListener('click', () => { overlay.action(action); removeToast(el); });
       el.appendChild(body);
 
-      if (kind === 'update') {
+      // Only the DOWNLOADED update gets a Restart button — "found/downloading"
+      // can't restart yet, so it just informs and auto-dismisses.
+      if (kind === 'update' && ready) {
         const btn = document.createElement('button');
         btn.className = 't-restart';
         btn.textContent = 'Restart';

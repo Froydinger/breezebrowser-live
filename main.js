@@ -2971,11 +2971,13 @@ function getAutoUpdater() {
   // Detected a newer version (checked on every launch + every 4h) — tell the
   // user immediately, then again (persistently) once it's downloaded & ready.
   autoUpdater.on('update-available', (info) => {
-    showToast({ kind: 'update', text: `New version ${info?.version || ''} found — downloading…`.trim() });
+    // Same id so the "ready" toast below replaces this one. No Restart button
+    // yet (nothing to restart into) — it just informs and auto-dismisses.
+    showToast({ id: 'app-update', kind: 'update', text: `Downloading update ${info?.version || ''}…`.trim() });
   });
   autoUpdater.on('update-downloaded', () => {
     updateDownloaded = true;
-    showToast({ kind: 'update', text: 'Update ready', persist: true });
+    showToast({ id: 'app-update', kind: 'update', text: 'Update ready', ready: true, persist: true });
   });
   autoUpdaterRef = autoUpdater;
   return autoUpdater;
