@@ -248,6 +248,17 @@ body.urlbar-top #nav-row { display: none; }
   animation: spin 0.7s linear infinite;
 }
 
+/* 🚀 Performance Mode badge — only shown on tabs with the mode on */
+.tab .perf-badge {
+  display: none;
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.tab.perf .perf-badge { display: inline-block; }
+/* hide the badge on hover so the pin/close buttons have room */
+.tab:hover .perf-badge { display: none; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .tab .close {

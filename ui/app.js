@@ -198,6 +198,10 @@ function renderTabs() {
       pinBtn.className = 'close pin-tab-btn';
       pinBtn.title = 'Pin as app';
       pinBtn.innerHTML = `<svg viewBox="0 0 12 12"><path d="M7.2 1.2 10.8 4.8 9.3 5.1 7.5 6.9 7.2 9.6 5.4 7.8 2.4 10.8 1.2 9.6 4.2 6.6 2.4 4.8 5.1 4.5 6.9 2.7z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`;
+      const rocket = document.createElement('span');
+      rocket.className = 'perf-badge';
+      rocket.textContent = '🚀';
+      rocket.title = 'Performance Mode on';
       const close = document.createElement('button');
       close.className = 'close';
       close.title = 'Close tab';
@@ -208,7 +212,7 @@ function renderTabs() {
         breeze.pinTab(t.id);
       });
 
-      el.append(fav, title, pinBtn, close);
+      el.append(fav, title, rocket, pinBtn, close);
       el.addEventListener('click', () => breeze.activateTab(t.id));
       close.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -255,6 +259,7 @@ function renderTabs() {
     el.classList.toggle('split', t.id === state.splitTabId);
     el.classList.toggle('incognito', !!t.incognito);
     el.classList.toggle('asleep', !!t.sleeping);
+    el.classList.toggle('perf', !!t.perfMode);
     el.querySelector('.title').textContent = t.title;
 
     const fav = el.querySelector('.favicon');

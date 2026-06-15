@@ -530,6 +530,7 @@ function tabState(t) {
       incognito: !!t.incognito,
       sleeping: true,
       groupEid: t.groupEid || null,
+      perfMode: !!t.perfMode,
     };
   }
   const wc = t.view.webContents;
@@ -549,6 +550,7 @@ function tabState(t) {
     incognito: !!t.incognito,
     sleeping: false,
     groupEid: t.groupEid || null,
+    perfMode: !!t.perfMode,
     // URL-bar notification bell: shown only for sites that use notifications
     notifSite: !!(origin && (appSettings.notifSites || {})[origin]),
     notifOn: origin ? notifAllowed(origin) : false,
@@ -639,10 +641,12 @@ function buildView(t, url) {
   // hardware video overlay), but the idle burn was elsewhere (perpetual
   // animations + pushState storms) — keeping the look is worth it.
   try {
-    view.setBorderRadius(12);
+    view.setBorderRadius(t.perfMode ? 0 : 12);
   } catch {} // older Electron: no rounded corners, no problem
 
   const wc = view.webContents;
+  // Reapply Performance Mode if this tab had it on (e.g. after waking).
+  if (t.perfMode) { try { wc.setBackgroundThrottling(false); } catch {} }
   wc.on('focus', () => { lastWCFocusAt = Date.now(); });
   const sync = () => pushState();
   wc.on('page-title-updated', sync);
@@ -689,7 +693,8 @@ function buildView(t, url) {
   });
   wc.on('leave-html-full-screen', () => {
     applyBounds();
-    try { view.setBorderRadius(12); } catch {} // restore the rounded look
+    // restore the rounded look — unless Performance Mode wants square corners
+    try { view.setBorderRadius(t.perfMode ? 0 : 12); } catch {}
   });
   // incognito tabs never touch history
   wc.on('did-navigate', (_e, navUrl) => {
@@ -862,6 +867,23 @@ function wakeTab(t) {
   if (!t.sleeping || t.view) return;
   buildView(t, t.saved?.url || NEWTAB_URL);
   t.saved = null;
+}
+
+// Performance Mode (the 🚀 toggle): per-tab wins for cloud gaming / streaming.
+// 1) flatten corners → restores the zero-copy hardware video overlay (the real
+//    smoothness win), and 2) disable background throttling so the tab keeps
+//    running full-tilt even when it's not focused. Scoped to THIS tab only —
+//    no global frame-rate uncap (that broke Framer Motion + drained battery).
+function setPerfMode(id, on) {
+  const t = tabs.get(id);
+  if (!t) return;
+  t.perfMode = !!on;
+  const wc = t.view?.webContents;
+  if (wc) {
+    try { t.view.setBorderRadius(on ? 0 : 12); } catch {}
+    try { wc.setBackgroundThrottling(!on); } catch {}
+  }
+  pushState();
 }
 
 setInterval(() => {
@@ -1266,6 +1288,13 @@ function showTabContextMenu(id) {
           click: () => enterSplit(id),
         },
     { type: 'separator' },
+    {
+      label: '🚀 Performance Mode',
+      type: 'checkbox',
+      checked: !!t.perfMode,
+      enabled: isWeb,
+      click: () => setPerfMode(id, !t.perfMode),
+    },
     {
       label: 'Allow Popups',
       type: 'checkbox',
