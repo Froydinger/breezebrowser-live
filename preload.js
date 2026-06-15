@@ -61,8 +61,6 @@ contextBridge.exposeInMainWorld('breeze', {
   mediaPiP: (id) => ipcRenderer.send('media-pip', id),
   installUpdate: () => ipcRenderer.send('install-update'),
   getInit: () => ipcRenderer.invoke('get-init'),
-  onWhatsNew: (cb) => ipcRenderer.on('whats-new', (_e, d) => cb(d)),
-  whatsNewDone: () => ipcRenderer.send('whats-new-done'),
   copyText: (text) => ipcRenderer.send('copy-text', text),
   shareUrl: (url) => ipcRenderer.send('share-url', url),
   aiFullscreen: (on) => ipcRenderer.send('ai-fullscreen-set', on),

@@ -63,24 +63,6 @@ breeze.getInit().then(({ theme, sidebarVisible, settings }) => {
   else setTimeout(maybePromptModel, 800);
 });
 
-// What's-new popup after an update. Native page views paint over the DOM, so
-// reuse onboarding's detach/reattach the same way the first-run dialog does.
-breeze.onWhatsNew((data) => {
-  const el = $('#whatsnew');
-  if (!el) return;
-  const v = $('#wn-version');
-  if (v && data && data.version) v.textContent = 'v' + data.version;
-  // Page views are already detached in the main process before this fires.
-  el.classList.remove('hidden');
-  requestAnimationFrame(() => el.classList.add('visible'));
-  $('#whatsnew-close').addEventListener('click', () => {
-    breeze.whatsNewDone(); // re-attach the page view(s)
-    el.classList.remove('visible');
-    setTimeout(() => el.classList.add('hidden'), 450);
-    maybePromptModel(); // offer the model picker if they haven't chosen yet
-  }, { once: true });
-});
-
 // ---------------------------------------------------------------------------
 // First-run onboarding
 // ---------------------------------------------------------------------------

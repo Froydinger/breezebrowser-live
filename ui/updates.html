@@ -51,6 +51,33 @@
     li::before { content: '–'; position: absolute; left: 2px; color: var(--accent); }
     li b { color: var(--text); font-weight: 600; }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+    /* Hero card for the newest release */
+    .hero {
+      position: relative; overflow: hidden;
+      border-radius: 22px; padding: 30px 30px 26px; margin-bottom: 44px;
+      color: #fff;
+      background: linear-gradient(135deg, #5b7cfa 0%, #7c5bfa 45%, #b65bfa 100%);
+      box-shadow: 0 24px 60px -18px color-mix(in srgb, var(--accent) 70%, transparent);
+      animation: hero-pop 0.6s var(--ease);
+    }
+    @keyframes hero-pop { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
+    .hero-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(8px); }
+    .hero-orb.o1 { width: 220px; height: 220px; top: -90px; right: -60px; background: radial-gradient(circle, rgba(255,255,255,0.35), transparent 70%); }
+    .hero-orb.o2 { width: 160px; height: 160px; bottom: -80px; left: -40px; background: radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%); }
+    .hero > * { position: relative; z-index: 1; }
+    .hero-pill {
+      display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
+      background: rgba(255,255,255,0.22); padding: 5px 12px; border-radius: 99px; margin-bottom: 14px;
+      backdrop-filter: blur(6px);
+    }
+    .hero-title { font-size: 26px; font-weight: 760; letter-spacing: -0.6px; margin-bottom: 16px; }
+    .hero-list { display: flex; flex-direction: column; gap: 10px; }
+    .hero-list li { font-size: 14px; line-height: 1.55; color: rgba(255,255,255,0.92); padding-left: 18px; position: relative; }
+    .hero-list li::before { content: '→'; position: absolute; left: 0; color: #fff; }
+    .hero-list li b { color: #fff; font-weight: 700; }
+    .past-head { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+      color: var(--soft); margin: 0 0 22px 2px; }
   </style>
 </head>
 <body>
@@ -66,11 +93,15 @@
 
   <script>
     const RELEASES = [
+      { v: '2.9.0', major: true, title: 'Snappier, calmer, all-Qwen', items: [
+        '<b>One brain family, two sizes</b> — both the fast and smart models are now Qwen2.5 (3B and 7B). Rock-solid at tools, no more stalls.',
+        '<b>No more crash-report popup on quit</b> — ⌘Q, Finder → Quit, and updates now exit cleanly.',
+        '<b>This changelog got fancy</b> — the latest release now gets the spotlight up top. 👋' ] },
       { v: '2.8.0', major: true, title: 'This very page', items: [
         'Updates now open to a <b>changelog page you can revisit</b> — not a popup that vanishes. Visit it anytime by typing <b>/updates</b> or via <b>Help → What\'s New</b>.',
         'Backfilled the full history so you can see where Breeze started and how far it\'s come.' ] },
       { v: '2.7.0', major: true, title: 'Pick your AI brain', items: [
-        'Breeze now matches the AI model to your device — a smart <b>Qwen2.5 7B</b> for powerful Macs, or a fast, light <b>Llama 3.2 3B</b> for everything else.',
+        'Breeze now matches the AI model to your device — a smart <b>Qwen2.5 7B</b> for powerful Macs, or a fast, light <b>Qwen2.5 3B</b> for everything else.',
         'A friendly picker recommends the best fit for your machine after each big update — your choice, always.',
         'Switch models anytime in <b>Settings → AI</b>.' ] },
       { v: '2.6.0', major: true, title: 'A smarter, more capable assistant', items: [
@@ -103,7 +134,24 @@
     ];
 
     const log = document.getElementById('log');
-    for (const r of RELEASES) {
+    const [latest, ...past] = RELEASES;
+
+    // The newest release gets a big, celebratory hero card.
+    const hero = document.createElement('div');
+    hero.className = 'hero';
+    hero.innerHTML =
+      '<div class="hero-orb o1"></div><div class="hero-orb o2"></div>' +
+      `<span class="hero-pill">✨ Just landed · v${latest.v}</span>` +
+      `<h2 class="hero-title">${latest.title}</h2>` +
+      `<ul class="hero-list">${latest.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+    log.appendChild(hero);
+
+    const head = document.createElement('div');
+    head.className = 'past-head';
+    head.textContent = 'The road here';
+    log.appendChild(head);
+
+    for (const r of past) {
       const el = document.createElement('div');
       el.className = 'rel' + (r.major ? '' : ' minor');
       el.innerHTML =

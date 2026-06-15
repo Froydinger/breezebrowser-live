@@ -2246,10 +2246,10 @@ async function setupAdblock() {
 // Local AI assistant (llama.cpp via node-llama-cpp, Metal-accelerated)
 // ---------------------------------------------------------------------------
 
-// Qwen2.5 3B Instruct — same ~2GB footprint as Llama 3.2 3B but markedly better
-// at function-calling, which is what powers reminders + agentic web search.
-// Stays 100% local (downloaded once, runs on-device via Metal/CPU).
-// Two tiers — a smart 7B for capable machines, a fast 3B for everything else.
+// Local AI, Qwen2.5 throughout — it's reliable at function-calling, which is
+// what powers reminders, open_page, and agentic web search. Stays 100% local
+// (downloaded once, runs on-device via Metal/CPU). Two tiers — a smart 7B for
+// capable machines, a fast 3B for everything else.
 const MODELS = {
   smart: {
     uri: 'hf:bartowski/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
@@ -2258,8 +2258,8 @@ const MODELS = {
     blurb: 'Smartest answers and most reliable at tasks like “summarize this page.” Best on Apple Silicon Macs with 16 GB+.',
   },
   fast: {
-    uri: 'hf:bartowski/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-    label: 'Llama 3.2 3B',
+    uri: 'hf:bartowski/Qwen2.5-3B-Instruct-GGUF/Qwen2.5-3B-Instruct-Q4_K_M.gguf',
+    label: 'Qwen2.5 3B',
     size: '~2 GB',
     blurb: 'Lighter and quicker, great for chat and rewrites. Best for 8 GB Macs, Intel Macs, and Windows.',
   },
@@ -3600,16 +3600,6 @@ ipcMain.on('set-ai-model', (_e, tier) => {
   modelPrefetch = null;
   prefetchModel();
 });
-// What's-new popup dismissed → reattach the active (and split) page view.
-ipcMain.on('whats-new-done', () => {
-  const a = tabs.get(activeTabId);
-  const s = splitTabId ? tabs.get(splitTabId) : null;
-  for (const v of [a, s]) {
-    if (v?.view) { try { win.contentView.addChildView(v.view); } catch {} }
-  }
-  applyBounds();
-  raiseOverlay();
-});
 // New-tab Dia input → send a chat: open the assistant fullscreen and submit.
 ipcMain.on('ai-ask-from-newtab', (_e, text) => {
   const t = String(text || '').trim();
@@ -4080,27 +4070,24 @@ app.on('before-quit', () => {
   // flush storage + drop the clean-exit marker so the next launch knows we
   // shut down properly (⌘Q, menu quit, window close — all routed here)
   markCleanExit();
-  // node-llama-cpp's native (Metal) worker threads keep the process alive
-  // after the windows are gone — ⌘Q looked dead until force quit. Release
-  // everything; each dispose is independent so one failure can't skip the rest.
+  // Do NOT dispose the native llama/GGML objects here. Their teardown can call
+  // abort() during process exit → the macOS crash-report dialog on an otherwise
+  // clean quit. We just stop generation (JS-level, safe) and let will-quit
+  // hard-exit before any native teardown runs; the OS reclaims the memory.
   try { clearTimeout(ai.idleTimer); } catch {}
   try { ai.abort?.abort(); } catch {}
-  try { ai.session?.dispose(); } catch {}
-  try { ai.sequence?.dispose(); } catch {}
-  try { ai.context?.dispose(); } catch {}
-  try { ai.model?.dispose(); } catch {}
-  try { ai.llama?.dispose(); } catch {}
 });
 
 // belt-and-suspenders: also flush on hard process signals
 app.on('will-quit', () => {
   markCleanExit();
-  // node-llama-cpp's native (Metal/GGML) worker can throw during Node's
+  // node-llama-cpp's native (Metal/GGML) worker aborts during Node's
   // FreeEnvironment teardown → SIGABRT crash report on an otherwise clean quit.
-  // We've already disposed + flushed, so hard-exit before that teardown runs.
-  // (Skip during an update install — Squirrel needs the graceful quit to swap.)
+  // We've flushed everything, so hard-exit NOW (clean code 0) before that
+  // teardown can run. (Skip during an update install — Squirrel needs the
+  // graceful quit to swap in the new version.)
   if (!installingUpdate) {
-    setTimeout(() => { try { app.exit(0); } catch {} }, 120);
+    try { process.exit(0); } catch {}
   }
 });
 process.on('exit', markCleanExit);
