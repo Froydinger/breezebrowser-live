@@ -1,7 +1,7 @@
 {
   "name": "breeze-browser",
   "productName": "Breeze",
-  "version": "2.9.1",
+  "version": "2.9.2",
   "description": "Breeze is a fast, Chromium-based browser with local AI, native ad blocking, and zero tracking. Your data stays yours. Forever.",
   "main": "main.js",
   "scripts": {

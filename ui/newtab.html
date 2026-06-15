@@ -291,14 +291,32 @@
     }
 
     // Dia-style: a plain question goes to the assistant; a URL navigates.
+    let pendingMsg = null;
     function chat(q) {
       if (!q) return;
       if (!window.breezeInternal || !breezeInternal.askAI) { go(q); return; }
+      // Never send into a cold model — it just spins. If it's not warm yet,
+      // hold the message and fire it automatically the instant it's ready.
+      breezeInternal.aiReady().then((ready) => {
+        if (ready) doChat(q);
+        else { pendingMsg = q; input.value = ''; hideSug(); showWarming(); }
+      });
+    }
+    function doChat(q) {
       breezeInternal.askAI(q);
       input.value = '';
-      input.placeholder = 'Sent to Breeze';
+      input.placeholder = 'Ask Breeze, or type a URL';
       hideSug();
       setTimeout(updateHint, 1400);
+    }
+    function showWarming() {
+      input.placeholder = 'Breeze AI is warming up…';
+      hintEl.textContent = '⏳  Warming up the model — your message sends automatically when it\'s ready';
+    }
+    if (window.breezeInternal && breezeInternal.onAIReady) {
+      breezeInternal.onAIReady(() => {
+        if (pendingMsg) { const m = pendingMsg; pendingMsg = null; doChat(m); }
+      });
     }
 
     const hintEl = document.getElementById('hint');

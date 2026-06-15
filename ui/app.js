@@ -1156,6 +1156,25 @@ let activeSelection = ''; // page text the user highlighted while panel is open
 function sendAI() {
   const text = aiInput.value.trim();
   if (!text || aiGenerating) return;
+  if (!aiReady) {
+    // Model isn't warm yet — don't fire into a cold model (it just spins).
+    // Hold the message and send it automatically the instant it's ready.
+    pendingSidebarMsg = text;
+    aiInput.value = '';
+    aiInput.style.height = 'auto';
+    aiStatusbar.textContent = 'Warming up the model — your message will send the moment it\'s ready…';
+    // In case it became ready just now and we missed the broadcast, re-check.
+    breeze.aiReady().then((r) => {
+      if (r && pendingSidebarMsg) {
+        aiReady = true;
+        const m = pendingSidebarMsg;
+        pendingSidebarMsg = null;
+        aiInput.value = m;
+        sendAI();
+      }
+    });
+    return;
+  }
   addMsg('user', text);
   chatMessages.push({ role: 'user', text });
   aiInput.value = '';
@@ -1310,6 +1329,28 @@ breeze.onAIChunk((chunk) => {
   aiMessages.scrollTop = aiMessages.scrollHeight;
 });
 
+// Context-overflow recovery REPLACES the half-streamed message (no splicing).
+breeze.onAIReplace((text) => {
+  if (!currentAIMsg) currentAIMsg = addMsg('ai', '');
+  currentAIMsg.classList.remove('thinking');
+  setMsgText(currentAIMsg, text);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+});
+
+// Model readiness — never let a message fire into a cold model (it just spins).
+let aiReady = false;
+let pendingSidebarMsg = null;
+breeze.aiReady().then((r) => { aiReady = r; }).catch(() => {});
+breeze.onAIReady(() => {
+  aiReady = true;
+  if (pendingSidebarMsg) {
+    const m = pendingSidebarMsg;
+    pendingSidebarMsg = null;
+    aiInput.value = m;
+    sendAI();
+  }
+});
+
 breeze.onAIDone(() => {
   if (currentAIMsg) {
     currentAIMsg.classList.remove('thinking');
@@ -1330,6 +1371,7 @@ breeze.onAIStatus((s) => {
   aiProgress.classList.remove('show');
   switch (s.state) {
     case 'downloading': {
+      aiReady = false;
       const pct = Math.round((s.progress || 0) * 100);
       aiStatusbar.textContent = `Getting ready — downloading model (one time) ${pct}%`;
       aiProgress.classList.add('show');
@@ -1337,6 +1379,7 @@ breeze.onAIStatus((s) => {
       break;
     }
     case 'loading':
+      aiReady = false;
       aiStatusbar.textContent = 'Almost ready — warming up the model…';
       aiProgress.classList.add('show');
       aiProgressFill.style.width = '100%';
@@ -1351,6 +1394,14 @@ breeze.onAIStatus((s) => {
       aiStatusbar.textContent = 'Thinking…';
       break;
     case 'ready':
+      aiReady = true;
+      if (pendingSidebarMsg) {
+        const m = pendingSidebarMsg;
+        pendingSidebarMsg = null;
+        aiInput.value = m;
+        sendAI();
+        break;
+      }
       aiStatusbar.textContent = 'Qwen2.5 · local · private';
       break;
     case 'error':

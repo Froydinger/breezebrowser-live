@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('breezeInternal', {
   makeDefaultBrowser: () => ipcRenderer.send('make-default-browser'),
   switchToTab: (id) => ipcRenderer.send('switch-to-tab', id),
   askAI: (text) => ipcRenderer.send('ai-ask-from-newtab', text),
+  aiReady: () => ipcRenderer.invoke('ai-ready'),
+  onAIReady: (cb) => ipcRenderer.on('ai-ready', () => cb()),
   getModelInfo: () => ipcRenderer.invoke('get-model-info'),
   setAIModel: (tier) => ipcRenderer.send('set-ai-model', tier),
   onFocusInput: (cb) => ipcRenderer.on('focus-newtab-input', () => cb()),

@@ -2265,12 +2265,11 @@ const MODELS = {
   },
 };
 
-// Recommend a tier from the device: only Apple Silicon with ample RAM gets the
-// 7B; everything else (8GB Macs, Intel, Windows on CPU) gets the snappy 3B.
+// We default EVERYONE to the smart 7B — the 3B is noticeably weaker (esp. at
+// summarizing) and the 7B is what makes the assistant feel good. The fast 3B
+// stays available as an explicit opt-in for low-spec machines (with a warning).
 function recommendedTier() {
-  const gb = os.totalmem() / 1e9;
-  const appleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
-  return appleSilicon && gb >= 15 ? 'smart' : 'fast';
+  return 'smart';
 }
 // The effective tier: the user's explicit choice, else the recommendation.
 function currentTier() {
@@ -2325,25 +2324,18 @@ function sendAI(status) {
   win?.webContents.send('ai-status', status);
 }
 
-// Pre-download the model FILE at launch (not loaded into RAM) so the user
-// never waits on a multi-GB download when they first open the assistant. The
-// file is cached, so this is a no-op on later launches. ensureAI awaits this
-// before its own download so the two never race into a double download.
-let modelPrefetch = null;
-function prefetchModel() {
-  if (ai.ready || ai.loading || modelPrefetch) return modelPrefetch;
-  modelPrefetch = (async () => {
-    try {
-      const { resolveModelFile } = await import('node-llama-cpp');
-      await resolveModelFile(currentModel().uri, {
-        directory: path.join(app.getPath('userData'), 'models'),
-        onProgress: ({ downloadedSize, totalSize }) =>
-          sendAI({ state: 'downloading', progress: totalSize ? downloadedSize / totalSize : 0 }),
-      });
-    } catch { /* ensureAI will surface any real error when the panel opens */ }
-  })();
-  return modelPrefetch;
+// Tell every surface (chrome + new-tab pages) the model is ready to take input.
+function broadcastAIReady() {
+  try { win?.webContents.send('ai-ready'); } catch {}
+  for (const t of tabs.values()) {
+    try { t.view?.webContents.send('ai-ready'); } catch {}
+  }
 }
+
+// Warm up the model — download AND load it into memory — so it's GUARANTEED
+// ready before the user sends anything. Called at launch (once chosen) and
+// after a model switch, not just when the panel opens. Broadcasts 'ai-ready'.
+function warmUpModel() { ensureAI(); }
 
 async function ensureAI() {
   if (ai.ready || ai.loading) return ai.ready;
@@ -2356,7 +2348,6 @@ async function ensureAI() {
     ai.defineChatSessionFunction = defineChatSessionFunction;
 
     sendAI({ state: 'downloading', progress: 0 });
-    if (modelPrefetch) { try { await modelPrefetch; } catch {} } // reuse the launch download
     const modelPath = await resolveModelFile(currentModel().uri, {
       directory: path.join(app.getPath('userData'), 'models'),
       onProgress: ({ downloadedSize, totalSize }) =>
@@ -2370,10 +2361,13 @@ async function ensureAI() {
     ai.llama = ai.llama || (await getLlama());
     ai.model = await ai.llama.loadModel({ modelPath });
     // smaller context = much less RAM; plenty for page Q&A
-    ai.context = await ai.model.createContext({ contextSize: { max: 4096 } });
+    // 8192 gives page summaries real headroom — 4096 overflowed mid-answer on
+    // longer pages and spliced the "context too long" recovery into the reply.
+    ai.context = await ai.model.createContext({ contextSize: { max: 8192 } });
     newChat();
     ai.ready = true;
     sendAI({ state: 'ready' });
+    broadcastAIReady(); // tell the chrome + new-tab pages they can send now
   } catch (err) {
     console.error('AI init failed:', err);
     sendAI({ state: 'error', message: err.message });
@@ -2733,7 +2727,7 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
     if (ctx) {
       win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
       prompt =
-        `[Current page: "${ctx.title}" — ${ctx.url}]\n[Page content]\n${ctx.text}\n` +
+        `[Current page: "${ctx.title}" — ${ctx.url}]\n[Page content]\n${ctx.text.slice(0, 6000)}\n` +
         `[End page content]\n\n${prompt}`;
       ai.lastCtxUrl = ctx.url;
     }
@@ -2785,7 +2779,7 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
         const ctx = await getPageContext();
         if (!ctx) return 'There is no readable web page open right now. If the user named a site, use open_page to open it first.';
         win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
-        return `Page: "${ctx.title}" — ${ctx.url}\n\n${ctx.text}`;
+        return `Page: "${ctx.title}" — ${ctx.url}\n\n${ctx.text.slice(0, 6000)}`;
       },
     }),
     open_page: def({
@@ -2875,9 +2869,11 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
       if (/context|sequence|kv|slot/i.test(err.message)) {
         try {
           newChat();
+          // REPLACE the half-streamed message (don't append, or the recovery
+          // text gets spliced into the partial answer — the garbled summary bug).
           win?.webContents.send(
-            'ai-chunk',
-            'This conversation got too long for the model — I started a fresh chat. Ask me again!'
+            'ai-replace',
+            'That got a bit too long for the model, so I cleared the chat. Ask me again and I\'ll keep it tight!'
           );
         } catch {
           sendAI({ state: 'error', message: err.message });
@@ -3211,15 +3207,14 @@ function createWindow() {
     // page view would paint over it. So defer the first tab until onboarding
     // finishes (see the 'onboarding-active' handler).
     if (appSettings.onboarded) restoreSessionOrNewTab();
-    // One-shot "what's new" popup after an update. Only for already-onboarded
-    // users (never on a brand-new install) and only when the version changed.
-    // BREEZE_WHATSNEW_FROM forces it for testing without touching real settings.
-    // After an update, open the changelog page (replaces the old one-shot
-    // popup — now it's a real page the user can revisit any time via /updates).
+    // After an update, open the changelog page (a real page the user can revisit
+    // any time via /updates). Deferred + force-activated so restored tabs and
+    // the model picker can't leave it buried in the background (the resume-tabs
+    // bug). BREEZE_WHATSNEW_FROM forces it for testing.
     const curV = app.getVersion();
     const force = process.env.BREEZE_WHATSNEW_FROM;
     if (force || (appSettings.onboarded && (appSettings.lastSeenVersion || '') !== curV)) {
-      openInternalTab(UPDATES_URL);
+      setTimeout(() => { try { openInternalTab(UPDATES_URL); } catch {} }, 700);
     }
     if (!force && (appSettings.lastSeenVersion || '') !== curV) {
       applySetting('lastSeenVersion', curV);
@@ -3583,12 +3578,11 @@ ipcMain.handle('get-model-info', () => ({
 ipcMain.on('set-ai-model', (_e, tier) => {
   if (!MODELS[tier]) return;
   if (appSettings.aiModel === tier && MODELS[appSettings.aiModel]) {
-    // already on it — still make sure it's downloading
-    prefetchModel();
+    warmUpModel(); // already on it — make sure it's warming
     return;
   }
   applySetting('aiModel', tier);
-  // drop the current model + any in-flight prefetch, then fetch the new one
+  // drop the current model, then warm up the new one
   try { ai.abort?.abort(); } catch {}
   try { ai.session?.dispose(); } catch {}
   try { ai.sequence?.dispose(); } catch {}
@@ -3597,9 +3591,9 @@ ipcMain.on('set-ai-model', (_e, tier) => {
   ai.session = ai.sequence = ai.context = ai.model = null;
   ai.ready = false;
   ai.generating = false;
-  modelPrefetch = null;
-  prefetchModel();
+  warmUpModel();
 });
+ipcMain.handle('ai-ready', () => ai.ready);
 // New-tab Dia input → send a chat: open the assistant fullscreen and submit.
 ipcMain.on('ai-ask-from-newtab', (_e, text) => {
   const t = String(text || '').trim();
@@ -3995,11 +3989,11 @@ app.whenReady().then(async () => {
   createWindow();
   setupAutoUpdate();
   warmConnections();
-  // Once the user has chosen a model, pull it in the background at launch so
-  // it's ready before they open the assistant. Before they've chosen, we wait
-  // for their pick in the welcome/update model modal instead of auto-pulling.
+  // Once the user has chosen a model, warm it up in the background at launch
+  // (download + load) so it's GUARANTEED ready before they send anything.
+  // Before they've chosen, we wait for their pick in the model modal.
   setTimeout(() => {
-    try { if (MODELS[appSettings.aiModel]) prefetchModel(); } catch {}
+    try { if (MODELS[appSettings.aiModel]) warmUpModel(); } catch {}
   }, 4000);
 
   app.on('activate', () => {
