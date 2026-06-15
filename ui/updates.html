@@ -139,12 +139,13 @@
       'lightbulb': '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
       'download': '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
       'ban': '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+      'unlock': '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
     };
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
-      { v: '2.9.7', icon: 'ban', title: 'Tames runaway reloads', items: [
-        'Pages that quietly reload themselves every couple seconds (some Adobe flows do this) now get caught and stopped — not just the fast spammy ones.' ] },
+      { v: '2.9.8', icon: 'unlock', title: 'Lighter touch on reloads', items: [
+        'Removed the "this page reloaded too many times" guard — it was too uptight and got in the way of legit sites. Pages just load freely now.' ] },
       { v: '2.9.6', major: true, icon: 'shapes', title: 'A changelog with character', items: [
         'Every update now gets its <b>own unique icon and a bit of motion</b> — no more plain glowing tile (and no more stars).',
         'Fixed a layout slip that left the featured card mostly empty.' ] },
