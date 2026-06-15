@@ -2658,20 +2658,31 @@ async function agenticWebSearch(query) {
   await waitForLoad(wc);
 
   // Read the results page ITSELF — don't open any single result. Modern search
-  // engines (esp. the AI ones) STREAM their synthesized answer in over a few
-  // seconds AFTER load, so we can't read immediately or we get a near-empty
-  // page (and the model then hallucinates). Wait for the page text to stop
-  // growing (settle) with a ~3s floor and ~8s ceiling.
+  // engines (esp. the AI ones like Spectra) STREAM their synthesized answer in
+  // over several seconds AFTER load, in BURSTS with pauses. So we must wait for
+  // the page to truly stop moving — not bail on the first pause, or we grab a
+  // half-streamed answer (e.g. the search-mode chip instead of the real result).
   aiToolChip(`Reading the ${engineName} results`);
   await delay(1500);
-  let serp = '';
+  let serp = await extractFrom(wc);
+  const baseline = serp.length; // length of the initial (pre-stream) page
+  let sawGrowth = false; // did the answer actually stream in past the chrome?
+  let stable = 0; // consecutive polls where the text barely changed
   const started = Date.now();
-  while (Date.now() - started < 7000) {
+  while (Date.now() - started < 16000) {
+    await delay(700);
     const t2 = await extractFrom(wc);
-    // settled: a non-trivial page that stopped growing meaningfully
-    if (t2.length > 200 && t2.length - serp.length < 40) { serp = t2; break; }
-    if (t2.length > serp.length) serp = t2;
-    await delay(800);
+    if (t2.length > baseline + 200) sawGrowth = true;
+    const delta = Math.abs(t2.length - serp.length);
+    serp = t2; // always keep the LATEST text (handles placeholder→answer swaps)
+    if (t2.length > 300 && delta < 25) {
+      stable++;
+      // streaming engine: settle ~2s after the stream stops. instant engine
+      // (no growth): require a longer calm before trusting it's done.
+      if ((sawGrowth && stable >= 3) || stable >= 6) break;
+    } else {
+      stable = 0;
+    }
   }
 
   let links = [];
