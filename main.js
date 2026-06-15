@@ -21,7 +21,15 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Uncap Chromium's 60fps software render ceiling so high-refresh displays
 // (120/144Hz) can actually run at full rate — helps cloud gaming and smooth
 // scrolling. No idle cost: frames are only produced when something changes.
-app.commandLine.appendSwitch('disable-frame-rate-limit');
+// On by default; user can disable it in Settings → Performance (needs restart,
+// since it's a launch flag). Read the file directly — settingsPath/loadSettings
+// aren't initialized this early (const TDZ), and this runs before app.whenReady.
+let uncapFrameRate = true;
+try {
+  const _s = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
+  if (_s && _s.uncapFrameRate === false) uncapFrameRate = false;
+} catch {}
+if (uncapFrameRate) app.commandLine.appendSwitch('disable-frame-rate-limit');
 
 // Make sure OS dialogs and menus say "Breeze", never "Electron"
 app.setName('Breeze');
@@ -100,6 +108,8 @@ const DEFAULT_SETTINGS = {
   reminders: [], // [{ id, label, fireAt }] active reminders, re-armed on launch
   restoreTabs: 'ask', // 'ask' | 'always' | 'never' — reopen last session's tabs
   savedTabs: [], // URLs persisted from the previous session, restored on launch
+  uncapFrameRate: true, // disable the 60fps render cap (launch flag; restart to apply)
+  flattenFullscreenCorners: true, // square corners in fullscreen → hw video overlay
 };
 
 const TOPBAR_HEIGHT = 48; // reserved above the page when the URL bar is on top
@@ -679,8 +689,10 @@ function buildView(t, url) {
     // Flatten corners in fullscreen so the compositor can use the zero-copy
     // hardware video overlay (rounded corners block it) — lower GPU/power and
     // a touch less latency for cloud gaming & fullscreen video. Corners are
-    // off-screen here anyway, so there's no visual cost.
-    try { view.setBorderRadius(0); } catch {}
+    // off-screen here anyway, so there's no visual cost. Opt-out in Settings.
+    if (appSettings.flattenFullscreenCorners !== false) {
+      try { view.setBorderRadius(0); } catch {}
+    }
   });
   wc.on('leave-html-full-screen', () => {
     applyBounds();

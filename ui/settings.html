@@ -444,6 +444,37 @@
             <span class="knob"></span>
           </label>
         </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Reopen tabs on launch</div>
+            <div class="row-hint">Restore the pages you had open when you quit</div>
+          </div>
+          <select id="restoreTabs">
+            <option value="ask">Ask each time</option>
+            <option value="always">Always</option>
+            <option value="never">Never</option>
+          </select>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Uncap frame rate</div>
+            <div class="row-hint">Lets high-refresh displays (120/144Hz) run full speed for video &amp; cloud gaming. Restart to apply.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="uncapFrameRate" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Smoother fullscreen video</div>
+            <div class="row-hint">Squares off corners in fullscreen so video uses the GPU's hardware overlay (lower power, less lag)</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="flattenFullscreenCorners" />
+            <span class="knob"></span>
+          </label>
+        </div>
       </div>
     </section>
 
@@ -652,6 +683,9 @@
         b.classList.toggle('on', b.dataset.v === (settings.pinSize || 'large')));
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
+      document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
+      document.getElementById('uncapFrameRate').checked = settings.uncapFrameRate !== false;
+      document.getElementById('flattenFullscreenCorners').checked = settings.flattenFullscreenCorners !== false;
       // AI fields: don't clobber while the user is actively typing in them
       const ae = document.activeElement;
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
@@ -687,6 +721,9 @@
       b.addEventListener('click', () => set('pinSize', b.dataset.v)));
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
+    document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
+    document.getElementById('uncapFrameRate').addEventListener('change', (e) => set('uncapFrameRate', e.target.checked));
+    document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
 
     // AI text fields — debounced save so we don't spam on every keystroke
