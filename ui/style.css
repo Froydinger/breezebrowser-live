@@ -961,6 +961,31 @@ html.dark #assistant::before {
   box-shadow: 0 16px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
+/* Fullscreen assistant — expands over the whole window (page views are detached
+   in the main process). The chat sits in a centered, readable column. */
+#assistant.fullscreen {
+  left: 0;
+  right: 0;
+  width: 100%;
+  padding: 14px;
+  z-index: 90;
+}
+#assistant.fullscreen::before { inset: 0; border-radius: 0; }
+#assistant.fullscreen .ai-header,
+#assistant.fullscreen #ai-messages,
+#assistant.fullscreen #ai-activity,
+#assistant.fullscreen #ai-statusbar,
+#assistant.fullscreen #ai-progress,
+#assistant.fullscreen .ai-input-row,
+#assistant.fullscreen #ai-chats {
+  width: min(720px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+.ic-collapse { display: none; }
+#assistant.fullscreen .ic-expand { display: none; }
+#assistant.fullscreen .ic-collapse { display: block; }
+
 #assistant .ai-header { padding: 18px 16px 12px; }
 
 .ai-title {

@@ -59,6 +59,7 @@ let nextTabId = 1;
 let sidebarVisible = true;
 let sidebarPeek = false; // temporarily shown via edge-hover, not docked
 let assistantVisible = false;
+let aiFullscreen = false; // assistant expanded over the page (page context cut)
 let layoutAnim = null;
 let currentLeft = sidebarWidth;
 let currentRight = 0;
@@ -450,8 +451,45 @@ function setAssistant(show) {
     // tab). The renderer focuses #ai-input once it has focus.
     try { win?.webContents.focus(); } catch {}
   } else {
+    if (aiFullscreen) setAIFullscreen(false); // closing the panel exits fullscreen
     scheduleAIIdleUnload(); // free the model after the panel's been closed a while
   }
+}
+
+// Fullscreen assistant: the chat DOM expands over the whole window. Native page
+// views always paint above the DOM, so we DETACH them (like onboarding does) —
+// which also isolates the chat: read_current_page is gated off while fullscreen.
+// Docking reattaches the active (and split) views and restores the layout.
+function setAIFullscreen(on) {
+  on = !!on;
+  if (on === aiFullscreen) {
+    if (on) win?.webContents.send('ai-fullscreen', true);
+    return;
+  }
+  const a = tabs.get(activeTabId);
+  const s = splitTabId ? tabs.get(splitTabId) : null;
+  if (on) {
+    if (!assistantVisible) setAssistant(true);
+    aiFullscreen = true;
+    for (const v of [a, s]) {
+      if (v?.view) { try { win.contentView.removeChildView(v.view); } catch {} }
+    }
+    try { win?.webContents.focus(); } catch {}
+  } else {
+    aiFullscreen = false;
+    for (const v of [a, s]) {
+      if (v?.view) { try { win.contentView.addChildView(v.view); } catch {} }
+    }
+    applyBounds();
+    raiseOverlay();
+  }
+  win?.webContents.send('ai-fullscreen', on);
+}
+
+// Any navigation while fullscreen docks the chat so the page can show. Called
+// at the top of activateTab / loadInTab; reattaches the active view itself.
+function autoDockAI() {
+  if (aiFullscreen) setAIFullscreen(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -963,6 +1001,7 @@ function runPiP(wc, code) {
 function activateTab(id) {
   const t = tabs.get(id);
   if (!t || !win) return;
+  autoDockAI(); // a tab switch / new page docks a fullscreen chat
   // clicking the split partner just focuses it; clicking any other tab while
   // split is on exits split first (keeps the layout simple & robust)
   if (splitTabId) {
@@ -2658,6 +2697,7 @@ ipcMain.on('ai-ask', async (_e, { text, selection }) => {
         "when the user's question is about that page (e.g. summarize/explain this).",
       params: { type: 'object', properties: {} },
       handler: async () => {
+        if (aiFullscreen) return 'The assistant is in fullscreen mode, so it has no page to read right now.';
         const ctx = await getPageContext();
         if (!ctx) return 'There is no readable web page open right now.';
         win?.webContents.send('ai-tool', { kind: 'page', label: `Reading "${ctx.title}"` });
@@ -3296,6 +3336,7 @@ ipcMain.on('activate-tab', (_e, id) => activateTab(id));
 // lacks what web pages need (PiP routing, link pre-warm, creds, AI selection).
 function loadInTab(t, url) {
   if (!t) return;
+  if (t.id === activeTabId) autoDockAI(); // navigating the page docks a FS chat
   t.loadTimes = []; t.stormStopped = false; // explicit nav re-arms the guard
   if (!t.view) {
     buildView(t, url);
@@ -3414,6 +3455,15 @@ ipcMain.on('go-forward', () => activeWC()?.navigationHistory.goForward());
 ipcMain.on('reload', () => activeWC()?.reload());
 ipcMain.on('toggle-sidebar', () => setSidebar(!sidebarVisible));
 ipcMain.on('toggle-assistant', () => setAssistant(!assistantVisible));
+ipcMain.on('ai-fullscreen-set', (_e, on) => setAIFullscreen(on));
+// New-tab Dia input → send a chat: open the assistant fullscreen and submit.
+ipcMain.on('ai-ask-from-newtab', (_e, text) => {
+  const t = String(text || '').trim();
+  if (!t) return;
+  setAssistant(true);
+  setAIFullscreen(true);
+  win?.webContents.send('ai-submit', t);
+});
 ipcMain.on('toggle-bookmark', () => toggleBookmark());
 // URL-bar bell: flip this site's notification permission (per-site override)
 ipcMain.on('toggle-site-notif', (_e, origin) => {

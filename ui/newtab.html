@@ -115,6 +115,17 @@
 
     #q::placeholder { color: var(--text-soft); }
 
+    #hint {
+      margin-top: 12px;
+      height: 16px;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--text-soft);
+      letter-spacing: 0.2px;
+      animation: rise 0.6s var(--ease) 0.16s backwards;
+      transition: opacity 0.2s var(--ease);
+    }
+
     #q:focus {
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 30px rgba(0,0,0,0.08);
       transform: translateY(-1px);
@@ -204,7 +215,8 @@
   <div id="greeting"></div>
 
   <form id="form">
-    <input id="q" type="text" placeholder="Search or enter URL" autofocus spellcheck="false" autocomplete="off" />
+    <input id="q" type="text" placeholder="Ask Breeze, or type a URL" autofocus spellcheck="false" autocomplete="off" />
+    <div id="hint"></div>
     <div id="sug"></div>
   </form>
 
@@ -262,13 +274,38 @@
     const input = document.getElementById('q');
     const sugEl = document.getElementById('sug');
 
+    function isURL(q) {
+      return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(q) ||
+        (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' '));
+    }
+
     function go(q) {
       if (!q) return;
-      const isURL = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(q) ||
-        (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(q) && !q.includes(' '));
-      location.href = isURL
+      location.href = isURL(q)
         ? (q.includes('://') ? q : 'https://' + q)
         : (ENGINES[settings.searchEngine] || ENGINES.google).replace('%s', encodeURIComponent(q));
+    }
+
+    // Dia-style: a plain question goes to the assistant; a URL navigates.
+    function chat(q) {
+      if (!q) return;
+      if (!window.breezeInternal || !breezeInternal.askAI) { go(q); return; }
+      breezeInternal.askAI(q);
+      input.value = '';
+      input.placeholder = 'Sent to Breeze ✦';
+      hideSug();
+      setTimeout(updateHint, 1400);
+    }
+
+    const hintEl = document.getElementById('hint');
+    function updateHint() {
+      const q = input.value.trim();
+      if (input.placeholder === 'Sent to Breeze ✦') input.placeholder = 'Ask Breeze, or type a URL';
+      hintEl.textContent = !q
+        ? ''
+        : isURL(q)
+        ? '↵  Go to site'
+        : '↵  Ask Breeze     ·     ⌘↵  Search the web';
     }
 
     // ----- smart suggestions (history + bookmarks + live web) -----
@@ -320,6 +357,7 @@
 
     input.addEventListener('input', () => {
       clearTimeout(timer);
+      updateHint();
       const q = input.value.trim();
       if (!q || !window.breezeInternal) { hideSug(); return; }
       timer = setTimeout(async () => {
@@ -345,6 +383,12 @@
         if (idx === items.length) idx = -1;
         renderSug();
       }
+      // ⌘↵ / Ctrl+↵ — search the web directly instead of asking the assistant
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        hideSug();
+        go(input.value.trim());
+      }
       if (e.key === 'Escape') hideSug();
     });
 
@@ -352,8 +396,11 @@
 
     document.getElementById('form').addEventListener('submit', (e) => {
       e.preventDefault();
-      if (idx >= 0 && items[idx]) accept(items[idx]);
-      else go(input.value.trim());
+      if (idx >= 0 && items[idx]) { accept(items[idx]); return; } // a picked suggestion navigates
+      const q = input.value.trim();
+      if (!q) return;
+      if (isURL(q)) go(q);  // a .com etc → just navigate
+      else chat(q);         // a question → ask the assistant
     });
   </script>
 </body>

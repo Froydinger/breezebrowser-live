@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('breeze', {
   onWhatsNew: (cb) => ipcRenderer.on('whats-new', (_e, d) => cb(d)),
   copyText: (text) => ipcRenderer.send('copy-text', text),
   shareUrl: (url) => ipcRenderer.send('share-url', url),
+  aiFullscreen: (on) => ipcRenderer.send('ai-fullscreen-set', on),
+  onAIFullscreen: (cb) => ipcRenderer.on('ai-fullscreen', (_e, on) => cb(on)),
+  onAISubmit: (cb) => ipcRenderer.on('ai-submit', (_e, text) => cb(text)),
   getSuggestions: (q) => ipcRenderer.invoke('get-suggestions', q),
 
   aiAsk: (opts) => ipcRenderer.send('ai-ask', opts),

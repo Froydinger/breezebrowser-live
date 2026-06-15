@@ -956,6 +956,26 @@ breeze.onAssistant((open) => {
 
 $('#ai-close').addEventListener('click', () => breeze.toggleAssistant());
 
+// Fullscreen ⇄ dock toggle for the assistant. Fullscreen isolates the chat
+// (the main process detaches page views + cuts page-reading context).
+let aiIsFullscreen = false;
+const aiFsBtn = $('#ai-fullscreen-btn');
+aiFsBtn.addEventListener('click', () => breeze.aiFullscreen(!aiIsFullscreen));
+breeze.onAIFullscreen((on) => {
+  aiIsFullscreen = !!on;
+  assistant.classList.toggle('fullscreen', aiIsFullscreen);
+  document.body.classList.toggle('ai-fullscreen', aiIsFullscreen);
+  aiFsBtn.title = aiIsFullscreen ? 'Dock to sidebar' : 'Fullscreen chat';
+  if (aiIsFullscreen) setTimeout(() => aiInput.focus(), 60);
+});
+
+// New-tab Dia input asked the assistant something — submit it here.
+breeze.onAISubmit((text) => {
+  if (!text) return;
+  aiInput.value = text;
+  sendAI();
+});
+
 // ---------------------------------------------------------------------------
 // Local chat history
 // ---------------------------------------------------------------------------
