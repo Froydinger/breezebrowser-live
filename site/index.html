@@ -12,30 +12,30 @@
 <link rel="apple-touch-icon" href="breeze.png" />
 <style>
   :root{
-    --bg:#0a0a10
-    --ink:#eef0f6
-    --muted:#a6a9b8
-    --faint:#6c6f80
-    --accent:#6d8bff
-    --accent2:#8e7bff
-    --card:rgba(255,255,255,.04)
-    --stroke:rgba(255,255,255,.09)
-    --radius:22px
-    --ease:cubic-bezier(.22,1,.36,1)
-    --maxw:1160px
+    --bg:#0a0a10;
+    --ink:#eef0f6;
+    --muted:#a6a9b8;
+    --faint:#6c6f80;
+    --accent:#6d8bff;
+    --accent2:#8e7bff;
+    --card:rgba(255,255,255,.04);
+    --stroke:rgba(255,255,255,.09);
+    --radius:22px;
+    --ease:cubic-bezier(.22,1,.36,1);
+    --maxw:1160px;
   }
   *{margin:0;padding:0;box-sizing:border-box}
   html{scroll-behavior:smooth}
   body{
-    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif
-    background:var(--bg);color:var(--ink)
-    -webkit-font-smoothing:antialiased;overflow-x:hidden;line-height:1.5
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;
+    background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden;line-height:1.5;
   }
   a{color:inherit;text-decoration:none}
   .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
   .accent-text{
-    background:linear-gradient(100deg,var(--accent),var(--accent2))
-    -webkit-background-clip:text;background-clip:text;color:transparent
+    background:linear-gradient(100deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
   }
 
   /* ---------- ambient background ---------- */
@@ -50,7 +50,7 @@
 
   /* ---------- nav ---------- */
   nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(16px);
-    background:linear-gradient(to bottom,rgba(10,10,16,.72),rgba(10,10,16,0))
+    background:linear-gradient(to bottom,rgba(10,10,16,.72),rgba(10,10,16,0));
     border-bottom:1px solid transparent;transition:border-color .3s}
   nav.scrolled{border-bottom-color:var(--stroke);background:rgba(10,10,16,.82)}
   .nav-inner{display:flex;align-items:center;justify-content:space-between;height:68px}
@@ -59,7 +59,7 @@
   .nav-links{display:flex;align-items:center;gap:30px}
   .nav-links a{color:var(--muted);font-size:14.5px;font-weight:500;transition:color .15s}
   .nav-links a:hover{color:var(--ink)}
-  .nav-cta{padding:9px 18px;border-radius:99px;background:linear-gradient(100deg,var(--accent),var(--accent2))
+  .nav-cta{padding:9px 18px;border-radius:99px;background:linear-gradient(100deg,var(--accent),var(--accent2));
     color:#fff;font-weight:600;font-size:14px;box-shadow:0 8px 24px rgba(109,139,255,.35);transition:transform .15s,filter .15s}
   .nav-cta:hover{transform:translateY(-1px);filter:brightness(1.08)}
   @media(max-width:760px){.nav-links a:not(.nav-cta){display:none}}
@@ -95,7 +95,7 @@
   .stage{margin:54px auto 0;max-width:1000px;padding:0 24px;perspective:1600px;
     animation:rise 1s var(--ease) .3s both}
   .window{border-radius:18px;overflow:hidden;border:1px solid var(--stroke);
-    background:#101018;box-shadow:0 50px 120px -30px rgba(0,0,0,.8),0 0 90px -40px rgba(109,139,255,.5)
+    background:#101018;box-shadow:0 50px 120px -30px rgba(0,0,0,.8),0 0 90px -40px rgba(109,139,255,.5);
     transform:rotateX(6deg);transform-origin:center top}
   .titlebar{display:flex;align-items:center;gap:8px;padding:13px 16px;background:#13131c}
   .tl{width:12px;height:12px;border-radius:50%}
@@ -181,7 +181,7 @@
 
 <nav id="nav"><div class="wrap nav-inner">
   <a class="brand" href="#top">
-    <img class="logo" src="/icon.png" alt="Breeze" />
+    <img class="logo" src="https://raw.githubusercontent.com/Froydinger/breezebrowser/master/breeze.png" alt="Breeze" />
     Breeze
   </a>
   <div class="nav-links">
@@ -316,7 +316,7 @@
 
 <footer><div class="wrap">
   <a class="brand" href="#top">
-    <img class="logo" src="/icon.png" alt="Breeze" />
+    <img class="logo" src="https://raw.githubusercontent.com/Froydinger/breezebrowser/master/breeze.png" alt="Breeze" />
     Breeze
   </a>
   <div>A calmer, faster browser. Local AI · Native ad blocking · Zero tracking.</div>
@@ -328,7 +328,7 @@
   var MAC_URL = "https://github.com/Froydinger/breezebrowser-live/raw/master/build/Breeze-2.1.1-arm64.dmg"
   var WIN_URL = "https://github.com/Froydinger/breezebrowser-live/raw/master/build/Breeze-2.1.1.exe"
   document.querySelectorAll('#dl-mac, .dl-mac').forEach(function(a){a.href=MAC_URL})
-  document.querySelectorAll('#dl-win, .dl-win').forEach(function(a) { a.href = WIN_URL })
+  document.querySelectorAll('#dl-win, .dl-win').forEach(function(a){a.href=WIN_URL})
 
   // OS-aware "Recommended" badge in the hero
   (function(){
