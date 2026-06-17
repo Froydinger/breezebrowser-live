@@ -181,7 +181,7 @@
 
 <nav id="nav"><div class="wrap nav-inner">
   <a class="brand" href="#top">
-    <img class="logo" src="breeze.png" alt="Breeze" />
+    <img class="logo" src="https://raw.githubusercontent.com/Froydinger/breezebrowser/master/breeze.png" alt="Breeze" />
     Breeze
   </a>
   <div class="nav-links">
@@ -316,7 +316,7 @@
 
 <footer><div class="wrap">
   <a class="brand" href="#top">
-    <img class="logo" src="breeze.png" alt="Breeze" />
+    <img class="logo" src="https://raw.githubusercontent.com/Froydinger/breezebrowser/master/breeze.png" alt="Breeze" />
     Breeze
   </a>
   <div>A calmer, faster browser. Local AI · Native ad blocking · Zero tracking.</div>
@@ -325,33 +325,37 @@
 
 <script>
   // ---- download links (edit these if your file names change) ----
-  var MAC_URL = "https://izyoevpcdndahphnpxhz.supabase.co/storage/v1/object/public/public-files//Breeze-2.1.1%20Mac.dmg";
-  var WIN_URL = "https://izyoevpcdndahphnpxhz.supabase.co/storage/v1/object/public/public-files//Breeze-2.1.1%20Windows.exe";
-  document.querySelectorAll('#dl-mac, .dl-mac').forEach(function(a){a.href=MAC_URL;});
-  document.querySelectorAll('#dl-win, .dl-win').forEach(function(a){a.href=WIN_URL;});
+  var MAC_URL = "https://github.com/Froydinger/breezebrowser-live/raw/master/build/Breeze-2.1.1-arm64.dmg"
+  var WIN_URL = "https://github.com/Froydinger/breezebrowser-live/raw/master/build/Breeze-2.1.1.exe"
+  document.querySelectorAll('#dl-mac, .dl-mac').forEach(function(a){a.href=MAC_URL})
+  document.querySelectorAll('#dl-win, .dl-win').forEach(function(a){a.href=WIN_URL})
 
   // OS-aware "Recommended" badge in the hero
   (function(){
-    var isMac=/Mac|iP(hone|ad|od)/.test(navigator.platform)||/Mac/.test(navigator.userAgent);
-    var mac=document.getElementById('dl-mac'), win=document.getElementById('dl-win');
+    var isMac=/Mac|iP(hone|ad|od)/.test(navigator.platform)||/Mac/.test(navigator.userAgent)
+    var mac=document.getElementById('dl-mac'), win=document.getElementById('dl-win')
     if(!isMac){ // surface Windows as the recommended/primary one
-      win.classList.add('btn-rec'); win.classList.remove('btn-ghost'); win.classList.add('btn-primary');
-      mac.classList.remove('btn-rec','btn-primary'); mac.classList.add('btn-ghost');
+      win.classList.add('btn-rec')
+      win.classList.remove('btn-ghost')
+      win.classList.add('btn-primary')
+      mac.classList.remove('btn-rec','btn-primary')
+      mac.classList.add('btn-ghost')
     }
-  })();
+  })()
 
   // nav shadow on scroll
-  var nav=document.getElementById('nav');
-  addEventListener('scroll',function(){nav.classList.toggle('scrolled',scrollY>12);});
+  var nav=document.getElementById('nav')
+  addEventListener('scroll',function(){nav.classList.toggle('scrolled',scrollY>12)})
 
   // scroll reveal
-  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.14});
-  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.14})
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)})
 
   // live clock in the mockup
-  function tick(){var d=new Date(),h=d.getHours()%12||12,m=String(d.getMinutes()).padStart(2,'0');document.getElementById('mockClock').textContent=h+':'+m;}
-  tick();setInterval(tick,1000*20);
-  document.getElementById('yr').textContent=new Date().getFullYear();
+  function tick(){var d=new Date(),h=d.getHours()%12||12,m=String(d.getMinutes()).padStart(2,'0');document.getElementById('mockClock').textContent=h+':'+m}
+  tick()
+  setInterval(tick,1000*20)
+  document.getElementById('yr').textContent=new Date().getFullYear()
 </script>
 </body>
 </html>
