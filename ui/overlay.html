@@ -111,8 +111,8 @@
       } catch {}
     }
 
-    function addToast({ id, kind, text, action, persist, ready }) {
-      playChime();
+    function addToast({ id, kind, text, action, persist, ready, playSound }) {
+      if (playSound !== false) playChime();
       // de-dupe by id (e.g. a download's started→done update reuses the row)
       if (id != null) {
         const ex = stack.querySelector(`[data-id="${id}"]`);

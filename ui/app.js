@@ -141,7 +141,9 @@ function startOnboarding() {
   }
 }
 
+let soundsOn = true; // mirrors the "Breeze notification sounds" setting
 function applySettings(s) {
+  soundsOn = s.notificationSounds !== false;
   if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
   if (s.sidebarWidth) {
     document.documentElement.style.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
@@ -1303,6 +1305,7 @@ aiInput.addEventListener('input', () => {
 let _toneCtx = null;
 let _repliedTone = false;
 function playReplyTone() {
+  if (!soundsOn) return; // respect the notification-sounds setting
   try {
     _toneCtx = _toneCtx || new (window.AudioContext || window.webkitAudioContext)();
     const ctx = _toneCtx;

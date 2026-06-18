@@ -28,6 +28,34 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Make sure OS dialogs and menus say "Breeze", never "Electron"
 app.setName('Breeze');
 
+function writeStartupErrorLog(err) {
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString();
+    const msg = err && err.stack ? err.stack : String(err);
+    fs.appendFileSync(path.join(dir, 'startup-errors.log'), `[${stamp}]\n${msg}\n\n`);
+  } catch {}
+}
+
+function showStartupError(err) {
+  writeStartupErrorLog(err);
+  try {
+    dialog.showErrorBox(
+      'Breeze could not start',
+      `Breeze hit an error while opening.\n\n${err && err.message ? err.message : String(err)}`
+    );
+  } catch {}
+}
+
+process.on('uncaughtException', (err) => {
+  showStartupError(err);
+});
+
+process.on('unhandledRejection', (err) => {
+  writeStartupErrorLog(err);
+});
+
 
 // Sites sniff the UA; any non-standard token (Electron/x, Breeze/x) makes
 // Google & co. serve degraded or broken layouts. Strip everything but the
@@ -97,6 +125,8 @@ const DEFAULT_SETTINGS = {
   aiInstructions: '', // standing custom instructions for the AI
   onboarded: false, // first-run setup dialog shown
   webNotifications: true, // sites may show notifications (browser-wide)
+  notificationSounds: true, // Breeze overlay toasts play a short chime
+  updateSounds: true, // app update toasts may play the chime
   tabSleepHours: 4, // 2 | 4 | 6 | 0 (never)
   pinSize: 'large', // 'small' | 'medium' | 'large'
   neverSavePasswords: [], // origins the user said "never" for
@@ -287,7 +317,10 @@ function positionOverlay(w, h) {
 
 function showToast(toast) {
   if (!overlayView) return;
-  overlayView.webContents.send('toast', toast);
+  const playSound =
+    appSettings.notificationSounds !== false &&
+    (toast?.kind !== 'update' || appSettings.updateSounds !== false);
+  overlayView.webContents.send('toast', { ...toast, playSound });
 }
 
 function animateLayout() {
@@ -319,7 +352,7 @@ function animateLayout() {
 function setTrafficLights(show) {
   if (process.platform === 'darwin') {
     try {
-      win?.setWindowButtonVisibility(show);
+      win?.setWindowButtonVisibility(show || !!win?.isFullScreen?.());
     } catch {}
   }
 }
@@ -3150,17 +3183,20 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'ui', 'index.html'));
   createOverlay();
   if (process.platform === 'darwin' && !sidebarVisible) {
-    try {
-      win.setWindowButtonVisibility(false);
-    } catch {}
+    setTrafficLights(false);
   }
   win.on('resize', applyBounds);
   win.on('enter-full-screen', () => {
     win?.webContents.send('app-fullscreen', true);
+    // Always reveal the traffic lights in fullscreen — even with the sidebar
+    // collapsed. (Don't gate on isFullScreen() here; it can still read false
+    // mid-transition, which left them hidden.)
+    try { win?.setWindowButtonVisibility(true); } catch {}
     startCornerPoll();
   });
   win.on('leave-full-screen', () => {
     win?.webContents.send('app-fullscreen', false);
+    setTrafficLights(sidebarVisible);
     stopCornerPoll();
   });
   win.on('closed', () => {
@@ -3932,6 +3968,9 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}).catch((err) => {
+  showStartupError(err);
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

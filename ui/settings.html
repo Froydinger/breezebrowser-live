@@ -323,6 +323,26 @@
             <span class="knob"></span>
           </label>
         </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Breeze notification sounds</div>
+            <div class="row-hint">Play a short chime for downloads, reminders, and other Breeze alerts.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="notificationSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Update sounds</div>
+            <div class="row-hint">Play the chime when Breeze finds or finishes downloading an update.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="updateSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
       </div>
       <h2 style="margin-top:22px">Per-site</h2>
       <div class="card" id="notif-list">
@@ -686,6 +706,8 @@
       document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
       document.getElementById('webNotifications').checked = settings.webNotifications !== false;
       document.getElementById('webNotifications2').checked = settings.webNotifications !== false;
+      document.getElementById('notificationSounds').checked = settings.notificationSounds !== false;
+      document.getElementById('updateSounds').checked = settings.updateSounds !== false;
       document.querySelectorAll('#urlbar-seg button').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === (settings.urlBarPosition || 'top')));
       document.querySelectorAll('#pinsize-seg button').forEach((b) =>
@@ -724,6 +746,8 @@
     document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
     document.getElementById('webNotifications').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.getElementById('webNotifications2').addEventListener('change', (e) => set('webNotifications', e.target.checked));
+    document.getElementById('notificationSounds').addEventListener('change', (e) => set('notificationSounds', e.target.checked));
+    document.getElementById('updateSounds').addEventListener('change', (e) => set('updateSounds', e.target.checked));
     document.querySelectorAll('#urlbar-seg button').forEach((b) =>
       b.addEventListener('click', () => set('urlBarPosition', b.dataset.v)));
     document.querySelectorAll('#pinsize-seg button').forEach((b) =>
