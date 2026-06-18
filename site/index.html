@@ -193,7 +193,7 @@
 
 <a id="top"></a>
 <header class="hero"><div class="wrap">
-  <div class="pill"><span class="dot"></span> Version 2.1.1 · macOS &amp; Windows</div>
+  <div class="pill"><span class="dot"></span> Version 2.10.0 · macOS &amp; Windows</div>
   <h1>The web, <span class="accent-text">at ease.</span></h1>
   <p class="sub">Breeze is a fast, Chromium-based browser with a <b style="color:var(--ink)">private local AI</b>, native ad blocking, and zero tracking. Your data stays yours. Forever.</p>
   <div class="cta-row">
@@ -325,8 +325,9 @@
 
 <script>
   // ---- download links (edit these if your file names change) ----
-  var MAC_URL = "https://github.com/Froydinger/breezebrowser-live/raw/master/build/Breeze-2.1.1-arm64.dmg"
-  var WIN_URL = "https://github.com/Froydinger/breezebrowser-live/raw/master/build/Breeze-2.1.1.exe"
+  // Always resolve to the newest published release's assets (no version to bump).
+  var MAC_URL = "https://github.com/Froydinger/breezebrowser-live/releases/latest/download/Breeze-arm64.dmg"
+  var WIN_URL = "https://github.com/Froydinger/breezebrowser-live/releases/latest/download/Breeze-Setup.exe"
   document.querySelectorAll('#dl-mac, .dl-mac').forEach(function(a){a.href=MAC_URL})
   document.querySelectorAll('#dl-win, .dl-win').forEach(function(a){a.href=WIN_URL})
 
