@@ -808,6 +808,17 @@ function buildView(t, url) {
       if (t.view && !t.view.webContents.isDestroyed()) t.view.webContents.reload();
     }, 400);
   });
+  // Renderer crashed (OOM / sad-tab / JS process gone) — recover the tab by
+  // reloading once, instead of leaving it blank or letting it close. Guarded so
+  // a page that crashes repeatedly doesn't loop (reload at most once per 12s).
+  wc.on('render-process-gone', () => {
+    const now = Date.now();
+    if (t.crashReloadAt && now - t.crashReloadAt < 12000) return;
+    t.crashReloadAt = now;
+    setTimeout(() => {
+      try { if (t.view && !t.view.webContents.isDestroyed()) t.view.webContents.reload(); } catch {}
+    }, 500);
+  });
   wc.on('did-finish-load', () => {
     t.didAutoRetry = false; // reset for the next navigation
     // a freshly loaded page has a fresh preload — restore selection tracking
@@ -3481,6 +3492,9 @@ ipcMain.on('navigate', (_e, input) => {
   const url = toNavigableURL(input);
   if (url) loadInActiveTab(url);
 });
+// Halt the active tab's load — lets the user correct the URL on a page that's
+// stuck reloading (called as they start typing in the address bar).
+ipcMain.on('stop-loading', () => { try { activeWC()?.stop(); } catch {} });
 // Per-pane navigation from the split-view URL bars (operates on a specific tab,
 // not just the active one).
 ipcMain.on('tab-navigate', (_e, { id, input }) => {

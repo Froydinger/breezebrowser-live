@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('breeze', {
   closeTab: (id) => ipcRenderer.send('close-tab', id),
   activateTab: (id) => ipcRenderer.send('activate-tab', id),
   navigate: (input) => ipcRenderer.send('navigate', input),
+  stopLoading: () => ipcRenderer.send('stop-loading'),
   openURL: (url) => ipcRenderer.send('open-url', url),
   openURLNewTab: (url) => ipcRenderer.send('open-url-new-tab', url),
   goBack: () => ipcRenderer.send('go-back'),

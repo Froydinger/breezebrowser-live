@@ -614,6 +614,10 @@ address.addEventListener('focus', () => {
   if (active && active.url) address.value = active.url;
   address.select();
 });
+// As soon as the user types in the address bar, halt the page load — so a tab
+// stuck reloading (broken URL / redirect loop) can't keep overwriting things
+// while you try to fix the URL.
+address.addEventListener('input', () => breeze.stopLoading());
 address.addEventListener('blur', () => {
   addressFocused = false;
   setTimeout(hideSuggestions, 120);

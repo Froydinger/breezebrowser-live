@@ -1,0 +1,41 @@
+name: Build Windows
+
+# Builds the Windows installer on a REAL Windows runner (not cross-built on a
+# Mac). This rules out cross-compile artifacts as the cause of "won't open", and
+# installs the proper Windows node-llama-cpp native binaries. The .exe is
+# uploaded as a downloadable artifact on each run — grab it from the run's
+# "Artifacts" section to test. (Still unsigned: Windows SmartScreen / Smart App
+# Control may warn or block until we add a code-signing cert.)
+
+on:
+  workflow_dispatch: {}        # run manually from the Actions tab
+  push:
+    branches: [master]
+    paths:
+      - 'main.js'
+      - 'preload.js'
+      - 'page-preload.js'
+      - 'internal-preload.js'
+      - 'overlay-preload.js'
+      - 'ui/**'
+      - 'package.json'
+      - '.github/workflows/windows.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install deps
+        run: npm install
+      - name: Build Windows installer (no publish)
+        run: npx electron-builder --win --publish never
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Breeze-Windows-Setup
+          path: dist/*.exe
+          if-no-files-found: error

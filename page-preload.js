@@ -3,6 +3,24 @@
 // Exposes nothing to the page.
 const { ipcRenderer } = require('electron');
 
+// Don't advertise a platform passkey authenticator we can't actually drive —
+// Electron has no Touch ID / platform WebAuthn, so sites that detect one push a
+// passkey prompt that never fires and refuse to fall back to QR / password,
+// locking the user out. Report platform-authenticator + conditional UI as
+// unavailable so sites offer their other sign-in methods. Injected into the
+// page's MAIN world at document start (preload runs before page scripts).
+try {
+  const s = document.createElement('script');
+  s.textContent =
+    '(function(){try{if(window.PublicKeyCredential){' +
+    'PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable=function(){return Promise.resolve(false);};' +
+    'if("isConditionalMediationAvailable" in PublicKeyCredential){' +
+    'PublicKeyCredential.isConditionalMediationAvailable=function(){return Promise.resolve(false);};}' +
+    '}}catch(e){}})();';
+  (document.documentElement || document.head).appendChild(s);
+  s.remove();
+} catch (e) {}
+
 let lastHref = '';
 let lastTime = 0;
 
