@@ -7,7 +7,7 @@ SDK="$(xcrun --show-sdk-path)"
 rm -rf dist && mkdir -p "$APP/Contents/MacOS"
 echo "Compiling…"
 swiftc -O main.swift -o "$APP/Contents/MacOS/Breeze" \
-  -target arm64-apple-macosx13.0 -sdk "$SDK" \
+  -target arm64-apple-macosx26.0 -sdk "$SDK" \
   -framework Cocoa -framework WebKit
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -20,7 +20,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>CFBundleExecutable</key><string>Breeze</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

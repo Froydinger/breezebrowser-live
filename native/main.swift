@@ -1,23 +1,17 @@
-// Breeze Native — M1: the browser shell.
-// Native macOS (AppKit + WKWebView/WebKit) rebuild of Breeze. This milestone:
-// multiple tabs in a left sidebar, shared WebKit session, top nav + address bar,
-// dark "Breeze" styling. AI / ad-block / vault come in later milestones.
+// Breeze Native — M1 (Liquid Glass). Native macOS 26+ browser: AppKit + WKWebView
+// with the new Liquid Glass material (NSGlassEffectView) for the sidebar, the
+// toolbar capsule, and the active tab. Translucent window (desktop shows
+// through). Multi-tab, shared WebKit session. AI / ad-block / vault come later.
 
 import Cocoa
 import WebKit
 
-// ---- Breeze palette ----
 enum C {
-    static let bg      = NSColor(srgbRed: 0.086, green: 0.086, blue: 0.102, alpha: 1) // #16161a
-    static let sidebar = NSColor(srgbRed: 0.110, green: 0.110, blue: 0.129, alpha: 1) // #1c1c21
-    static let surface = NSColor(white: 1, alpha: 0.06)
-    static let surfaceHi = NSColor(white: 1, alpha: 0.10)
-    static let accent  = NSColor(srgbRed: 0.357, green: 0.486, blue: 0.980, alpha: 1) // #5b7cfa
-    static let text    = NSColor(srgbRed: 0.925, green: 0.925, blue: 0.941, alpha: 1)
-    static let textSoft = NSColor(white: 1, alpha: 0.45)
+    static let accent   = NSColor(srgbRed: 0.357, green: 0.486, blue: 0.980, alpha: 1) // #5b7cfa
+    static let text     = NSColor(srgbRed: 0.95, green: 0.95, blue: 0.97, alpha: 1)
+    static let textSoft = NSColor(white: 1, alpha: 0.55)
 }
 
-// One shared session so cookies/logins are consistent across tabs.
 let sharedConfig: WKWebViewConfiguration = {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .default()
@@ -36,28 +30,26 @@ final class Tab {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         webView.translatesAutoresizingMaskIntoConstraints = false
+        webView.wantsLayer = true
+        webView.layer?.cornerRadius = 12
+        webView.layer?.masksToBounds = true
     }
 }
 
-// A single sidebar row (favicon dot + title + close button).
 final class TabRow: NSView {
     let tab: Tab
-    let titleLabel = NSTextField(labelWithString: "")
-    let close = NSButton()
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
-    private let bg = NSView()
 
     init(tab: Tab, active: Bool) {
         self.tab = tab
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-
-        bg.wantsLayer = true
-        bg.layer?.cornerRadius = 9
-        bg.layer?.backgroundColor = (active ? C.surfaceHi : NSColor.clear).cgColor
-        bg.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(bg)
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        // active row reads as a brighter glassy pill; inactive is transparent
+        layer?.backgroundColor = (active ? NSColor(white: 1, alpha: 0.16)
+                                          : NSColor.clear).cgColor
 
         let dot = NSView()
         dot.wantsLayer = true
@@ -65,40 +57,33 @@ final class TabRow: NSView {
         dot.layer?.backgroundColor = (active ? C.accent : C.textSoft).cgColor
         dot.translatesAutoresizingMaskIntoConstraints = false
 
-        titleLabel.stringValue = tab.title
-        titleLabel.font = .systemFont(ofSize: 13, weight: active ? .semibold : .regular)
-        titleLabel.textColor = active ? C.text : C.textSoft
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        let label = NSTextField(labelWithString: tab.title)
+        label.font = .systemFont(ofSize: 13, weight: active ? .semibold : .regular)
+        label.textColor = active ? C.text : C.textSoft
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
 
-        close.title = "✕"
+        let close = NSButton(title: "✕", target: self, action: #selector(closeClicked))
         close.isBordered = false
         close.font = .systemFont(ofSize: 11)
         close.contentTintColor = C.textSoft
-        close.target = self
-        close.action = #selector(closeClicked)
         close.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(dot); addSubview(titleLabel); addSubview(close)
+        addSubview(dot); addSubview(label); addSubview(close)
         NSLayoutConstraint.activate([
-            bg.topAnchor.constraint(equalTo: topAnchor, constant: 1),
-            bg.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            bg.leadingAnchor.constraint(equalTo: leadingAnchor),
-            bg.trailingAnchor.constraint(equalTo: trailingAnchor),
-            heightAnchor.constraint(equalToConstant: 34),
+            heightAnchor.constraint(equalToConstant: 36),
             dot.widthAnchor.constraint(equalToConstant: 8),
             dot.heightAnchor.constraint(equalToConstant: 8),
             dot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             dot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 10),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -6),
+            label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 10),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -6),
             close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
             close.widthAnchor.constraint(equalToConstant: 18),
         ])
-        let clickGR = NSClickGestureRecognizer(target: self, action: #selector(selectClicked))
-        addGestureRecognizer(clickGR)
+        addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(selectClicked)))
     }
     required init?(coder: NSCoder) { nil }
     @objc func selectClicked() { onSelect?() }
@@ -122,101 +107,105 @@ final class Browser: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDe
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Breeze"
-        window.backgroundColor = C.bg
+        window.isMovableByWindowBackground = true
         window.center()
         super.init()
 
-        let root = NSView()
-        root.wantsLayer = true
-        root.layer?.backgroundColor = C.bg.cgColor
+        // Translucent window background — the desktop shows through (Tahoe look).
+        let root = NSVisualEffectView()
+        root.material = .underWindowBackground
+        root.blendingMode = .behindWindow
+        root.state = .active
 
-        // ---- sidebar ----
-        let sidebar = NSView()
-        sidebar.wantsLayer = true
-        sidebar.layer?.backgroundColor = C.sidebar.cgColor
-        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        // ---- sidebar: a Liquid Glass panel ----
+        let sidebarGlass = NSGlassEffectView()
+        sidebarGlass.cornerRadius = 18
+        sidebarGlass.translatesAutoresizingMaskIntoConstraints = false
+        let sidebarContent = NSView()
+        sidebarContent.translatesAutoresizingMaskIntoConstraints = false
 
-        let newTabBtn = NSButton(title: "  +  New Tab", target: self, action: #selector(newTabClicked))
+        let newTabBtn = NSButton(title: "  +   New Tab", target: self, action: #selector(newTabClicked))
         newTabBtn.isBordered = false
         newTabBtn.contentTintColor = C.text
-        newTabBtn.font = .systemFont(ofSize: 13, weight: .medium)
+        newTabBtn.font = .systemFont(ofSize: 13.5, weight: .medium)
         newTabBtn.alignment = .left
         newTabBtn.translatesAutoresizingMaskIntoConstraints = false
 
         sidebarStack.orientation = .vertical
         sidebarStack.spacing = 2
         sidebarStack.alignment = .leading
-        sidebarStack.distribution = .fill
         sidebarStack.translatesAutoresizingMaskIntoConstraints = false
 
-        sidebar.addSubview(newTabBtn)
-        sidebar.addSubview(sidebarStack)
+        sidebarContent.addSubview(newTabBtn)
+        sidebarContent.addSubview(sidebarStack)
+        sidebarGlass.contentView = sidebarContent
 
-        // ---- top bar (nav + address) ----
-        let bar = NSStackView()
-        bar.orientation = .horizontal
-        bar.spacing = 8
-        bar.translatesAutoresizingMaskIntoConstraints = false
+        // ---- toolbar capsule: nav buttons + address, all in one glass pill ----
+        let barGlass = NSGlassEffectView()
+        barGlass.cornerRadius = 18
+        barGlass.translatesAutoresizingMaskIntoConstraints = false
+        let barStack = NSStackView()
+        barStack.orientation = .horizontal
+        barStack.spacing = 6
+        barStack.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        barStack.translatesAutoresizingMaskIntoConstraints = false
         func styleNav(_ b: NSButton, _ t: String, _ s: Selector) {
             b.title = t; b.isBordered = false; b.font = .systemFont(ofSize: 15)
             b.contentTintColor = C.textSoft; b.target = self; b.action = s
             b.setContentHuggingPriority(.required, for: .horizontal)
         }
-        styleNav(back, "◀", #selector(goBack))
-        styleNav(forward, "▶", #selector(goForward))
-        styleNav(reload, "⟳", #selector(doReload))
+        styleNav(back, "􀯶", #selector(goBack))      // SF Symbol chevrons render if available;
+        styleNav(forward, "􀰂", #selector(goForward)) // fall back to text on miss
+        styleNav(reload, "􀅈", #selector(doReload))
+        back.title = "‹"; forward.title = "›"; reload.title = "⟳"
+        back.font = .systemFont(ofSize: 20); forward.font = .systemFont(ofSize: 20)
+
         address.placeholderString = "Search or enter URL"
         address.delegate = self
         address.font = .systemFont(ofSize: 13.5)
         address.textColor = C.text
-        address.drawsBackground = true
-        address.backgroundColor = C.surface
+        address.drawsBackground = false          // glass capsule is the background
         address.isBordered = false
         address.focusRingType = .none
-        address.wantsLayer = true
-        address.layer?.cornerRadius = 9
         if let cell = address.cell as? NSTextFieldCell { cell.usesSingleLineMode = true }
-        bar.addArrangedSubview(back); bar.addArrangedSubview(forward); bar.addArrangedSubview(reload)
-        bar.addArrangedSubview(address)
+
+        barStack.addArrangedSubview(back)
+        barStack.addArrangedSubview(forward)
+        barStack.addArrangedSubview(reload)
+        barStack.addArrangedSubview(address)
+        barGlass.contentView = barStack
 
         webContainer.translatesAutoresizingMaskIntoConstraints = false
-        webContainer.wantsLayer = true
-        webContainer.layer?.backgroundColor = C.bg.cgColor
 
-        let main = NSView()
-        main.translatesAutoresizingMaskIntoConstraints = false
-        main.addSubview(bar); main.addSubview(webContainer)
-
-        root.addSubview(sidebar); root.addSubview(main)
+        root.addSubview(sidebarGlass)
+        root.addSubview(barGlass)
+        root.addSubview(webContainer)
 
         NSLayoutConstraint.activate([
-            sidebar.topAnchor.constraint(equalTo: root.topAnchor),
-            sidebar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            sidebar.widthAnchor.constraint(equalToConstant: 250),
+            // sidebar floats with margins
+            sidebarGlass.topAnchor.constraint(equalTo: root.topAnchor, constant: 38),
+            sidebarGlass.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 10),
+            sidebarGlass.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
+            sidebarGlass.widthAnchor.constraint(equalToConstant: 240),
 
-            newTabBtn.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 40),
-            newTabBtn.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 12),
-            newTabBtn.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -12),
-
+            newTabBtn.topAnchor.constraint(equalTo: sidebarContent.topAnchor, constant: 12),
+            newTabBtn.leadingAnchor.constraint(equalTo: sidebarContent.leadingAnchor, constant: 12),
+            newTabBtn.trailingAnchor.constraint(equalTo: sidebarContent.trailingAnchor, constant: -12),
             sidebarStack.topAnchor.constraint(equalTo: newTabBtn.bottomAnchor, constant: 10),
-            sidebarStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 10),
-            sidebarStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
+            sidebarStack.leadingAnchor.constraint(equalTo: sidebarContent.leadingAnchor, constant: 8),
+            sidebarStack.trailingAnchor.constraint(equalTo: sidebarContent.trailingAnchor, constant: -8),
 
-            main.topAnchor.constraint(equalTo: root.topAnchor),
-            main.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            main.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            main.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            // toolbar capsule
+            barGlass.topAnchor.constraint(equalTo: root.topAnchor, constant: 38),
+            barGlass.leadingAnchor.constraint(equalTo: sidebarGlass.trailingAnchor, constant: 10),
+            barGlass.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
+            barGlass.heightAnchor.constraint(equalToConstant: 40),
 
-            bar.topAnchor.constraint(equalTo: main.topAnchor, constant: 10),
-            bar.leadingAnchor.constraint(equalTo: main.leadingAnchor, constant: 12),
-            bar.trailingAnchor.constraint(equalTo: main.trailingAnchor, constant: -12),
-            address.heightAnchor.constraint(equalToConstant: 34),
-
-            webContainer.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 10),
-            webContainer.leadingAnchor.constraint(equalTo: main.leadingAnchor),
-            webContainer.trailingAnchor.constraint(equalTo: main.trailingAnchor),
-            webContainer.bottomAnchor.constraint(equalTo: main.bottomAnchor),
+            // web content, framed by the translucent window
+            webContainer.topAnchor.constraint(equalTo: barGlass.bottomAnchor, constant: 10),
+            webContainer.leadingAnchor.constraint(equalTo: sidebarGlass.trailingAnchor, constant: 10),
+            webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
+            webContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
         ])
 
         window.contentView = root
@@ -236,8 +225,7 @@ final class Browser: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDe
         }
         tabs.append(t)
         active = tabs.count - 1
-        showActive()
-        rebuildSidebar()
+        showActive(); rebuildSidebar()
         if let u = URL(string: url) { t.webView.load(URLRequest(url: u)) }
         window.makeFirstResponder(address)
     }
@@ -329,13 +317,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+    @objc func newTab() { browser?.newTabClicked() }
+    @objc func closeTab() { browser?.closeCurrentTab() }
+    @objc func focusAddr() { browser?.focusAddress() }
+    @objc func reload() { browser?.doReload() }
 }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 
-// Menu with the expected browser shortcuts.
 let mainMenu = NSMenu()
 let appItem = NSMenuItem(); mainMenu.addItem(appItem)
 let appMenu = NSMenu()
@@ -349,9 +340,7 @@ fileMenu.addItem(withTitle: "Close Tab", action: #selector(AppDelegate.closeTab)
 fileMenu.addItem(withTitle: "Focus Address Bar", action: #selector(AppDelegate.focusAddr), keyEquivalent: "l")
 fileMenu.addItem(withTitle: "Reload", action: #selector(AppDelegate.reload), keyEquivalent: "r")
 fileItem.submenu = fileMenu
-app.mainMenu = mainMenu
 
-// Edit menu so copy/paste/select-all work in the address bar + web pages.
 let editItem = NSMenuItem(); mainMenu.addItem(editItem)
 let editMenu = NSMenu(title: "Edit")
 editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
@@ -359,12 +348,6 @@ editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquiv
 editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
 editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 editItem.submenu = editMenu
-
-extension AppDelegate {
-    @objc func newTab() { browser?.newTabClicked() }
-    @objc func closeTab() { browser?.closeCurrentTab() }
-    @objc func focusAddr() { browser?.focusAddress() }
-    @objc func reload() { browser?.doReload() }
-}
+app.mainMenu = mainMenu
 
 app.run()
