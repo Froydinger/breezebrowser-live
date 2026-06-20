@@ -148,6 +148,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '2.10.1', icon: 'shapes', title: 'Mac only, from here on', major: true, items: [
+        'Breeze is now a <b>macOS-only</b> app (Apple Silicon). The Windows build has been retired so we can focus everything on the best possible Mac experience.',
+        'No change for Mac users — your install keeps auto-updating as always.' ] },
       { v: '2.9.11', icon: 'bell', title: 'Quieter when you want it', items: [
         'Added Settings controls for Breeze notification sounds and update sounds, so downloads, reminders, and update prompts can stay quiet.',
         'Fixed the macOS fullscreen case where the traffic lights could disappear when the sidebar was collapsed.',
