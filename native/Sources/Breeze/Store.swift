@@ -1,0 +1,122 @@
+// Persistent app state: settings (mirrors the Electron settings keys) + pins.
+// Stored as JSON in ~/Library/Application Support/Breeze/. Tabs are intentionally
+// NOT persisted (fresh New Tab each launch); pins ARE.
+
+import Foundation
+
+final class Store {
+    static let shared = Store()
+
+    private let dir: URL
+    private let settingsURL: URL
+    private let pinsURL: URL
+    private let historyURL: URL
+    private let bookmarksURL: URL
+
+    var settings: [String: Any]
+    var pins: [Pin]
+    var history: [[String: Any]]      // { url, title, ts }
+    var bookmarks: [[String: Any]]    // { url, title, ts }
+
+    static let defaults: [String: Any] = [
+        "theme": "system",
+        "accent": "#5b7cfa",
+        "pinSize": "large",
+        "searchEngine": "google",
+        "clock24": false,
+        "showGreeting": true,
+        "urlBarPosition": "top",
+        "userName": "",
+        "adblockEnabled": true,
+        "notificationSounds": true,
+        "updateSounds": true,
+        "autoPip": true,
+        "restoreTabs": false,
+        "webNotifications": true,
+        "tabSleepHours": 1,
+        "aiModel": "",
+        "aiInstructions": "",
+        "permissions": [String: Any](),
+        "reminders": [Any]()
+    ]
+
+    private init() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        dir = base.appendingPathComponent("Breeze", isDirectory: true)
+        settingsURL = dir.appendingPathComponent("settings.json")
+        pinsURL = dir.appendingPathComponent("pins.json")
+        historyURL = dir.appendingPathComponent("history.json")
+        bookmarksURL = dir.appendingPathComponent("bookmarks.json")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        // settings = defaults merged with whatever was saved
+        var s = Store.defaults
+        if let data = try? Data(contentsOf: settingsURL),
+           let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for (k, v) in saved { s[k] = v }
+        }
+        settings = s
+
+        if let data = try? Data(contentsOf: pinsURL),
+           let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] {
+            pins = arr.compactMap { d in d["url"].map { Pin(url: $0, title: d["title"] ?? "") } }
+        } else { pins = [] }
+
+        history = (try? Data(contentsOf: historyURL)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        bookmarks = (try? Data(contentsOf: bookmarksURL)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+    }
+
+    static func json(_ obj: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+              let s = String(data: data, encoding: .utf8) else { return "[]" }
+        return s
+    }
+
+    func saveHistory() {
+        if let data = try? JSONSerialization.data(withJSONObject: history) { try? data.write(to: historyURL) }
+    }
+    func saveBookmarks() {
+        if let data = try? JSONSerialization.data(withJSONObject: bookmarks) { try? data.write(to: bookmarksURL) }
+    }
+
+    /// Record a visit: de-dupe consecutive same-URL, newest first, capped.
+    func addHistory(url: String, title: String) {
+        guard !url.isEmpty, url.hasPrefix("http") else { return }
+        if let first = history.first, first["url"] as? String == url { return }
+        history.insert(["url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0)
+        if history.count > 5000 { history = Array(history.prefix(5000)) }
+        saveHistory()
+    }
+
+    func isBookmarked(_ url: String) -> Bool { bookmarks.contains { $0["url"] as? String == url } }
+    func toggleBookmark(url: String, title: String) {
+        guard !url.isEmpty, url.hasPrefix("http") else { return }
+        if isBookmarked(url) { bookmarks.removeAll { $0["url"] as? String == url } }
+        else { bookmarks.insert(["url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0) }
+        saveBookmarks()
+    }
+
+    func saveSettings() {
+        if let data = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted]) {
+            try? data.write(to: settingsURL)
+        }
+    }
+
+    func savePins() {
+        let arr = pins.map { ["url": $0.url, "title": $0.title] }
+        if let data = try? JSONSerialization.data(withJSONObject: arr, options: [.prettyPrinted]) {
+            try? data.write(to: pinsURL)
+        }
+    }
+
+    func settingsJSON() -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: settings),
+              let s = String(data: data, encoding: .utf8) else { return "{}" }
+        return s
+    }
+
+    func string(_ key: String) -> String { settings[key] as? String ?? "" }
+    func bool(_ key: String) -> Bool { settings[key] as? Bool ?? false }
+}

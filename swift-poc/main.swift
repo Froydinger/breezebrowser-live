@@ -27,6 +27,13 @@ final class BrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextF
         webView = WKWebView(frame: .zero, configuration: cfg)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
+        // CRITICAL: WKWebView's default UA omits the "Version/x Safari/y" token,
+        // which makes many sites serve degraded/legacy CSS and makes Google's
+        // sign-in flow (and passkeys) balk. Present as a normal modern Safari so
+        // DRM + passkey + general browsing behave like Safari does.
+        webView.customUserAgent =
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
+          "(KHTML, like Gecko) Version/18.5 Safari/605.1.15"
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
@@ -165,18 +172,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+    @objc func focusAddr() { browser?.window.makeFirstResponder(browser?.address); browser?.address.currentEditor()?.selectAll(nil) }
+    @objc func reload() { browser?.doReload() }
 }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 
-// Minimal menu so ⌘Q / ⌘L / ⌘R work.
+// Menus so ⌘Q / ⌘L / ⌘R and clipboard (paste passwords) work during the test.
 let mainMenu = NSMenu()
 let appItem = NSMenuItem(); mainMenu.addItem(appItem)
 let appMenu = NSMenu()
 appMenu.addItem(withTitle: "Quit Breeze PoC", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 appItem.submenu = appMenu
+
+let fileItem = NSMenuItem(); mainMenu.addItem(fileItem)
+let fileMenu = NSMenu(title: "File")
+fileMenu.addItem(withTitle: "Focus Address Bar", action: #selector(AppDelegate.focusAddr), keyEquivalent: "l")
+fileMenu.addItem(withTitle: "Reload", action: #selector(AppDelegate.reload), keyEquivalent: "r")
+fileItem.submenu = fileMenu
+
+let editItem = NSMenuItem(); mainMenu.addItem(editItem)
+let editMenu = NSMenu(title: "Edit")
+editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+editItem.submenu = editMenu
 app.mainMenu = mainMenu
 
 app.run()
