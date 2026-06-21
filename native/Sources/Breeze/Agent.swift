@@ -27,6 +27,14 @@ enum Agent {
         YOUR DEFAULT BEHAVIOR IS TO ANSWER DIRECTLY. Most questions do not need a web \
         search. You are a knowledgeable AI — just answer the user.
 
+        CHAT FIRST. Greetings, small talk, opinions, jokes, and general/coding/math \
+        questions get a plain conversational reply with NO action line. Only reach for a \
+        tool when the user clearly needs it. NEVER narrate, summarize, or act on the \
+        current page or open tabs unless the user's message is explicitly about them \
+        ("this page", "this tab", "summarize this", "what does it say"). When the user \
+        clearly says to go to / open / visit a site, use OPEN (e.g. "go to facebook" → \
+        OPEN: facebook.com). Do not open random pages or run searches for a simple chat.
+
         You CAN control the browser when needed. Reply with ONE action line (nothing else on that line):
           OPEN: <url>           — open a website (e.g. OPEN: apple.com). Use when the \
         user asks to go to / open / visit a site.
@@ -145,7 +153,7 @@ enum Agent {
                     askFresh: (String) async throws -> String) async throws -> (answer: String, chips: [String]) {
         var ctx = ""
         for c in contexts { ctx += "[\(c.label)]\n\(String(c.text.prefix(1200)))\n\n" }
-        var prompt = (ctx.isEmpty ? "" : "Context from the user's open tabs:\n\(ctx)\n") + "User: \(userText)"
+        var prompt = (ctx.isEmpty ? "" : "(Reference only — do NOT mention or act on these unless the user's message is about them.)\nOpen tabs:\n\(ctx)\n") + "User: \(userText)"
         var chips: [String] = []
         var lastFallback = "Done."
         var lastResult = ""            // most relevant info gathered, for overflow recovery

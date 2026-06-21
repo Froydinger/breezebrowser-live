@@ -554,6 +554,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
+        appearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)   // sync glass/material so light-mode chat text stays readable
         layer?.backgroundColor = p.bg.cgColor
         inputWrap.layer?.backgroundColor = p.surface.cgColor
         input.textColor = p.text
