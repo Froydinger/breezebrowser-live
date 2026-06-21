@@ -158,7 +158,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             scrollTopToHeaderC,
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            scroll.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -8),
+            scroll.bottomAnchor.constraint(equalTo: contextRow.topAnchor, constant: -4),
             doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             messagesStack.topAnchor.constraint(equalTo: doc.topAnchor, constant: 6),
             messagesStack.centerXAnchor.constraint(equalTo: doc.centerXAnchor),

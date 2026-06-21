@@ -251,20 +251,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         window.contentView = root
         
-        // Premium slide-up and fade-in window startup animation
-        let finalFrame = window.frame
-        var startFrame = finalFrame
-        startFrame.origin.y -= 25
-        window.setFrame(startFrame, display: false)
-        window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
-        
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.35
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().alphaValue = 1.0
-            window.animator().setFrame(finalFrame, display: true)
-        }
 
         // load persisted state + apply settings
         pins = Store.shared.pins
@@ -595,6 +582,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if t.isChatTab {
             newTab.stopClock()
             topBar.isHidden = false
+            setSidebarHidden(true)
             
             sidebarTopC.isActive = false
             sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
