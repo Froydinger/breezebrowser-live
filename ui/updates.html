@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.1.2', icon: 'plug', title: 'Use your own OpenAI key, working sign-in popups', major: true, items: [
+        '<b>Bring your own OpenAI key</b> — in Settings → AI you can switch Breeze AI to OpenAI for stronger multi-step tasks like filling out forms. Choose from three cheap, capable models. Your key is stored only on your Mac and calls OpenAI directly — there is no Breeze server, and you pay OpenAI for your own usage.',
+        '<b>Sign-in popups work now</b> — “Continue with Google / Apple / GitHub” pop-up windows no longer get blocked, so OAuth logins actually complete.',
+        '<b>Cleaner fullscreen</b> — the gap reserved for the traffic-light buttons is reclaimed in fullscreen, where they only appear when you hover.' ] },
       { v: '3.1.1', icon: 'wrench', title: 'Agent fixes — cleaner, smarter, finishes the job', items: [
         '<b>No more numbers all over the page</b> — the AI now tags page elements invisibly, so the green numbered badges no longer clutter your view or linger after it finishes.',
         '<b>The AI follows through</b> — when you ask it to open or go to a result, it actually clicks through and completes the task instead of just describing what it found.',

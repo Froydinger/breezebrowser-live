@@ -57,9 +57,12 @@ final class Tab {
     var lastActive = Date()
     var splitPartnerId: UUID?    // if in a split pair, the UUID of the other tab
     var splitIsRight = false     // true if this tab is placed on the right side of the split
+    var isPopup = false          // opened via window.open() (e.g. an OAuth sign-in window)
 
-    init() {
-        webView = WKWebView(frame: .zero, configuration: sharedConfig)
+    // `configuration` defaults to the shared config; window.open() popups must pass the
+    // configuration WebKit hands us so window.opener/postMessage keep working.
+    init(configuration: WKWebViewConfiguration = sharedConfig) {
+        webView = WKWebView(frame: .zero, configuration: configuration)
         webView.customUserAgent = SafariUA
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
