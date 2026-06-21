@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ n: Notification) { browser?.llm.shutdown() }
     @objc func newTab() { browser?.openNewTab() }
     @objc func closeTab() { if let t = browser?.current { browser?.closeTab(t) } }
     @objc func focusAddr() {
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func goBack() { browser?.current?.webView.goBack() }
     @objc func goForward() { browser?.current?.webView.goForward() }
     @objc func toggleSidebar() { browser?.toggleSidebar() }
+    @objc func toggleAssistant() { browser?.toggleAssistant() }
     @objc func cycleTheme() { browser?.cycleThemeSetting() }
     @objc func openSettings() { browser?.openInternal(.settings) }
     @objc func openHistory() { browser?.openInternal(.history) }
@@ -80,6 +82,7 @@ let viewItem = NSMenuItem(); mainMenu.addItem(viewItem)
 let viewMenu = NSMenu(title: "View")
 viewMenu.addItem(mi("Reload Page", #selector(AppDelegate.reload), "r"))
 viewMenu.addItem(mi("Toggle Sidebar", #selector(AppDelegate.toggleSidebar), "s"))
+viewMenu.addItem(mi("Toggle Assistant", #selector(AppDelegate.toggleAssistant), "e"))
 viewMenu.addItem(mi("Cycle Theme", #selector(AppDelegate.cycleTheme), "d", [.command, .shift]))
 viewItem.submenu = viewMenu
 

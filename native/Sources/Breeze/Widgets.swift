@@ -15,12 +15,22 @@ final class GradientBackgroundView: NSView {
         g.locations = [0, 0.55, 1]
         g.startPoint = CGPoint(x: 0.1, y: 1)     // ~160deg
         g.endPoint = CGPoint(x: 0.9, y: 0)
-        layer.sublayers?.removeAll(where: { $0.name == "bgGrad" })
+        layer.sublayers?.removeAll(where: { $0.name == "bgGrad" || $0.name == "accentWash" })
         g.name = "bgGrad"
         layer.insertSublayer(g, at: 0)
+        // non-default accent washes the whole chrome (~12%); default blue = none.
+        if let accent = Theme.shared.customAccent {
+            let wash = CALayer()
+            wash.frame = bounds
+            wash.backgroundColor = accent.withAlphaComponent(0.12).cgColor
+            wash.name = "accentWash"
+            layer.insertSublayer(wash, above: g)
+        }
     }
-    override func layout() { super.layout(); needsDisplay = true
-        layer?.sublayers?.first(where: { $0.name == "bgGrad" })?.frame = bounds }
+    override func layout() {
+        super.layout()
+        layer?.sublayers?.forEach { if $0.name == "bgGrad" || $0.name == "accentWash" { $0.frame = bounds } }
+    }
 }
 
 /// Render an SF Symbol tinted to an explicit color (baked in, not template) so it
@@ -92,6 +102,28 @@ final class HoverButton: NSButton {
 /// Top-left origin view so scroll-view content starts at the top.
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 
+/// Thin draggable column divider — shows the left-right resize cursor.
+final class ColumnResizeView: NSView {
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .resizeLeftRight) }
+    // don't let isMovableByWindowBackground steal the drag — we resize instead
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
+/// NSView that reports mouse enter/exit — used for the sidebar edge-peek.
+final class HoverReportView: NSView {
+    var onEnter: (() -> Void)?
+    var onExit: (() -> Void)?
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with e: NSEvent) { onEnter?() }
+    override func mouseExited(with e: NSEvent)  { onExit?() }
+}
+
 /// NSMenuItem that runs a closure when chosen.
 final class BlockMenuItem: NSMenuItem {
     private let handler: () -> Void
@@ -106,19 +138,39 @@ final class BlockMenuItem: NSMenuItem {
 
 enum MenuEntry {
     case item(String, () -> Void)
+    case check(String, Bool, () -> Void)     // checkbox item
+    case disabled(String)
+    case submenu(String, [MenuEntry])
     case separator
+}
+
+func buildMenu(_ entries: [MenuEntry]) -> NSMenu {
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    for entry in entries {
+        switch entry {
+        case .item(let title, let action):
+            menu.addItem(BlockMenuItem(title, action))
+        case .check(let title, let checked, let action):
+            let it = BlockMenuItem(title, action); it.state = checked ? .on : .off
+            menu.addItem(it)
+        case .disabled(let title):
+            let it = NSMenuItem(title: title, action: nil, keyEquivalent: ""); it.isEnabled = false
+            menu.addItem(it)
+        case .submenu(let title, let sub):
+            let it = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            it.submenu = buildMenu(sub)
+            menu.addItem(it)
+        case .separator:
+            menu.addItem(.separator())
+        }
+    }
+    return menu
 }
 
 /// Build and pop up a context menu at the event location.
 func popupMenu(_ entries: [MenuEntry], for view: NSView, with event: NSEvent) {
-    let menu = NSMenu()
-    for entry in entries {
-        switch entry {
-        case .item(let title, let action): menu.addItem(BlockMenuItem(title, action))
-        case .separator: menu.addItem(.separator())
-        }
-    }
-    NSMenu.popUpContextMenu(menu, with: event, for: view)
+    NSMenu.popUpContextMenu(buildMenu(entries), with: event, for: view)
 }
 
 extension NSView {

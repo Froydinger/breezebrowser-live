@@ -12,6 +12,8 @@ final class Store {
     private let pinsURL: URL
     private let historyURL: URL
     private let bookmarksURL: URL
+    private let chatsURL: URL
+    var chats: [[String: Any]] = []      // { id, title, messages:[{role,text}] }
 
     var settings: [String: Any]
     var pins: [Pin]
@@ -47,6 +49,7 @@ final class Store {
         pinsURL = dir.appendingPathComponent("pins.json")
         historyURL = dir.appendingPathComponent("history.json")
         bookmarksURL = dir.appendingPathComponent("bookmarks.json")
+        chatsURL = dir.appendingPathComponent("chats.json")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         // settings = defaults merged with whatever was saved
@@ -66,6 +69,26 @@ final class Store {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         bookmarks = (try? Data(contentsOf: bookmarksURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        chats = (try? Data(contentsOf: chatsURL)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+    }
+
+    // MARK: - Chat history
+
+    func saveChats() {
+        if let data = try? JSONSerialization.data(withJSONObject: chats) { try? data.write(to: chatsURL) }
+    }
+    /// Insert or update a chat (newest first). Empty chats are ignored.
+    func upsertChat(id: Double, title: String, messages: [[String: String]]) {
+        guard !messages.isEmpty else { return }
+        chats.removeAll { ($0["id"] as? Double) == id }
+        chats.insert(["id": id, "title": title, "messages": messages], at: 0)
+        if chats.count > 200 { chats = Array(chats.prefix(200)) }
+        saveChats()
+    }
+    func deleteChat(id: Double) { chats.removeAll { ($0["id"] as? Double) == id }; saveChats() }
+    func chatMessages(id: Double) -> [[String: String]] {
+        (chats.first { ($0["id"] as? Double) == id }?["messages"] as? [[String: String]]) ?? []
     }
 
     static func json(_ obj: Any) -> String {

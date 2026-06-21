@@ -5,18 +5,15 @@ import Cocoa
 final class TabRowView: NSView {
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
-    var onPin: (() -> Void)?
-    var onCloseOthers: (() -> Void)?
-    var onCopyLink: (() -> Void)?
-    var canPin = false
-    var extraMenu: [MenuEntry] = []        // group actions, injected by the controller
+    var menuProvider: (() -> [MenuEntry])?     // controller builds the full menu
     private let faviconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let close = HoverButton(symbol: "xmark", size: 20, point: 9)
+    private let perfBadge = NSTextField(labelWithString: "🚀")
     private var active: Bool
     private var hovering = false
 
-    init(title: String, host: String, active: Bool) {
+    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false) {
         self.active = active
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
@@ -37,8 +34,12 @@ final class TabRowView: NSView {
 
         close.onTap = { [weak self] in self?.onClose?() }
         close.alphaValue = 0
+        perfBadge.font = .systemFont(ofSize: 11)
+        perfBadge.translatesAutoresizingMaskIntoConstraints = false
+        perfBadge.isHidden = !perf
+        perfBadge.toolTip = "Performance Mode on"
 
-        addSubview(faviconView); addSubview(titleLabel); addSubview(close)
+        addSubview(faviconView); addSubview(titleLabel); addSubview(perfBadge); addSubview(close)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 38),
             faviconView.widthAnchor.constraint(equalToConstant: 16),
@@ -47,7 +48,9 @@ final class TabRowView: NSView {
             faviconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             titleLabel.leadingAnchor.constraint(equalTo: faviconView.trailingAnchor, constant: 9),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: perfBadge.leadingAnchor, constant: -4),
+            perfBadge.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
+            perfBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
             close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -58,6 +61,7 @@ final class TabRowView: NSView {
         if !host.isEmpty {
             Favicons.shared.image(for: host) { [weak self] img in if let img { self?.faviconView.image = img } }
         }
+        if asleep { faviconView.alphaValue = 0.5; titleLabel.alphaValue = 0.55 }   // dimmed when sleeping
     }
     required init?(coder: NSCoder) { nil }
 
@@ -80,19 +84,94 @@ final class TabRowView: NSView {
             options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
             owner: self, userInfo: nil))
     }
-    override func mouseEntered(with e: NSEvent) { hovering = true; close.animator().alphaValue = 1; applyTheme() }
-    override func mouseExited(with e: NSEvent)  { hovering = false; close.animator().alphaValue = 0; applyTheme() }
+    override func mouseEntered(with e: NSEvent) {
+        hovering = true; close.animator().alphaValue = 1
+        if !perfBadge.isHidden { perfBadge.animator().alphaValue = 0 }
+        applyTheme()
+    }
+    override func mouseExited(with e: NSEvent) {
+        hovering = false; close.animator().alphaValue = 0
+        if !perfBadge.isHidden { perfBadge.animator().alphaValue = 1 }
+        applyTheme()
+    }
     @objc private func clicked() { onSelect?() }
 
     override func rightMouseDown(with e: NSEvent) {
-        var entries: [MenuEntry] = []
-        if canPin { entries.append(.item("Pin as App", { [weak self] in self?.onPin?() })) }
-        entries.append(.item("Copy Link", { [weak self] in self?.onCopyLink?() }))
-        if !extraMenu.isEmpty { entries.append(.separator); entries.append(contentsOf: extraMenu) }
-        entries.append(.separator)
-        entries.append(.item("Close Tab", { [weak self] in self?.onClose?() }))
-        entries.append(.item("Close Other Tabs", { [weak self] in self?.onCloseOthers?() }))
-        popupMenu(entries, for: self, with: e)
+        if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
+    }
+}
+
+/// One split-view pane: its own URL-bar strip (back/fwd/reload + address) over a
+/// hosted web view. Mirrors the Electron per-pane split-bar.
+final class SplitPane: NSView {
+    let back = HoverButton(symbol: "chevron.left", size: 26, point: 13)
+    let forward = HoverButton(symbol: "chevron.right", size: 26, point: 13)
+    let reload = HoverButton(symbol: "arrow.clockwise", size: 26, point: 12)
+    let address = NSTextField()
+    private let addressWrap = NSView()
+    let content = NSView()
+    var onNavigate: ((String) -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true; layer?.masksToBounds = true; layer?.cornerRadius = 10
+
+        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 9
+        addressWrap.translatesAutoresizingMaskIntoConstraints = false
+        address.placeholderString = "Search or enter URL"
+        address.font = .systemFont(ofSize: 12.5)
+        address.isBordered = false; address.drawsBackground = false; address.focusRingType = .none
+        address.translatesAutoresizingMaskIntoConstraints = false
+        address.target = self; address.action = #selector(submit)
+        addressWrap.addSubview(address)
+        NSLayoutConstraint.activate([
+            address.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 10),
+            address.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -10),
+            address.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
+        ])
+
+        let nav = NSStackView(views: [back, forward, reload]); nav.spacing = 1
+        nav.translatesAutoresizingMaskIntoConstraints = false
+        let strip = NSView(); strip.translatesAutoresizingMaskIntoConstraints = false
+        strip.addSubview(nav); strip.addSubview(addressWrap)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(strip); addSubview(content)
+        NSLayoutConstraint.activate([
+            strip.topAnchor.constraint(equalTo: topAnchor),
+            strip.leadingAnchor.constraint(equalTo: leadingAnchor),
+            strip.trailingAnchor.constraint(equalTo: trailingAnchor),
+            strip.heightAnchor.constraint(equalToConstant: 40),
+            nav.leadingAnchor.constraint(equalTo: strip.leadingAnchor, constant: 4),
+            nav.centerYAnchor.constraint(equalTo: strip.centerYAnchor),
+            addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 6),
+            addressWrap.trailingAnchor.constraint(equalTo: strip.trailingAnchor, constant: -6),
+            addressWrap.centerYAnchor.constraint(equalTo: strip.centerYAnchor),
+            addressWrap.heightAnchor.constraint(equalToConstant: 30),
+            content.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 2),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
+                                               name: Theme.didChange, object: nil)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func host(_ view: NSView) {
+        content.subviews.forEach { $0.removeFromSuperview() }
+        content.addSubview(view); view.pin(to: content)
+    }
+    func setURL(_ s: String) {
+        if window?.firstResponder !== address.currentEditor() { address.stringValue = s }
+    }
+    @objc private func submit() { onNavigate?(address.stringValue) }
+    @objc func applyTheme() {
+        let p = Theme.shared.palette
+        layer?.backgroundColor = p.surface.cgColor
+        addressWrap.layer?.backgroundColor = p.surface.cgColor
+        address.textColor = p.text
     }
 }
 
@@ -196,6 +275,7 @@ final class NowPlayingView: NSView {
 final class PinView: NSView {
     var onSelect: (() -> Void)?
     var onUnpin: (() -> Void)?
+    var menuProvider: (() -> [MenuEntry])?
     private let iconView = NSImageView()
     private let letter = NSTextField(labelWithString: "")
     private var hovering = false
@@ -247,10 +327,23 @@ final class PinView: NSView {
     }
     required init?(coder: NSCoder) { nil }
 
+    private var isOpen = false
+    private var isActive = false
+    func setState(open: Bool, active: Bool) { isOpen = open; isActive = active; applyTheme() }
+
     @objc func applyTheme() {
         let p = Theme.shared.palette
         layer?.backgroundColor = (hovering ? p.surfaceActive : p.surface).cgColor
         letter.layer?.backgroundColor = p.accent.cgColor
+        // open pins get a soft accent ring; the active pin a full ring (matches CSS)
+        if isActive {
+            layer?.borderWidth = 2; layer?.borderColor = p.accent.cgColor
+        } else if isOpen {
+            layer?.borderWidth = 1.5
+            layer?.borderColor = p.accent.withAlphaComponent(0.5).cgColor
+        } else {
+            layer?.borderWidth = 0
+        }
     }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -264,10 +357,6 @@ final class PinView: NSView {
     @objc private func clicked() { onSelect?() }
 
     override func rightMouseDown(with e: NSEvent) {
-        popupMenu([
-            .item("Open", { [weak self] in self?.onSelect?() }),
-            .separator,
-            .item("Unpin", { [weak self] in self?.onUnpin?() }),
-        ], for: self, with: e)
+        if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
     }
 }

@@ -47,8 +47,13 @@ final class Tab {
     var title = "New Tab"
     var isNewTab = true          // show the native new-tab page instead of the web view
     var groupId: Int?            // nil = ungrouped
+    var pinUrl: String?          // the pinned app this tab represents, if any
+    var perfMode = false         // 🚀 boost: no throttle, square corners
     var isPlaying = false        // media currently playing in this tab
     var mediaTitle = ""
+    var sleeping = false         // discarded to save memory; reloads on activate
+    var sleptURL: String?        // URL to restore when woken
+    var lastActive = Date()
 
     init() {
         webView = WKWebView(frame: .zero, configuration: sharedConfig)
@@ -66,6 +71,13 @@ struct Pin {
     var url: String
     var title: String
 }
+
+/// A page's text given to the assistant as context (current tab + @-added tabs).
+struct AIContext { let label: String; let text: String }
+
+/// An extra context the user added: another open tab, or an attached image
+/// (already described on-device by Vision).
+struct AIExtra { let label: String; var tab: Tab?; var imageText: String? }
 
 /// Pin squircle sizing — matches the Electron --pin-min values (Settings).
 enum PinSize: String {

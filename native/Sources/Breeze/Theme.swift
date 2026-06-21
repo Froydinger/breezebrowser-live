@@ -21,6 +21,12 @@ struct Palette {
     let accent: NSColor
     let isDark: Bool
 
+    func withAccent(_ c: NSColor) -> Palette {
+        Palette(bg: bg, bgTop: bgTop, bgBottom: bgBottom, text: text, textSoft: textSoft,
+                surface: surface, surfaceHover: surfaceHover, surfaceActive: surfaceActive,
+                accent: c, isDark: isDark)
+    }
+
     static let light = Palette(
         bg: srgb(242, 240, 237),
         bgTop: srgb(245, 242, 238),
@@ -30,7 +36,7 @@ struct Palette {
         surface: NSColor(white: 1, alpha: 0.55),
         surfaceHover: NSColor(white: 1, alpha: 0.8),
         surfaceActive: NSColor(white: 1, alpha: 0.95),
-        accent: srgb(91, 124, 250),
+        accent: srgb(28, 28, 32),          // default is mono (near-black); custom accents override
         isDark: false
     )
 
@@ -43,7 +49,7 @@ struct Palette {
         surface: NSColor(white: 1, alpha: 0.06),
         surfaceHover: NSColor(white: 1, alpha: 0.10),
         surfaceActive: NSColor(white: 1, alpha: 0.14),
-        accent: srgb(123, 149, 255),
+        accent: srgb(245, 245, 247),       // default is mono (near-white); custom accents override
         isDark: true
     )
 }
@@ -53,7 +59,24 @@ final class Theme {
     static let didChange = Notification.Name("BreezeThemeDidChange")
 
     private(set) var mode: ThemeMode = .system
-    var palette: Palette {
+
+    static let defaultAccent = "#5b7cfa"
+
+    static func hex(_ s: String) -> NSColor? {
+        var h = s.trimmingCharacters(in: .whitespaces)
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let v = Int(h, radix: 16) else { return nil }
+        return srgb((v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
+    }
+
+    /// True when the user picked a non-default accent (default blue carries no tint).
+    var isCustomAccent: Bool {
+        let a = Store.shared.string("accent").lowercased()
+        return !a.isEmpty && a != Theme.defaultAccent
+    }
+    var customAccent: NSColor? { isCustomAccent ? Theme.hex(Store.shared.string("accent")) : nil }
+
+    private var basePalette: Palette {
         switch mode {
         case .light: return .light
         case .dark:  return .dark
@@ -61,6 +84,11 @@ final class Theme {
             let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             return dark ? .dark : .light
         }
+    }
+
+    var palette: Palette {
+        if let c = customAccent { return basePalette.withAccent(c) }
+        return basePalette
     }
 
     func cycle() {  // matches #theme-btn: Light → Dark → System

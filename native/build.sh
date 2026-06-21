@@ -15,7 +15,8 @@ echo "Compiling…"
 swiftc -O Sources/Breeze/*.swift \
   -o "$APP/Contents/MacOS/Breeze" \
   -target arm64-apple-macosx14.0 -sdk "$SDK" \
-  -framework Cocoa -framework WebKit
+  -framework Cocoa -framework WebKit -framework UserNotifications \
+  -Xlinker -weak_framework -Xlinker FoundationModels
 
 # Bundle the app icon so breezeLogo() finds it via Bundle.main.image(forResource:"icon").
 cp ../icon.png "$APP/Contents/Resources/icon.png" 2>/dev/null || true
@@ -38,6 +39,14 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key><true/>
+    <key>NSExceptionDomains</key>
+    <dict><key>127.0.0.1</key><dict>
+      <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+    </dict></dict>
+  </dict>
 </dict></plist>
 PLIST
 

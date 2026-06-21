@@ -43,8 +43,6 @@ final class NewTabView: NSView {
         field.isBordered = false
         field.focusRingType = .none
         field.drawsBackground = false
-        field.wantsLayer = true
-        field.layer?.cornerRadius = 16
         field.translatesAutoresizingMaskIntoConstraints = false
         field.target = self
         field.action = #selector(submit)
