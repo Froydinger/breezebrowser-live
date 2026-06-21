@@ -31,8 +31,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Breeze</string>
   <key>CFBundleDisplayName</key><string>Breeze</string>
   <key>CFBundleIdentifier</key><string>com.jakefreudinger.breeze.native</string>
-  <key>CFBundleVersion</key><string>0.1</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
+  <key>CFBundleVersion</key><string>3.0.0</string>
+  <key>CFBundleShortVersionString</key><string>3.0.0</string>
   <key>CFBundleExecutable</key><string>Breeze</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
@@ -50,5 +50,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+# Sign with the self-signed "Breeze Signing" cert if present (same approach as
+# the Electron app — keeps future auto-updates verifiable); else ad-hoc.
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Breeze Signing"; then
+  codesign --force --deep --sign "Breeze Signing" "$APP" >/dev/null 2>&1 || true
+  echo "Signed with: Breeze Signing"
+else
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+  echo "Signed: ad-hoc (Breeze Signing cert not found)"
+fi
 echo "Built: $APP"

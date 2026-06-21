@@ -509,13 +509,9 @@
         </div>
         <div class="row">
           <div>
-            <div class="row-label">AI model</div>
-            <div class="row-hint" id="aiModelHint">7B is the default. Only pick 3B if 7B is too slow — it's weaker, especially at summarizing. Switching restarts Breeze (your tabs reopen).</div>
+            <div class="row-label">Model</div>
+            <div class="row-hint">Breeze AI runs <b>on-device</b> with <b>Apple Foundation Models</b> (requires macOS 26 with Apple Intelligence — best on 16&nbsp;GB+ Apple Silicon). If Apple Intelligence isn't available, Breeze falls back to a local <b>Qwen 7B</b> model it downloads once. Nothing leaves your Mac.</div>
           </div>
-          <select id="aiModel">
-            <option value="smart">Smart · Qwen2.5 7B (~4.7 GB)</option>
-            <option value="fast">Fast · Qwen2.5 3B — weaker ⚠️ (~2 GB)</option>
-          </select>
         </div>
         <div class="row">
           <div>
@@ -715,7 +711,6 @@
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
       document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
-      document.getElementById('aiModel').value = settings.aiModel === 'fast' ? 'fast' : 'smart';
       document.getElementById('flattenFullscreenCorners').checked = settings.flattenFullscreenCorners !== false;
       // AI fields: don't clobber while the user is actively typing in them
       const ae = document.activeElement;
@@ -756,11 +751,6 @@
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
     document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
-    document.getElementById('aiModel').addEventListener('change', (e) => {
-      // setAIModel confirms + restarts (preserving tabs) when a model is already
-      // loaded; the dropdown reverts itself if the user cancels.
-      breezeInternal.setAIModel(e.target.value);
-    });
     document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
 
