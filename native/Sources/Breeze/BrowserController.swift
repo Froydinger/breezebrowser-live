@@ -248,10 +248,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sbForward.onTap = { [weak self] in self?.current?.webView.goForward() }
         sbReload.onTap = { [weak self] in self?.current?.webView.reload() }
 
-        let strip = NSStackView(views: [tlPad, toggle, sbBack, sbForward, sbReload, dragFill, dl])
+        let strip = NSStackView(views: [tlPad, toggle, dl, dragFill, sbBack, sbForward, sbReload])
         strip.spacing = 3; strip.alignment = .centerY
         strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        strip.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
         // pins grid (4-wide rows)
         pinsStack.orientation = .vertical; pinsStack.spacing = 7; pinsStack.alignment = .leading
@@ -298,7 +298,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pinsTopToStrip = pinsStack.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 12)
         pinsTopToUrl = pinsStack.topAnchor.constraint(equalTo: sidebarUrlSection.bottomAnchor, constant: 12)
         NSLayoutConstraint.activate([
-            strip.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 5),
+            strip.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: -2),
             strip.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
             strip.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
 
