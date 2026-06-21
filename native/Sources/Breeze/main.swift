@@ -68,6 +68,8 @@ fileMenu.addItem(mi("New Tab", #selector(AppDelegate.newTab), "t"))
 fileMenu.addItem(mi("Close Tab", #selector(AppDelegate.closeTab), "w"))
 fileMenu.addItem(.separator())
 fileMenu.addItem(mi("Open Location…", #selector(AppDelegate.focusAddr), "l"))
+fileMenu.addItem(.separator())
+fileMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates), keyEquivalent: "")
 fileItem.submenu = fileMenu
 
 // Edit

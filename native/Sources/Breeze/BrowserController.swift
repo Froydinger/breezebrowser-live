@@ -225,6 +225,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         openNewTab()
         startSleepTimer()
         applyUrlBarMode()
+        initReminders()
     }
 
     var current: Tab? { tabs.indices.contains(active) ? tabs[active] : nil }
@@ -1233,13 +1234,49 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return await withCheckedContinuation { cont in
             center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
                 guard granted else { cont.resume(returning: "I couldn't set the reminder — notifications are off for Breeze."); return }
+                
+                let id = UUID().uuidString
+                let fireAt = Date().timeIntervalSince1970 * 1000 + (secs * 1000)
+                let rem: [String: Any] = ["id": id, "label": text, "fireAt": fireAt]
+                
+                DispatchQueue.main.async {
+                    var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+                    rems.append(rem)
+                    Store.shared.settings["reminders"] = rems
+                    Store.shared.saveSettings()
+                    self.broadcastToInternalPages()
+                }
+
                 let content = UNMutableNotificationContent()
                 content.title = "Breeze reminder"; content.body = text; content.sound = .default
                 let trig = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
-                center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trig)) { _ in
+                center.add(UNNotificationRequest(identifier: id, content: content, trigger: trig)) { _ in
                     cont.resume(returning: "Reminder set: \"\(text)\" in \(minutes) minute\(minutes == 1 ? "" : "s").")
                 }
             }
+        }
+    }
+
+    private func initReminders() {
+        let now = Date().timeIntervalSince1970 * 1000
+        var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+        let center = UNUserNotificationCenter.current()
+        var live: [[String: Any]] = []
+        for r in rems {
+            if let fireAt = r["fireAt"] as? Double, fireAt > now {
+                let secs = (fireAt - now) / 1000
+                let id = r["id"] as? String ?? UUID().uuidString
+                let txt = r["label"] as? String ?? "Reminder"
+                let content = UNMutableNotificationContent()
+                content.title = "Breeze reminder"; content.body = txt; content.sound = .default
+                let trig = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
+                center.add(UNNotificationRequest(identifier: id, content: content, trigger: trig))
+                live.append(r)
+            }
+        }
+        if live.count != rems.count {
+            Store.shared.settings["reminders"] = live
+            Store.shared.saveSettings()
         }
     }
 
@@ -1486,7 +1523,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if let id = args["id"] as? String { showDownload(id) }
         case "clearDownloads":
             downloads.removeAll { $0.state != .progressing }; broadcastDownloads()
-        case "getReminders", "vaultList":
+        case "getReminders":
+            let rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+            resolve(Store.json(rems))
+        case "deleteReminder":
+            if let id = args["id"] as? String {
+                var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+                rems.removeAll { ($0["id"] as? String) == id }
+                Store.shared.settings["reminders"] = rems
+                Store.shared.saveSettings()
+                broadcastToInternalPages()
+            }
+        case "vaultList":
             resolve("[]")
         case "switchToTab":
             if let id = args["id"] as? String, let i = tabs.firstIndex(where: { $0.id.uuidString == id }) { select(i) }
@@ -1506,6 +1554,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             Store.shared.history = []; Store.shared.bookmarks = []
             Store.shared.saveSettings(); Store.shared.savePins(); Store.shared.saveHistory(); Store.shared.saveBookmarks()
             pins = []; renderPins(); applySettingsChange(); resolve("{}")
+        case "makeDefaultBrowser":
+            if let bid = Bundle.main.bundleIdentifier {
+                LSSetDefaultHandlerForURLScheme("http" as CFString, bid as CFString)
+                LSSetDefaultHandlerForURLScheme("https" as CFString, bid as CFString)
+            }
         default:
             break
         }

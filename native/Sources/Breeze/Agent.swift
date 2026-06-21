@@ -56,12 +56,15 @@ enum Agent {
                 l.removeFirst()
             }
             l = l.trimmingCharacters(in: .whitespaces)
-            let up = l.uppercased()
-            if up.hasPrefix("OPEN:") {
+            var up = l.uppercased()
+            if up.hasPrefix("ACTION: ") { l = String(l.dropFirst(8)).trimmingCharacters(in: .whitespaces); up = l.uppercased() }
+            else if up.hasPrefix("ACTION ") { l = String(l.dropFirst(7)).trimmingCharacters(in: .whitespaces); up = l.uppercased() }
+
+            if up.hasPrefix("OPEN:") || up.hasPrefix("OPEN ") {
                 let v = clean(String(l.dropFirst(5))); if !v.isEmpty { return .open(v) }
-            } else if up.hasPrefix("SEARCH:") {
+            } else if up.hasPrefix("SEARCH:") || up.hasPrefix("SEARCH ") {
                 let v = clean(String(l.dropFirst(7))); if !v.isEmpty { return .search(v) }
-            } else if up.hasPrefix("REMIND:") {
+            } else if up.hasPrefix("REMIND:") || up.hasPrefix("REMIND ") {
                 let body = String(l.dropFirst(7))
                 let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
                 let mins = Int(parts.first?.filter { $0.isNumber } ?? "") ?? 5
@@ -154,8 +157,10 @@ enum Agent {
     /// Remove any stray action lines from a final answer (defensive).
     private static func stripActionLines(_ s: String) -> String {
         let kept = s.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
-            let up = line.trimmingCharacters(in: .whitespaces).uppercased()
-            return !(up.hasPrefix("OPEN:") || up.hasPrefix("SEARCH:") || up.hasPrefix("REMIND:") || up == "READ")
+            var up = line.trimmingCharacters(in: .whitespaces).uppercased()
+            if up.hasPrefix("ACTION: ") { up = String(up.dropFirst(8)).trimmingCharacters(in: .whitespaces) }
+            else if up.hasPrefix("ACTION ") { up = String(up.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
+            return !(up.hasPrefix("OPEN:") || up.hasPrefix("SEARCH:") || up.hasPrefix("REMIND:") || up == "READ" || up.hasPrefix("OPEN ") || up.hasPrefix("SEARCH ") || up.hasPrefix("REMIND "))
         }
         return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
