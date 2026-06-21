@@ -94,7 +94,7 @@ let breezeBridgeJS = """
     openChat: function (id) { send('openChat', { id: id }); },
     deleteChat: function (id) { send('deleteChat', { id: id }); },
     askAI: function (text) { send('askAI', { text: text }); },
-    aiReady: function () { return Promise.resolve(false); },
+    aiReady: function () { return call('aiReady'); },
     onAIReady: function () {},
     getModelInfo: function () { return Promise.resolve({}); },
     setAIModel: function (tier) { send('setAIModel', { tier: tier }); },

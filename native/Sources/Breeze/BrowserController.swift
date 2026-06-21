@@ -250,7 +250,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         window.contentView = root
+        
+        // Premium slide-up and fade-in window startup animation
+        let finalFrame = window.frame
+        var startFrame = finalFrame
+        startFrame.origin.y -= 25
+        window.setFrame(startFrame, display: false)
+        window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
+        
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.35
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().alphaValue = 1.0
+            window.animator().setFrame(finalFrame, display: true)
+        }
 
         // load persisted state + apply settings
         pins = Store.shared.pins
@@ -598,8 +612,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistantTopC.isActive = false
             assistantBottomC.isActive = false
             
-            // Close the sidebar assistant panel if it was open
-            if assistantOpen { setAssistant(false) }
+            // Collapse the right-side assistant panel space completely
+            assistantOpen = false
+            breezeCorner.isHidden = false
+            webTrailC.constant = -6
+            topTrailC.constant = -54
+            root.layoutSubtreeIfNeeded()
+            
             assistant.setFullscreen(true, clearLights: false)
             webContainer.addSubview(assistant); assistant.pin(to: webContainer)
             assistant.focusInput()
@@ -2329,7 +2348,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "hasSecret":
             if let key = args["key"] as? String {
                 let has = !Keychain.get(key).isEmpty
-                resolve(Store.json(has))
+                resolve(has ? "true" : "false")
             }
         case "deleteSecret":
             if let key = args["key"] as? String {
@@ -2384,6 +2403,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
         case "deleteChat":
             if let id = chatId(from: args["id"]) { Store.shared.deleteChat(id: id) }
+        case "askAI":
+            if let text = args["text"] as? String {
+                toggleAssistantFullscreen()
+                newChat()
+                sendToAI(text)
+            }
+        case "aiReady":
+            let ready = useOpenAI || useFM || llm.ready
+            resolve(ready ? "true" : "false")
         case "clearBrowsingData":
             clearCache(); resolve("{}")
         case "resetBrowser":

@@ -18,6 +18,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         NotificationCenter.default.addObserver(self, selector: #selector(windowClosed(_:)), name: NSWindow.willCloseNotification, object: nil)
     }
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first else { return }
+        if let b = activeBrowser {
+            b.openTab(url: url.absoluteString)
+        } else {
+            let b = BrowserController()
+            browsers.append(b)
+            b.openTab(url: url.absoluteString)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
     @objc func windowClosed(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
             browsers.removeAll { $0.window === win }
@@ -59,6 +70,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openPasswords() { activeBrowser?.openInternal(.passwords) }
     @objc func openUpdates() { activeBrowser?.openInternal(.updates) }
     @objc func checkForUpdates() { Updater.shared.check(manual: true) }
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(AppDelegate.toggleAssistant) {
+            if activeBrowser?.current?.isChatTab == true {
+                return false
+            }
+        }
+        return true
+    }
 }
 
 func mi(_ title: String, _ sel: Selector, _ key: String = "",
