@@ -148,6 +148,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.0.2', icon: 'layout-panel-left', title: 'Pages that always fit', items: [
+        'Fixed a layout glitch where some site elements (sticky headers, side rails) could stay pinned to the old width after toggling the sidebar or assistant — pages now re-fit the moment the layout changes.' ] },
       { v: '3.0.1', icon: 'sparkles', title: 'A smarter, agentic Breeze AI', major: true, items: [
         'Breeze AI can now <b>do things in the browser</b> — open sites, search the web, read the current page, and answer live questions (weather, prices, news) with real, cited info instead of refusing.',
         'It <b>never hard-fails</b> on long tasks: if it runs low on context it quietly starts a fresh window with just what it needs and keeps going.',
