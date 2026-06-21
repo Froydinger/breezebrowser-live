@@ -224,3 +224,51 @@ extension NSView {
         ])
     }
 }
+
+final class TabPlaceholderView: NSView {
+    var onPull: (() -> Void)?
+    
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        
+        let box = NSStackView()
+        box.orientation = .vertical
+        box.spacing = 16
+        box.alignment = .centerX
+        box.translatesAutoresizingMaskIntoConstraints = false
+        
+        let text = NSTextField(labelWithString: "This tab is active in another window.")
+        text.font = .systemFont(ofSize: 14.5, weight: .medium)
+        text.textColor = Theme.shared.palette.textSoft
+        text.translatesAutoresizingMaskIntoConstraints = false
+        
+        let pullBtn = NSButton(title: "Pull Tab Here", target: self, action: #selector(tapped))
+        pullBtn.bezelStyle = .rounded
+        pullBtn.font = .systemFont(ofSize: 13, weight: .medium)
+        pullBtn.translatesAutoresizingMaskIntoConstraints = false
+        
+        box.addArrangedSubview(text)
+        box.addArrangedSubview(pullBtn)
+        addSubview(box)
+        
+        NSLayoutConstraint.activate([
+            box.centerXAnchor.constraint(equalTo: centerXAnchor),
+            box.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme), name: Theme.didChange, object: nil)
+        applyTheme()
+    }
+    
+    required init?(coder: NSCoder) { nil }
+    
+    @objc func tapped() {
+        onPull?()
+    }
+    
+    @objc func applyTheme() {
+        layer?.backgroundColor = Theme.shared.palette.bg.cgColor
+    }
+}

@@ -10,11 +10,12 @@ final class TabRowView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let close = HoverButton(symbol: "xmark", size: 20, point: 9)
     private let perfBadge = NSTextField(labelWithString: "🚀")
+    private let privateBadge = NSTextField(labelWithString: "🕵️")
     private var active: Bool
     private var inSplit: Bool
     private var hovering = false
 
-    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false, inSplit: Bool = false) {
+    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false, inSplit: Bool = false, isPrivate: Bool = false) {
         self.active = active
         self.inSplit = inSplit
         super.init(frame: .zero)
@@ -26,7 +27,11 @@ final class TabRowView: NSView {
         faviconView.imageScaling = .scaleProportionallyDown
         faviconView.wantsLayer = true
         faviconView.layer?.cornerRadius = 4
-        faviconView.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        if isPrivate {
+            faviconView.image = NSImage(systemSymbolName: "eye.slash.fill", accessibilityDescription: nil)
+        } else {
+            faviconView.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        }
 
         titleLabel.stringValue = title
         titleLabel.font = .systemFont(ofSize: 13)
@@ -41,7 +46,12 @@ final class TabRowView: NSView {
         perfBadge.isHidden = !perf
         perfBadge.toolTip = "Performance Mode on"
 
-        addSubview(faviconView); addSubview(titleLabel); addSubview(perfBadge); addSubview(close)
+        privateBadge.font = .systemFont(ofSize: 11)
+        privateBadge.translatesAutoresizingMaskIntoConstraints = false
+        privateBadge.isHidden = !isPrivate
+        privateBadge.toolTip = "Private Tab"
+
+        addSubview(faviconView); addSubview(titleLabel); addSubview(perfBadge); addSubview(privateBadge); addSubview(close)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 38),
             faviconView.widthAnchor.constraint(equalToConstant: 16),
@@ -50,7 +60,9 @@ final class TabRowView: NSView {
             faviconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             titleLabel.leadingAnchor.constraint(equalTo: faviconView.trailingAnchor, constant: 9),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: perfBadge.leadingAnchor, constant: -4),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: privateBadge.leadingAnchor, constant: -4),
+            privateBadge.trailingAnchor.constraint(equalTo: perfBadge.leadingAnchor, constant: -4),
+            privateBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
             perfBadge.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
             perfBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
             close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
@@ -60,7 +72,7 @@ final class TabRowView: NSView {
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
                                                name: Theme.didChange, object: nil)
-        if !host.isEmpty {
+        if !isPrivate && !host.isEmpty {
             Favicons.shared.image(for: host) { [weak self] img in if let img { self?.faviconView.image = img } }
         }
         if asleep { faviconView.alphaValue = 0.5; titleLabel.alphaValue = 0.55 }   // dimmed when sleeping

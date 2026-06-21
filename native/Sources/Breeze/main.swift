@@ -3,41 +3,61 @@
 import Cocoa
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var browser: BrowserController?
+    var browsers: [BrowserController] = []
+    var activeBrowser: BrowserController? {
+        browsers.first { $0.window.isKeyWindow } ?? browsers.first
+    }
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.regular)
         AdBlocker.shared.compileIfNeeded {}
-        browser = BrowserController()
+        let b = BrowserController()
+        browsers.append(b)
         NSApp.activate(ignoringOtherApps: true)
-        browser?.showWhatsNewIfUpdated()
+        b.showWhatsNewIfUpdated()
         Updater.shared.start()
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(windowClosed(_:)), name: NSWindow.willCloseNotification, object: nil)
+    }
+    @objc func windowClosed(_ notification: Notification) {
+        if let win = notification.object as? NSWindow {
+            browsers.removeAll { $0.window === win }
+        }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ n: Notification) {
-        if let tabs = browser?.tabs {
-            Store.shared.openTabs = tabs.compactMap { $0.webView.url?.absoluteString }
+        if let b = activeBrowser {
+            Store.shared.openTabs = b.tabs.compactMap { $0.webView.url?.absoluteString }
             Store.shared.saveOpenTabs()
+            b.llm.shutdown()
         }
-        browser?.llm.shutdown()
     }
-    @objc func newTab() { browser?.openNewTab() }
-    @objc func closeTab() { if let t = browser?.current { browser?.closeTab(t) } }
+    @objc func newWindow() {
+        let b = BrowserController()
+        browsers.append(b)
+    }
+    @objc func newPrivateWindow() {
+        let b = BrowserController(isPrivateWindow: true)
+        browsers.append(b)
+    }
+    @objc func newTab() { activeBrowser?.openNewTab() }
+    @objc func newPrivateTab() { activeBrowser?.openNewTab(isPrivate: true) }
+    @objc func closeTab() { if let t = activeBrowser?.current { activeBrowser?.closeTab(t) } }
     @objc func focusAddr() {
-        guard let b = browser else { return }
+        guard let b = activeBrowser else { return }
         b.window.makeFirstResponder(b.address); b.address.currentEditor()?.selectAll(nil)
     }
-    @objc func reload() { browser?.current?.webView.reload() }
-    @objc func goBack() { browser?.current?.webView.goBack() }
-    @objc func goForward() { browser?.current?.webView.goForward() }
-    @objc func toggleSidebar() { browser?.toggleSidebar() }
-    @objc func toggleAssistant() { browser?.toggleAssistant() }
-    @objc func cycleTheme() { browser?.cycleThemeSetting() }
-    @objc func openSettings() { browser?.openInternal(.settings) }
-    @objc func openHistory() { browser?.openInternal(.history) }
-    @objc func openBookmarks() { browser?.openInternal(.bookmarks) }
-    @objc func openDownloads() { browser?.openInternal(.downloads) }
-    @objc func openPasswords() { browser?.openInternal(.passwords) }
-    @objc func openUpdates() { browser?.openInternal(.updates) }
+    @objc func reload() { activeBrowser?.current?.webView.reload() }
+    @objc func goBack() { activeBrowser?.current?.webView.goBack() }
+    @objc func goForward() { activeBrowser?.current?.webView.goForward() }
+    @objc func toggleSidebar() { activeBrowser?.toggleSidebar() }
+    @objc func toggleAssistant() { activeBrowser?.toggleAssistant() }
+    @objc func cycleTheme() { activeBrowser?.cycleThemeSetting() }
+    @objc func openSettings() { activeBrowser?.openInternal(.settings) }
+    @objc func openHistory() { activeBrowser?.openInternal(.history) }
+    @objc func openBookmarks() { activeBrowser?.openInternal(.bookmarks) }
+    @objc func openDownloads() { activeBrowser?.openInternal(.downloads) }
+    @objc func openPasswords() { activeBrowser?.openInternal(.passwords) }
+    @objc func openUpdates() { activeBrowser?.openInternal(.updates) }
     @objc func checkForUpdates() { Updater.shared.check(manual: true) }
 }
 
@@ -71,9 +91,12 @@ appItem.submenu = appMenu
 // File
 let fileItem = NSMenuItem(); mainMenu.addItem(fileItem)
 let fileMenu = NSMenu(title: "File")
-fileMenu.addItem(mi("New Tab", #selector(AppDelegate.newTab), "t"))
-fileMenu.addItem(mi("Close Tab", #selector(AppDelegate.closeTab), "w"))
-fileMenu.addItem(.separator())
+    fileMenu.addItem(mi("New Window", #selector(AppDelegate.newWindow), "n"))
+    fileMenu.addItem(mi("New Private Window", #selector(AppDelegate.newPrivateWindow), "N", [.command, .shift]))
+    fileMenu.addItem(mi("New Tab", #selector(AppDelegate.newTab), "t"))
+    fileMenu.addItem(mi("New Private Tab", #selector(AppDelegate.newPrivateTab), "T", [.command, .shift]))
+    fileMenu.addItem(mi("Close Tab", #selector(AppDelegate.closeTab), "w"))
+    fileMenu.addItem(.separator())
 fileMenu.addItem(mi("Open Location…", #selector(AppDelegate.focusAddr), "l"))
 fileMenu.addItem(.separator())
 fileMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates), keyEquivalent: "")

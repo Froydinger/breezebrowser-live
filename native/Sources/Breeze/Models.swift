@@ -58,11 +58,29 @@ final class Tab {
     var splitPartnerId: UUID?    // if in a split pair, the UUID of the other tab
     var splitIsRight = false     // true if this tab is placed on the right side of the split
     var isPopup = false          // opened via window.open() (e.g. an OAuth sign-in window)
+    var isPrivate = false
 
     // `configuration` defaults to the shared config; window.open() popups must pass the
     // configuration WebKit hands us so window.opener/postMessage keep working.
-    init(configuration: WKWebViewConfiguration = sharedConfig) {
-        webView = WKWebView(frame: .zero, configuration: configuration)
+    init(configuration: WKWebViewConfiguration? = nil, isPrivate: Bool = false) {
+        self.isPrivate = isPrivate
+        let config: WKWebViewConfiguration
+        if let configuration = configuration {
+            config = configuration
+        } else if isPrivate {
+            let c = WKWebViewConfiguration()
+            c.websiteDataStore = .nonPersistent()
+            c.mediaTypesRequiringUserActionForPlayback = []
+            c.defaultWebpagePreferences.allowsContentJavaScript = true
+            if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
+            // Re-inject media script for play/pause detection in private tabs
+            c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            config = c
+        } else {
+            config = sharedConfig
+        }
+        webView = WKWebView(frame: .zero, configuration: config)
         webView.customUserAgent = SafariUA
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true

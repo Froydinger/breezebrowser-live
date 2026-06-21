@@ -10,8 +10,30 @@ import CoreImage
 let SIDEBAR_W: CGFloat = 216
 
 final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, BrowserAITools {
+    static let didUpdateState = Notification.Name("BrowserControllerDidUpdateState")
+    static var sharedTabs: [Tab] = []
+    static var sharedPins: [Pin] = []
+    static var sharedGroups: [TabGroup] = []
+    static var sharedNextGroupId = 1
+
+    var tabs: [Tab] {
+        get { BrowserController.sharedTabs }
+        set { BrowserController.sharedTabs = newValue }
+    }
+    var pins: [Pin] {
+        get { BrowserController.sharedPins }
+        set { BrowserController.sharedPins = newValue }
+    }
+    var groups: [TabGroup] {
+        get { BrowserController.sharedGroups }
+        set { BrowserController.sharedGroups = newValue }
+    }
+    var nextGroupId: Int {
+        get { BrowserController.sharedNextGroupId }
+        set { BrowserController.sharedNextGroupId = newValue }
+    }
+
     let window: NSWindow
-    var tabs: [Tab] = []
     var active = 0 {
         willSet {
             if newValue != active {
@@ -21,12 +43,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
         }
     }
-    var pins: [Pin] = []
     var pinSize: PinSize = .large      // Settings: small / medium / large
+    lazy var placeholderView = TabPlaceholderView()
     var downloads: [DownloadItem] = []
     var downloadList: [[String: Any]] { downloads.map { $0.dict } }
-    var groups: [TabGroup] = []        // session-only tab groups
-    var nextGroupId = 1
     var blockedPopups: Set<UUID> = []  // tabs with "Allow Popups" turned off
     var titleObs: [UUID: NSKeyValueObservation] = [:]
     var urlObs: [UUID: NSKeyValueObservation] = [:]
@@ -99,13 +119,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let adblockPill = NSView()
     let adblockCount = NSTextField(labelWithString: "0")
 
-    override init() {
+    var isPrivateWindow = false
+
+    init(isPrivateWindow: Bool = false) {
+        self.isPrivateWindow = isPrivateWindow
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 832),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.title = "Breeze"
+        window.title = isPrivateWindow ? "Breeze (Private)" : "Breeze"
         window.tabbingMode = .disallowed
         window.center()
         super.init()
@@ -238,29 +261,38 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         renderPins()
         
-        let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
-        if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
-            for url in Store.shared.openTabs { openTab(url: url) }
-        } else if restoreMode == "ask" && !Store.shared.openTabs.isEmpty {
-            openNewTab()
-            let alert = NSAlert()
-            alert.messageText = "Restore Previous Session?"
-            alert.informativeText = "You had \(Store.shared.openTabs.count) tabs open. Would you like to restore them?"
-            alert.addButton(withTitle: "Restore")
-            alert.addButton(withTitle: "Start Fresh")
-            if alert.runModal() == .alertFirstButtonReturn {
+        if isPrivateWindow {
+            openNewTab(isPrivate: true)
+        } else if BrowserController.sharedTabs.isEmpty {
+            let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
+            if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
                 for url in Store.shared.openTabs { openTab(url: url) }
-                closeTab(tabs[0]) // close the initial new tab
+            } else if restoreMode == "ask" && !Store.shared.openTabs.isEmpty {
+                openNewTab()
+                let alert = NSAlert()
+                alert.messageText = "Restore Previous Session?"
+                alert.informativeText = "You had \(Store.shared.openTabs.count) tabs open. Would you like to restore them?"
+                alert.addButton(withTitle: "Restore")
+                alert.addButton(withTitle: "Start Fresh")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    for url in Store.shared.openTabs { openTab(url: url) }
+                    closeTab(tabs[0]) // close the initial new tab
+                } else {
+                    Store.shared.openTabs = []; Store.shared.saveOpenTabs()
+                }
             } else {
-                Store.shared.openTabs = []; Store.shared.saveOpenTabs()
+                openNewTab()
             }
         } else {
-            openNewTab()
+            active = 0
+            showActive()
         }
         startSleepTimer()
         initReminders()
         suggestionsPopover.delegate = self
         address.delegate = self
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(stateDidUpdate), name: BrowserController.didUpdateState, object: nil)
         
         NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: nil) { [weak self] _ in
             guard let self = self else { return }
@@ -398,14 +430,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         rail.alignment = .centerX
         rail.translatesAutoresizingMaskIntoConstraints = false
         
-        let mainStack = NSStackView(views: [adblockPill, rail])
-        mainStack.orientation = .vertical
-        mainStack.spacing = 12
-        mainStack.alignment = .leading
-        mainStack.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(rail)
+        footer.addSubview(adblockPill)
         
-        footer.addSubview(mainStack)
-        mainStack.pin(to: footer)
+        NSLayoutConstraint.activate([
+            rail.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+            rail.topAnchor.constraint(equalTo: footer.topAnchor),
+            rail.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
+            rail.widthAnchor.constraint(equalToConstant: 26),
+            
+            adblockPill.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+            adblockPill.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
+        ])
         
         refreshThemeIcon(theme)
         return footer
@@ -660,10 +696,50 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
             pinsTopC.constant = 12
 
+            primary.removeFromSuperview()
             webContainer.addSubview(primary); primary.pin(to: webContainer)
         }
+        updateWebViewDisplay()
         syncChrome()
         scheduleReflow()      // a re-shown web view may have a stale layout width
+    }
+
+    func updateWebViewDisplay() {
+        guard let t = current else { return }
+        if t.isNewTab || t.isChatTab || t.splitPartnerId != nil {
+            placeholderView.removeFromSuperview()
+            t.webView.isHidden = false
+            return
+        }
+        if t.webView.superview == webContainer {
+            placeholderView.removeFromSuperview()
+            t.webView.isHidden = false
+        } else {
+            t.webView.isHidden = true
+            if placeholderView.superview != webContainer {
+                webContainer.addSubview(placeholderView)
+                placeholderView.pin(to: webContainer)
+                placeholderView.onPull = { [weak self] in
+                    self?.pullActiveTab()
+                }
+            }
+        }
+    }
+
+    func pullActiveTab() {
+        guard let t = current else { return }
+        t.webView.removeFromSuperview()
+        webContainer.addSubview(t.webView)
+        t.webView.pin(to: webContainer)
+        t.webView.isHidden = false
+        placeholderView.removeFromSuperview()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
+    }
+
+    @objc private func stateDidUpdate() {
+        refreshSidebar()
+        syncChrome()
+        updateWebViewDisplay()
     }
 
     func wireSplitPane(_ pane: SplitPane, tab: Tab) {
@@ -752,7 +828,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let host = t.isChatTab ? "assistant" : hostOf(t.webView.url)
         let inSplit = (t.splitPartnerId != nil)
         let row = TabRowView(title: title, host: host, active: i == active,
-                             perf: t.perfMode, asleep: t.sleeping, inSplit: inSplit)
+                             perf: t.perfMode, asleep: t.sleeping, inSplit: inSplit, isPrivate: t.isPrivate)
         row.onSelect = { [weak self] in self?.select(i) }
         row.onClose = { [weak self] in self?.closeTab(t) }
         row.menuProvider = { [weak self] in self?.tabMenu(for: t) ?? [] }
@@ -868,20 +944,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Tab ops -------------------------------------------------------
 
-    func openNewTab() {
-        let t = Tab()
+    func openNewTab(isPrivate: Bool = false) {
+        let p = isPrivate || isPrivateWindow
+        let t = Tab(isPrivate: p)
         wire(t)
         tabs.append(t); active = tabs.count - 1
         showActive(); refreshSidebar()
         window.makeFirstResponder(newTab.field)
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
-    func openTab(url: String) {
-        let t = Tab(); t.isNewTab = false
+    func openTab(url: String, isPrivate: Bool = false) {
+        let p = isPrivate || isPrivateWindow
+        let t = Tab(isPrivate: p); t.isNewTab = false
         wire(t)
         tabs.append(t); active = tabs.count - 1
         if let u = URL(string: url) { t.webView.load(URLRequest(url: u)) }
         showActive(); refreshSidebar()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
     func wire(_ t: Tab) {
@@ -890,9 +970,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         titleObs[t.id] = t.webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
             t.title = (wv.title?.isEmpty == false) ? wv.title! : "New Tab"
             self?.refreshSidebar()
+            NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
         urlObs[t.id] = t.webView.observe(\.url, options: [.new]) { [weak self] _, _ in
             self?.syncChrome(); self?.refreshSidebar()
+            NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
     }
 
@@ -907,6 +989,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.webView.removeFromSuperview(); tabs.remove(at: i)
         if tabs.isEmpty { openNewTab(); return }
         active = min(active, tabs.count - 1); showActive(); refreshSidebar(); updateNowPlaying()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
     func select(_ i: Int) {
@@ -1343,7 +1426,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func saveAgentSnapshotAndWalkthrough(query: String, answer: String) {
-        guard let current = current, !current.isNewTab else { return }
+        guard let current = current, !current.isNewTab, !current.isPrivate else { return }
         let config = WKSnapshotConfiguration()
         current.webView.takeSnapshot(with: config) { [weak self] image, _ in
             guard let _ = self, let img = image else { return }
@@ -2182,9 +2265,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let a = Store.shared.string("accent").lowercased()
         return !a.isEmpty && a != Theme.defaultAccent
     }
-    /// Black or white text for legible text ON the accent color.
     func onAccentTextHex() -> String {
-        guard let c = Theme.hex(effectiveAccentHex())?.usingColorSpace(.sRGB) else { return "#ffffff" }
+        guard let color = Theme.hex(effectiveAccentHex()) else { return "#ffffff" }
+        let c = color.usingColorSpace(.deviceRGB) ?? color
+        guard c.numberOfComponents >= 3 else { return "#ffffff" }
         let lum = 0.299 * c.redComponent + 0.587 * c.greenComponent + 0.114 * c.blueComponent
         return lum > 0.6 ? "#16161a" : "#ffffff"
     }
@@ -2362,6 +2446,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         address.textColor = p.text
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
+        window.backgroundColor = p.bg
         root.needsDisplay = true
     }
 
@@ -2371,7 +2456,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         syncChrome()
         if isInternal(w) { injectBridgeState(into: w) }
         else if let u = w.url?.absoluteString {
-            Store.shared.addHistory(url: u, title: (w.title?.isEmpty == false ? w.title! : u))
+            let isPrivateTab = tabs.first(where: { $0.webView === w })?.isPrivate ?? false
+            if !isPrivateTab {
+                Store.shared.addHistory(url: u, title: (w.title?.isEmpty == false ? w.title! : u))
+            }
         }
         // wake any AI agentic-search waiter for this tab
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
@@ -2400,39 +2488,23 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let t = tabs.first(where: { $0.webView === w }), blockedPopups.contains(t.id) { return nil }
         
         cfg.websiteDataStore = w.configuration.websiteDataStore
+        let isPrivateTab = tabs.first(where: { $0.webView === w })?.isPrivate ?? false
         
-        let t = Tab(configuration: cfg)
+        let t = Tab(configuration: cfg, isPrivate: isPrivateTab)
         t.isNewTab = false
-        t.isPopup = true
         wire(t)
         
-        let width = CGFloat(windowFeatures.width?.doubleValue ?? 600)
-        let height = CGFloat(windowFeatures.height?.doubleValue ?? 650)
-        
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                           styleMask: [.titled, .closable, .resizable],
-                           backing: .buffered, defer: false)
-        win.title = "Sign In"
-        win.contentView = t.webView
-        win.delegate = self
-        win.center()
-        
-        popupWindows[t.id] = win
-        win.makeKeyAndOrderFront(nil)
+        tabs.append(t)
+        active = tabs.count - 1
+        showActive()
+        refreshSidebar()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         
         return t.webView
     }
     func webViewDidClose(_ webView: WKWebView) {
         if let t = tabs.first(where: { $0.webView === webView }) {
             closeTab(t)
-        } else {
-            for (id, win) in popupWindows {
-                if win.contentView === webView {
-                    win.close()
-                    popupWindows.removeValue(forKey: id)
-                    break
-                }
-            }
         }
     }
 }
