@@ -5,6 +5,7 @@
 import Cocoa
 import WebKit
 import UserNotifications
+import CoreImage
 
 let SIDEBAR_W: CGFloat = 280
 
@@ -62,6 +63,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let ASSISTANT_W: CGFloat = 360
 
     // Rainbow glow border layer (shown during AI agentic work)
+    private var glowPanel: NSPanel?
+    private var rainbowContainer: CALayer?
     private var rainbowLayer: CAGradientLayer?
     private var rainbowMask: CAShapeLayer?
 
@@ -105,37 +108,32 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let w = Store.shared.settings["sidebarWidth"] as? Double, w >= 200, w <= 460 { sidebarWidth = w }
         sidebarLeft = sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 0)
         sidebarWidthC = sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth)
-        topTrailC = topBar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -48)
+        topTrailC = addressWrap.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -54)
         NSLayoutConstraint.activate([
-            sidebar.topAnchor.constraint(equalTo: root.topAnchor),
+            sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor),
             sidebar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             sidebarWidthC,
             sidebarLeft,
 
-            topBar.topAnchor.constraint(equalTo: root.topAnchor, constant: 0),
-            topTrailC,
-            topBar.heightAnchor.constraint(equalToConstant: 40),
-            // always clear the macOS traffic lights, even when the sidebar hides
-            topBar.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 82),
+            topBar.topAnchor.constraint(equalTo: root.topAnchor),
+            topBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            topBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            topBar.heightAnchor.constraint(equalToConstant: 54),
         ])
-        let topLeadToSidebar = topBar.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 6)
-        topLeadToSidebar.priority = .defaultHigh   // yields to the >=82 clearance when sidebar hides
-        topLeadToSidebar.isActive = true
         NSLayoutConstraint.activate([
-
             webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 6),
             webContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6),
         ])
         webTrailC = webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6)
         webTrailC.isActive = true
-        webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 5).isActive = true
+        webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6).isActive = true
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
         breezeCorner.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             breezeCorner.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            breezeCorner.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
+            breezeCorner.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             breezeCorner.widthAnchor.constraint(equalToConstant: 30),
             breezeCorner.heightAnchor.constraint(equalToConstant: 30),
         ])
@@ -146,7 +144,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         edgeHandle.isHidden = true
         NSLayoutConstraint.activate([
             edgeHandle.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            edgeHandle.topAnchor.constraint(equalTo: root.topAnchor),
+            edgeHandle.topAnchor.constraint(equalTo: topBar.bottomAnchor),
             edgeHandle.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             edgeHandle.widthAnchor.constraint(equalToConstant: 8),
         ])
@@ -155,7 +153,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebarResizer.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             sidebarResizer.centerXAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            sidebarResizer.topAnchor.constraint(equalTo: root.topAnchor),
+            sidebarResizer.topAnchor.constraint(equalTo: topBar.bottomAnchor),
             sidebarResizer.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             sidebarResizer.widthAnchor.constraint(equalToConstant: 8),
         ])
@@ -267,16 +265,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildSidebar() {
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
-        // drag strip: traffic-light pad + downloads
-        let tlPad = NSView(); tlPad.translatesAutoresizingMaskIntoConstraints = false
-        tlPad.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        let dl = HoverButton(symbol: "arrow.down.to.line"); dl.onTap = { [weak self] in self?.openInternal(.downloads) }
-
-        let strip = NSStackView(views: [tlPad, dl])
-        strip.spacing = 3; strip.alignment = .centerY
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.heightAnchor.constraint(equalToConstant: 40).isActive = true
-
         // pins grid (4-wide rows)
         pinsStack.orientation = .vertical; pinsStack.spacing = 7; pinsStack.alignment = .leading
         pinsStack.translatesAutoresizingMaskIntoConstraints = false
@@ -312,16 +300,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         nowPlaying.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         footer.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
 
-        sidebar.addSubview(strip)
         sidebar.addSubview(pinsStack)
         sidebar.addSubview(tabsScroll)
         sidebar.addSubview(bottomStack)
         NSLayoutConstraint.activate([
-            strip.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 0),
-            strip.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
-            strip.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
-
-            pinsStack.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 12),
+            pinsStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 12),
             pinsStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
             pinsStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
 
@@ -370,6 +353,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         let settings = HoverButton(symbol: "gearshape")
         settings.onTap = { [weak self] in self?.openInternal(.settings) }
+        let dl = HoverButton(symbol: "arrow.down.to.line")
+        dl.onTap = { [weak self] in self?.openInternal(.downloads) }
         let bookmarks = HoverButton(symbol: "bookmark")
         bookmarks.onTap = { [weak self] in self?.openInternal(.bookmarks) }
         let history = HoverButton(symbol: "clock")
@@ -379,7 +364,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: [adblockPill, spacer, settings, bookmarks, history, theme])
+        let row = NSStackView(views: [adblockPill, spacer, settings, dl, bookmarks, history, theme])
         row.spacing = 4; row.alignment = .centerY
         footer.addSubview(row)
         row.pin(to: footer)
@@ -487,10 +472,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         nav.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(nav); topBar.addSubview(addressWrap)
         NSLayoutConstraint.activate([
-            nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 2),
+            nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 82),
             nav.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 8),
-            addressWrap.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
             addressWrap.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             addressWrap.heightAnchor.constraint(equalToConstant: 38),
         ])
@@ -611,6 +595,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         splitLeftWidthC?.constant = max(webContainer.bounds.width, 1) * splitRatio - 3
         updateRainbowFrame()
         scheduleReflow()
+    }
+
+    func windowDidMove(_ n: Notification) {
+        updateRainbowFrame()
     }
 
     func makeTabRow(_ t: Tab) -> TabRowView {
@@ -1003,7 +991,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistantWidthC.constant = w
             assistantLeadingC.constant = open ? -w : 0
             webTrailC.constant = open ? -(w + 6) : -6
-            topTrailC.constant = open ? -(w + 8) : -48
+            topTrailC.constant = open ? -(w + 12) : -54
             root.layoutSubtreeIfNeeded()
         }
         if open {
@@ -1097,13 +1085,56 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Rainbow glow border --------------------------------------------
 
     func showRainbowGlow() {
-        guard rainbowLayer == nil else { return }
-        guard let rootLayer = root.layer else { return }
+        guard glowPanel == nil else { return }
+        let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first ?? NSScreen.screens[0]
+        let screenFrame = screen.frame
 
+        let panel = NSPanel(contentRect: screenFrame,
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered,
+                            defer: false)
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        panel.orderFrontRegardless()
+
+        let contentView = NSView(frame: NSRect(origin: .zero, size: screenFrame.size))
+        contentView.wantsLayer = true
+        panel.contentView = contentView
+
+        guard let rootLayer = contentView.layer else { return }
+
+        let container = CALayer()
+        container.frame = rootLayer.bounds
+        container.name = "rainbowGlowContainer"
+
+        // Mask: only show a 24pt border around the edge
+        let mask = CAShapeLayer()
+        let outer = CGPath(rect: container.bounds, transform: nil)
+        let inner = CGPath(rect: container.bounds.insetBy(dx: 24, dy: 24), transform: nil)
+        let path = CGMutablePath()
+        path.addPath(outer)
+        path.addPath(inner)
+        mask.path = path
+        mask.fillRule = .evenOdd
+        container.mask = mask
+
+        // Add a Gaussian blur filter to the container to soften the masked border (Siri style bloom)
+        if let blur = CIFilter(name: "CIGaussianBlur") {
+            blur.name = "glowBlur"
+            blur.setValue(20.0, forKey: "inputRadius")
+            container.filters = [blur]
+        }
+
+        // Conic gradient layer (square, larger than window, centered)
+        let size = max(container.bounds.width, container.bounds.height) * 1.5
         let gl = CAGradientLayer()
         gl.type = .conic
         gl.startPoint = CGPoint(x: 0.5, y: 0.5)
-        gl.endPoint = CGPoint(x: 0.5, y: 0)   // start angle = top
+        gl.endPoint = CGPoint(x: 0.5, y: 0)
         gl.colors = [
             NSColor(red: 1.0, green: 0.2, blue: 0.3, alpha: 0.9).cgColor,   // red
             NSColor(red: 1.0, green: 0.6, blue: 0.1, alpha: 0.9).cgColor,   // orange
@@ -1114,22 +1145,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             NSColor(red: 1.0, green: 0.2, blue: 0.6, alpha: 0.9).cgColor,   // pink
             NSColor(red: 1.0, green: 0.2, blue: 0.3, alpha: 0.9).cgColor,   // back to red
         ]
-        gl.frame = rootLayer.bounds.insetBy(dx: -3, dy: -3)
-        gl.cornerRadius = 12
+        gl.frame = CGRect(x: (container.bounds.width - size)/2, y: (container.bounds.height - size)/2, width: size, height: size)
         gl.name = "rainbowGlow"
 
-        // Mask: only show a thin border (3pt) around the edge
-        let mask = CAShapeLayer()
-        let outer = CGPath(roundedRect: gl.bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
-        let inner = CGPath(roundedRect: gl.bounds.insetBy(dx: 3, dy: 3), cornerWidth: 10, cornerHeight: 10, transform: nil)
-        let path = CGMutablePath()
-        path.addPath(outer)
-        path.addPath(inner)
-        mask.path = path
-        mask.fillRule = .evenOdd
-        gl.mask = mask
+        container.addSublayer(gl)
+        rootLayer.addSublayer(container)
 
-        rootLayer.addSublayer(gl)
+        glowPanel = panel
+        rainbowContainer = container
         rainbowLayer = gl
         rainbowMask = mask
 
@@ -1149,41 +1172,50 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pulse.duration = 0.8
         pulse.autoreverses = true
         pulse.repeatCount = .infinity
-        gl.add(pulse, forKey: "rainbowPulse")
+        container.add(pulse, forKey: "rainbowPulse")
     }
 
     func hideRainbowGlow() {
-        guard let gl = rainbowLayer else { return }
-        // Fade out then remove
+        guard let panel = glowPanel, let container = rainbowContainer else { return }
+        // Fade out then remove panel
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in
-            gl.removeFromSuperlayer()
+            panel.close()
+            self?.glowPanel = nil
+            self?.rainbowContainer = nil
             self?.rainbowLayer = nil
             self?.rainbowMask = nil
         }
         let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = gl.presentation()?.opacity ?? 1.0
+        fade.fromValue = container.presentation()?.opacity ?? 1.0
         fade.toValue = 0
         fade.duration = 0.4
         fade.fillMode = .forwards
         fade.isRemovedOnCompletion = false
-        gl.add(fade, forKey: "fadeOut")
+        container.add(fade, forKey: "fadeOut")
         CATransaction.commit()
     }
 
-    /// Keep the rainbow layer sized to the window when resizing.
     func updateRainbowFrame() {
-        guard let gl = rainbowLayer, let rootLayer = root.layer else { return }
-        gl.frame = rootLayer.bounds.insetBy(dx: -3, dy: -3)
+        guard let panel = glowPanel, let container = rainbowContainer, let gl = rainbowLayer else { return }
+        let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first ?? NSScreen.screens[0]
+        let screenFrame = screen.frame
+        if panel.frame != screenFrame {
+            panel.setFrame(screenFrame, display: true)
+        }
+        container.frame = CGRect(origin: .zero, size: screenFrame.size)
         if let mask = rainbowMask {
-            let outer = CGPath(roundedRect: gl.bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
-            let inner = CGPath(roundedRect: gl.bounds.insetBy(dx: 3, dy: 3), cornerWidth: 10, cornerHeight: 10, transform: nil)
+            let outer = CGPath(rect: container.bounds, transform: nil)
+            let inner = CGPath(rect: container.bounds.insetBy(dx: 24, dy: 24), transform: nil)
             let path = CGMutablePath()
             path.addPath(outer)
             path.addPath(inner)
             mask.path = path
         }
+        let size = max(container.bounds.width, container.bounds.height) * 1.5
+        gl.frame = CGRect(x: (container.bounds.width - size)/2, y: (container.bounds.height - size)/2, width: size, height: size)
     }
+
 
     func ctxLabel(_ t: Tab) -> String {
         let s = t.title.isEmpty ? hostOf(t.webView.url) : t.title

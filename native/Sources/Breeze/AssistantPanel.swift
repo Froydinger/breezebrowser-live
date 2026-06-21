@@ -19,6 +19,11 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     var onToggleFullscreen: (() -> Void)?
     private let contextRow = NSStackView()
 
+    private var headerView: NSStackView!
+    private var scrollTopToHeaderC: NSLayoutConstraint!
+    private var scrollTopToPanelC: NSLayoutConstraint!
+    private var historyTopToHeaderC: NSLayoutConstraint!
+    private var historyTopToPanelC: NSLayoutConstraint!
     private var headerLeadingC: NSLayoutConstraint!
     private var messageMaxWidth: CGFloat = 250
     // chat state
@@ -50,6 +55,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let header = NSStackView(views: [logo, title, hspacer, fs, newChat, close])
         header.spacing = 8; header.alignment = .centerY
         header.translatesAutoresizingMaskIntoConstraints = false
+        self.headerView = header
 
         // messages
         messagesStack.orientation = .vertical; messagesStack.spacing = 12; messagesStack.alignment = .leading
@@ -112,14 +118,20 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
         addSubview(header); addSubview(scroll); addSubview(empty); addSubview(historyView); addSubview(status); addSubview(contextRow); addSubview(inputWrap)
         self.inputWrap = inputWrap
+
+        scrollTopToHeaderC = scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10)
+        scrollTopToPanelC = scroll.topAnchor.constraint(equalTo: topAnchor, constant: 12)
+        historyTopToHeaderC = historyView.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6)
+        historyTopToPanelC = historyView.topAnchor.constraint(equalTo: topAnchor, constant: 12)
+
         NSLayoutConstraint.activate([
             contextRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             contextRow.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
             contextRow.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
-            historyView.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6),
             historyView.leadingAnchor.constraint(equalTo: leadingAnchor),
             historyView.trailingAnchor.constraint(equalTo: trailingAnchor),
             historyView.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
+            historyTopToHeaderC,
         ])
         headerLeadingC = header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14)
         NSLayoutConstraint.activate([
@@ -128,7 +140,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             header.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             logo.widthAnchor.constraint(equalToConstant: 20), logo.heightAnchor.constraint(equalToConstant: 20),
 
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+            scrollTopToHeaderC,
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             scroll.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -8),
@@ -347,6 +359,11 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     /// In fullscreen the panel fills the tab. `clearLights` indents the header
     /// only when the panel reaches the window's left edge (sidebar hidden).
     func setFullscreen(_ on: Bool, clearLights: Bool = false) {
+        headerView.isHidden = on
+        scrollTopToHeaderC.isActive = !on
+        scrollTopToPanelC.isActive = on
+        historyTopToHeaderC.isActive = !on
+        historyTopToPanelC.isActive = on
         headerLeadingC.constant = (on && clearLights) ? 82 : 14
         // wider reading column for messages when fullscreen
         messageMaxWidth = on ? 620 : 250

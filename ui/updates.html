@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.0.9', icon: 'zap', title: 'UI alignment, screen-wide Siri glow, and fullscreen chat tab', items: [
+        '<b>Unified top bar layout</b> — navigation controls, the URL bar, and the AI corner button are now perfectly center-aligned and remain completely static when toggling the sidebar.',
+        '<b>Screen-wide Siri glow</b> — the rainbow glow animation now blurs beautifully around the edges of your entire screen when the AI is active (like Apple Intelligence), with zero visual clipping.',
+        '<b>Fullscreen chat tab</b> — hidden header panel inside the dedicated chat tab to prevent sidebar docking issues, creating a clean web-like chat view.',
+        '<b>Cohesive settings/history tabs</b> — segment buttons on the history page now use the accent color when active, keeping it readable in both light and dark modes.' ] },
       { v: '3.0.8', icon: 'bot', title: 'Smarter, context-aware AI', major: true, items: [
         '<b>Fullscreen chat opens as a tab</b> — click the expand button and the assistant becomes a "Breeze Chat" tab you can switch between like any other page.',
         '<b>AI stops searching for everything</b> — the assistant now answers general knowledge, coding, math, and creative questions directly instead of running a web search every time.',
