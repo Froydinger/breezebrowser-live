@@ -31,8 +31,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Breeze</string>
   <key>CFBundleDisplayName</key><string>Breeze</string>
   <key>CFBundleIdentifier</key><string>com.jakefreudinger.breeze.native</string>
-  <key>CFBundleVersion</key><string>3.0.3</string>
-  <key>CFBundleShortVersionString</key><string>3.0.3</string>
+  <key>CFBundleVersion</key><string>3.0.4</string>
+  <key>CFBundleShortVersionString</key><string>3.0.4</string>
   <key>CFBundleExecutable</key><string>Breeze</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>

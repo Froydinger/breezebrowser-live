@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.0.4', icon: 'zap', title: 'Bug fixes and polish', items: [
+        'Added "Check for Updates..." to the File menu.',
+        'Wired up notifications and reminders so they persist across restarts.',
+        'Fixed an issue where the "Make default browser" button did nothing.',
+        'Made the AI much more reliable at opening web pages for you.' ] },
       { v: '3.0.2', icon: 'layout-panel-left', title: 'Pages that always fit', items: [
         'Fixed a layout glitch where some site elements (sticky headers, side rails) could stay pinned to the old width after toggling the sidebar or assistant — pages now re-fit the moment the layout changes.' ] },
       { v: '3.0.1', icon: 'sparkles', title: 'A smarter, agentic Breeze AI', major: true, items: [
