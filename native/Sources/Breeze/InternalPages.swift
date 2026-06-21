@@ -89,6 +89,7 @@ let breezeBridgeJS = """
     deleteSecret: function (key) { send('deleteSecret', { key: key }); },
     isDefaultBrowser: function () { return Promise.resolve(false); },
     makeDefaultBrowser: function () { send('makeDefaultBrowser'); },
+    openSystemPasswords: function () { send('openSystemPasswords'); },
     switchToTab: function (id) { send('switchToTab', { id: id }); },
     getChats: function () { return call('getChats'); },
     openChat: function (id) { send('openChat', { id: id }); },

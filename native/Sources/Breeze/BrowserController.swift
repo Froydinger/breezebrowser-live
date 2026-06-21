@@ -2424,6 +2424,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 LSSetDefaultHandlerForURLScheme("http" as CFString, bid as CFString)
                 LSSetDefaultHandlerForURLScheme("https" as CFString, bid as CFString)
             }
+        case "openSystemPasswords":
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
         default:
             break
         }

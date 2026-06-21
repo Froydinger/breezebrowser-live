@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.4.0', icon: 'zap', title: 'Startup Window Animation & External Link Handler', major: true, items: [
+        '<b>Slide-up Startup Animation</b> — Added a gorgeous window transition on app startup that fades and slides up smoothly.',
+        '<b>External Link Redirection</b> — Handled links clicked from third-party applications (like Discord/Slack) correctly to focus Breeze and load the clicked URL.',
+        '<b>Keychain Crash Fix</b> — Solved the crash when opening Settings / vault items.' ] },
       { v: '3.3.0', icon: 'columns', title: 'Multi-Window Syncing & Ephemeral Private Browsing', major: true, items: [
         '<b>Multi-Window Real-Time Sync</b> — Open separate windows (⌘N) that share the same pins, groups, and tabs. If you view a tab in window B, it is instantly pulled into that window and leaves a placeholder with a "Pull Tab Here" button in window A.',
         '<b>Ephemeral Private Browsing</b> — Open private windows (⌘⇧N) or private tabs (⌘⇧T) utilizing ephemeral, non-persistent website data stores. Private tabs discard cookies, history, and storage on close, and are marked with a 🕵️ badge.',
