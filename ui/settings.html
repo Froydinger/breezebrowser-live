@@ -498,6 +498,37 @@
           <textarea id="aiInstructions" rows="3" placeholder="e.g. Be concise and a little sarcastic. I'm a designer. Always give code in TypeScript."
             style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:10px;padding:10px 12px;outline:none;resize:vertical;width:100%"></textarea>
         </div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="row-label">AI engine</div>
+            <div class="row-hint">On-device (Apple Intelligence / Qwen) is free &amp; private. Choose <b>OpenAI</b> to use your own API key for stronger multi-step tasks like form-filling. Your key is stored only on this Mac and used to call OpenAI directly — there's no Breeze server, and you pay OpenAI for your own usage.</div>
+          </div>
+          <select id="aiBackend"
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%">
+            <option value="apple">On-device (Apple Intelligence / Qwen)</option>
+            <option value="openai">OpenAI (bring your own key)</option>
+          </select>
+        </div>
+        <div class="row" id="openai-key-row" style="flex-direction:column;align-items:stretch;gap:8px">
+          <div>
+            <div class="row-label">OpenAI API key</div>
+            <div class="row-hint">Create one at platform.openai.com → API keys. Stored locally on this Mac only.</div>
+          </div>
+          <input id="openaiKey" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false"
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;width:100%" />
+        </div>
+        <div class="row" id="openai-model-row">
+          <div>
+            <div class="row-label">OpenAI model</div>
+            <div class="row-hint">Cheap, capable models that handle Breeze's multi-step browser tasks.</div>
+          </div>
+          <select id="openaiModel"
+            style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:9px;padding:8px 12px;outline:none;min-width:190px">
+            <option value="gpt-4.1-mini">GPT-4.1 mini (recommended)</option>
+            <option value="gpt-4o-mini">GPT-4o mini (cheapest, fast)</option>
+            <option value="gpt-4.1-nano">GPT-4.1 nano (ultra-budget)</option>
+          </select>
+        </div>
         <div class="row">
           <div>
             <div class="row-label">Model</div>
@@ -707,6 +738,12 @@
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
+      set2('openaiKey', settings.openaiKey);
+      const ab = document.getElementById('aiBackend'); if (ab && ab !== ae) ab.value = settings.aiBackend || 'apple';
+      const om = document.getElementById('openaiModel'); if (om && om !== ae) om.value = settings.openaiModel || 'gpt-4.1-mini';
+      const showOAI = settings.aiBackend === 'openai';
+      const kr = document.getElementById('openai-key-row'); if (kr) kr.style.display = showOAI ? '' : 'none';
+      const mr = document.getElementById('openai-model-row'); if (mr) mr.style.display = showOAI ? '' : 'none';
       renderPerms();
       renderReminders();
     }
@@ -741,6 +778,9 @@
     document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
     document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
+    document.getElementById('aiBackend').addEventListener('change', (e) => set('aiBackend', e.target.value));
+    document.getElementById('openaiModel').addEventListener('change', (e) => set('openaiModel', e.target.value));
+    document.getElementById('openaiKey').addEventListener('change', (e) => set('openaiKey', e.target.value.trim()));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
 
     // AI text fields — debounced save so we don't spam on every keystroke

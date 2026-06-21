@@ -70,6 +70,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     lazy var llm = LocalLLM(tools: self)     // local Qwen via llama-server (fallback)
     private var fmAny: Any?                   // FoundationAI (Apple Intelligence, preferred)
     var useFM = false
+    var openai: OpenAIAI?                     // OpenAI backend (bring-your-own-key), when selected in Settings
+    var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     let ASSISTANT_W: CGFloat = 360
@@ -267,13 +269,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         
         NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: nil) { [weak self] _ in
+            // Traffic lights hide until hover in fullscreen — reclaim the space we
+            // normally reserve for them next to the sidebar/nav buttons.
+            self?.navLeadingC?.constant = 12
             if Store.shared.settings["flattenFullscreenCorners"] as? Bool != false {
                 self?.window.titlebarAppearsTransparent = false
                 self?.window.backgroundColor = .black
             }
         }
-        
+
         NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
+            self?.navLeadingC?.constant = 82   // restore the traffic-light gap when windowed
             self?.window.titlebarAppearsTransparent = true
             self?.window.backgroundColor = .windowBackgroundColor
         }
@@ -493,8 +499,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let nav = NSStackView(views: [topSidebarBtn, back, forward, reload]); nav.spacing = 2
         nav.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(nav); topBar.addSubview(addressWrap)
+        navLeadingC = nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 82)
         NSLayoutConstraint.activate([
-            nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 82),
+            navLeadingC,
             nav.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 8),
             addressWrap.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: 2),
@@ -1205,6 +1212,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     /// Set the chat input's enabled state + status based on the active backend.
     func prepareAIStatus() {
+        if useOpenAI {
+            assistant.setInputEnabled(true)
+            assistant.setModelStatus("OpenAI · \(openaiModel) — your key, your bill. Ask anything, or summarize this page.")
+            return
+        }
         if useFM {
             assistant.setInputEnabled(true)
             assistant.setModelStatus("Apple Intelligence — on-device. Ask anything, or summarize this page.")
@@ -1248,10 +1260,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         showActive(); refreshSidebar()
     }
 
+    /// OpenAI BYOK is active when selected in Settings and a key is present.
+    var useOpenAI: Bool {
+        Store.shared.string("aiBackend") == "openai" && !Store.shared.string("openaiKey").isEmpty
+    }
+    var openaiModel: String {
+        let m = Store.shared.string("openaiModel"); return m.isEmpty ? "gpt-4.1-mini" : m
+    }
+    /// Reuse one OpenAIAI but refresh key/model from Settings each send.
+    private func ensureOpenAI() -> OpenAIAI {
+        let o = openai ?? OpenAIAI(tools: self, apiKey: Store.shared.string("openaiKey"), model: openaiModel)
+        o.apiKey = Store.shared.string("openaiKey"); o.model = openaiModel
+        openai = o
+        return o
+    }
+
     func sendToAI(_ text: String) {
-        ailog("sendToAI (\(useFM ? "FM" : "Qwen")): \(text)")
+        ailog("sendToAI (\(useOpenAI ? "OpenAI" : (useFM ? "FM" : "Qwen"))): \(text)")
         assistant.addUser(text)
-        let preparing = !useFM && !llm.ready
+        let preparing = !useOpenAI && !useFM && !llm.ready
         assistant.setInputEnabled(false, placeholder: preparing ? "Preparing model…" : "Thinking…")
         assistant.setStatus(preparing ? "Preparing the model, then sending…" : "Thinking…")
         showRainbowGlow()
@@ -1275,7 +1302,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
             }
-            if self.useFM, #available(macOS 26.0, *), let fm = self.fmAny as? FoundationAI {
+            if self.useOpenAI {
+                self.ensureOpenAI().send(text, contexts: contexts, completion: done)
+            } else if self.useFM, #available(macOS 26.0, *), let fm = self.fmAny as? FoundationAI {
                 fm.send(text, contexts: contexts, completion: done)
             } else {
                 self.llm.send(text, contexts: contexts, completion: done)
@@ -2324,8 +2353,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
                  for a: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let t = tabs.first(where: { $0.webView === w }), blockedPopups.contains(t.id) { return nil }
-        if let u = a.request.url { openTab(url: u.absoluteString) }
-        return nil
+        // Build the popup as a REAL child web view from the configuration WebKit gives us,
+        // so window.open() returns a valid window and window.opener/postMessage keep working.
+        // OAuth / Google sign-in popups depend on this — returning nil makes those sites
+        // report "popup blocked". We present it as a tab; window.close() closes it again.
+        let t = Tab(configuration: cfg)
+        t.isNewTab = false
+        t.isPopup = true
+        wire(t)
+        tabs.append(t); active = tabs.count - 1
+        showActive(); refreshSidebar()
+        return t.webView      // WebKit loads the initial request into it for us
+    }
+    func webViewDidClose(_ webView: WKWebView) {
+        if let t = tabs.first(where: { $0.webView === webView }) { closeTab(t) }
     }
 }
 
