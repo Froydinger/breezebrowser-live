@@ -1200,7 +1200,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             "why","how","how's","hows","is","are","am","was","were","do","does","did",
             "can","could","should","would","will","may","might","which","tell","explain",
             "define","summarize","summarise","write","translate","calculate","convert",
-            "help","give","make","create","compare","suggest","recommend","please"]
+            "help","give","make","create","compare","suggest","recommend","please",
+            "hey","hi","hello","yo","sup","thanks","thank","sorry","bye","ok","okay",
+            "yeah","yes","no","nah","sure","haha","lol","wow","nice","cool"]
         if let first = words.first, aiOpeners.contains(String(first)) { return false }
         // Task / browser-action phrasing → AI (it needs to click, type, or navigate).
         let taskPhrases = ["go to","take me to","open ","click","log in","sign in","add to cart",
@@ -1213,6 +1215,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func syncChrome() {
+        // Chat tabs have no address bar or nav buttons — skip chrome sync to
+        // avoid accessing views that may be detached during the tab transition.
+        if current?.isChatTab == true { return }
         applyChromeTheme()
         guard let wv = current?.webView else { return }
         back.isEnabled = wv.canGoBack; forward.isEnabled = wv.canGoForward
