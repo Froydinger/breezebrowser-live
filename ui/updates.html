@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.0.8', icon: 'bot', title: 'Smarter, context-aware AI', major: true, items: [
+        '<b>Fullscreen chat opens as a tab</b> — click the expand button and the assistant becomes a "Breeze Chat" tab you can switch between like any other page.',
+        '<b>AI stops searching for everything</b> — the assistant now answers general knowledge, coding, math, and creative questions directly instead of running a web search every time.',
+        '<b>Deeper task chains</b> — the agentic loop now supports up to 8 chained actions (was 4), so multi-step workflows like "open a site, read it, search for it, set a reminder" work end-to-end.',
+        '<b>Context-aware AI</b> — the assistant now sees your recent browsing history, bookmarks, and all open tabs on every query for richer, more relevant answers.',
+        '<b>Rainbow glow</b> — a spinning rainbow border pulses around the browser window while the AI is actively working.' ] },
       { v: '3.0.7', icon: 'zap', title: 'Wired up all Browser Settings', items: [
         'Added Auto Picture-in-Picture logic for videos.',
         'Wired up "Restore Tabs on Launch" logic so your session is saved automatically.',

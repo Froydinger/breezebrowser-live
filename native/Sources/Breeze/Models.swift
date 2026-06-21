@@ -46,6 +46,7 @@ final class Tab {
     let webView: WKWebView
     var title = "New Tab"
     var isNewTab = true          // show the native new-tab page instead of the web view
+    var isChatTab = false        // shows the AI assistant panel instead of a web view
     var groupId: Int?            // nil = ungrouped
     var pinUrl: String?          // the pinned app this tab represents, if any
     var perfMode = false         // 🚀 boost: no throttle, square corners

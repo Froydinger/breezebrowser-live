@@ -363,16 +363,7 @@
             <button data-v="system" title="Follow macOS appearance">◷ System</button>
           </div>
         </div>
-        <div class="row">
-          <div>
-            <div class="row-label">Address bar</div>
-            <div class="row-hint">Top frees sidebar space; Sidebar frees page space</div>
-          </div>
-          <div class="seg" id="urlbar-seg">
-            <button data-v="top">Top</button>
-            <button data-v="sidebar">Sidebar</button>
-          </div>
-        </div>
+
         <div class="row">
           <div><div class="row-label">Pinned app size</div></div>
           <div class="seg" id="pinsize-seg">
@@ -704,8 +695,7 @@
       document.getElementById('webNotifications2').checked = settings.webNotifications !== false;
       document.getElementById('notificationSounds').checked = settings.notificationSounds !== false;
       document.getElementById('updateSounds').checked = settings.updateSounds !== false;
-      document.querySelectorAll('#urlbar-seg button').forEach((b) =>
-        b.classList.toggle('on', b.dataset.v === (settings.urlBarPosition || 'top')));
+
       document.querySelectorAll('#pinsize-seg button').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === (settings.pinSize || 'large')));
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
@@ -743,8 +733,7 @@
     document.getElementById('webNotifications2').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.getElementById('notificationSounds').addEventListener('change', (e) => set('notificationSounds', e.target.checked));
     document.getElementById('updateSounds').addEventListener('change', (e) => set('updateSounds', e.target.checked));
-    document.querySelectorAll('#urlbar-seg button').forEach((b) =>
-      b.addEventListener('click', () => set('urlBarPosition', b.dataset.v)));
+
     document.querySelectorAll('#pinsize-seg button').forEach((b) =>
       b.addEventListener('click', () => set('pinSize', b.dataset.v)));
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));

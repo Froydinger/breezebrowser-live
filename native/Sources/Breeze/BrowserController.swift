@@ -37,17 +37,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let webContainer = NSView()
     let newTab = NewTabView()
 
-    // sidebar URL mode (urlBarPosition == "sidebar")
-    let sidebarUrlSection = NSView()
-    let sbBack = HoverButton(symbol: "chevron.left", point: 14)
-    let sbForward = HoverButton(symbol: "chevron.right", point: 14)
-    let sbReload = HoverButton(symbol: "arrow.clockwise", point: 13)
-    let sbAddress = NSTextField()
-    var sbAddrWrap: NSView?
-    var pinsTopToStrip: NSLayoutConstraint!
-    var pinsTopToUrl: NSLayoutConstraint!
-    var webTopToTopbar: NSLayoutConstraint!
-    var webTopToRoot: NSLayoutConstraint!
+
     let nowPlaying = NowPlayingView()
     var nowPlayingTab: Tab?
     var splitTabId: UUID?                 // secondary tab shown beside the active one
@@ -71,6 +61,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     let ASSISTANT_W: CGFloat = 360
 
+    // Rainbow glow border layer (shown during AI agentic work)
+    private var rainbowLayer: CAGradientLayer?
+    private var rainbowMask: CAShapeLayer?
+
     // top bar
     let topBar = NSView()
     let topSidebarBtn = HoverButton(symbol: "sidebar.left")   // shown in top bar when sidebar collapsed
@@ -79,8 +73,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let reload = HoverButton(symbol: "arrow.clockwise", point: 13)
     let addressWrap = NSView()
     let address = NSTextField()
+    let suggestionsPopover = AddressSuggestionsPopover()
     let bookmarkBtn = HoverButton(symbol: "bookmark", size: 22, point: 12)
-    let sbBookmarkBtn = HoverButton(symbol: "bookmark", size: 18, point: 11)
     let breezeCorner = NSButton()
 
     // footer
@@ -118,7 +112,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             sidebarWidthC,
             sidebarLeft,
 
-            topBar.topAnchor.constraint(equalTo: root.topAnchor, constant: 5),
+            topBar.topAnchor.constraint(equalTo: root.topAnchor, constant: 0),
             topTrailC,
             topBar.heightAnchor.constraint(equalToConstant: 40),
             // always clear the macOS traffic lights, even when the sidebar hides
@@ -129,14 +123,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         topLeadToSidebar.isActive = true
         NSLayoutConstraint.activate([
 
-            webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 0),
+            webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 6),
             webContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6),
         ])
         webTrailC = webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6)
         webTrailC.isActive = true
-        webTopToTopbar = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 5)
-        webTopToRoot = webContainer.topAnchor.constraint(equalTo: root.topAnchor, constant: 6)
-        webTopToTopbar.isActive = true   // top mode by default
+        webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 5).isActive = true
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
@@ -244,8 +236,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             openNewTab()
         }
         startSleepTimer()
-        applyUrlBarMode()
         initReminders()
+        suggestionsPopover.delegate = self
+        address.delegate = self
         
         NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: nil) { [weak self] _ in
             guard let self = self else { return }
@@ -274,22 +267,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildSidebar() {
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
-        // drag strip: traffic-light pad + sidebar toggle + back + forward + reload + downloads
+        // drag strip: traffic-light pad + downloads
         let tlPad = NSView(); tlPad.translatesAutoresizingMaskIntoConstraints = false
         tlPad.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        let toggle = HoverButton(symbol: "sidebar.left"); toggle.onTap = { [weak self] in self?.sidebarToggleClicked() }
         let dl = HoverButton(symbol: "arrow.down.to.line"); dl.onTap = { [weak self] in self?.openInternal(.downloads) }
-        let dragFill = NSView(); dragFill.translatesAutoresizingMaskIntoConstraints = false
-        dragFill.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        sbBack.onTap = { [weak self] in self?.current?.webView.goBack() }
-        sbForward.onTap = { [weak self] in self?.current?.webView.goForward() }
-        sbReload.onTap = { [weak self] in self?.current?.webView.reload() }
-
-        let strip = NSStackView(views: [tlPad, toggle, dl, dragFill, sbBack, sbForward, sbReload])
+        let strip = NSStackView(views: [tlPad, dl])
         strip.spacing = 3; strip.alignment = .centerY
         strip.translatesAutoresizingMaskIntoConstraints = false
-        strip.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        strip.heightAnchor.constraint(equalToConstant: 40).isActive = true
 
         // pins grid (4-wide rows)
         pinsStack.orientation = .vertical; pinsStack.spacing = 7; pinsStack.alignment = .leading
@@ -326,25 +312,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         nowPlaying.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         footer.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
 
-        buildSidebarUrlSection()
-
         sidebar.addSubview(strip)
-        sidebar.addSubview(sidebarUrlSection)
         sidebar.addSubview(pinsStack)
         sidebar.addSubview(tabsScroll)
         sidebar.addSubview(bottomStack)
-        pinsTopToStrip = pinsStack.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 12)
-        pinsTopToUrl = pinsStack.topAnchor.constraint(equalTo: sidebarUrlSection.bottomAnchor, constant: 12)
         NSLayoutConstraint.activate([
-            strip.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: -2),
+            strip.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 0),
             strip.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
             strip.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
 
-            sidebarUrlSection.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 10),
-            sidebarUrlSection.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
-            sidebarUrlSection.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
-
-            pinsTopToStrip,
+            pinsStack.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 12),
             pinsStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
             pinsStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
 
@@ -368,76 +345,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ])
     }
 
-    func buildSidebarUrlSection() {
-        sidebarUrlSection.translatesAutoresizingMaskIntoConstraints = false
-        sidebarUrlSection.isHidden = true
-        
-        let addrWrap = NSView(); addrWrap.wantsLayer = true; addrWrap.layer?.cornerRadius = 10
-        addrWrap.translatesAutoresizingMaskIntoConstraints = false
-        
-        let lock = NSImageView()
-        lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
-        lock.contentTintColor = NSColor.secondaryLabelColor
-        lock.translatesAutoresizingMaskIntoConstraints = false
-        
-        sbAddress.placeholderString = "Search or enter URL"
-        sbAddress.font = .systemFont(ofSize: 13.5)
-        sbAddress.isBordered = false; sbAddress.drawsBackground = false; sbAddress.focusRingType = .none
-        sbAddress.usesSingleLineMode = true; sbAddress.lineBreakMode = .byTruncatingTail
-        sbAddress.cell?.truncatesLastVisibleLine = true
-        sbAddress.translatesAutoresizingMaskIntoConstraints = false
-        sbAddress.target = self; sbAddress.action = #selector(sidebarAddressSubmit)
-        
-        sbBookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
-        let copylink = HoverButton(symbol: "link", size: 18, point: 11)
-        copylink.onTap = { [weak self] in if let t = self?.current { self?.copyLink(t) } }
-        let share = HoverButton(symbol: "square.and.arrow.up", size: 18, point: 11)
-        share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
-        
-        let actions = NSStackView(views: [copylink, sbBookmarkBtn, share]); actions.spacing = 2
-        actions.translatesAutoresizingMaskIntoConstraints = false
-        
-        addrWrap.addSubview(lock)
-        addrWrap.addSubview(sbAddress)
-        addrWrap.addSubview(actions)
-        
-        NSLayoutConstraint.activate([
-            lock.leadingAnchor.constraint(equalTo: addrWrap.leadingAnchor, constant: 10),
-            lock.centerYAnchor.constraint(equalTo: addrWrap.centerYAnchor),
-            
-            sbAddress.leadingAnchor.constraint(equalTo: lock.trailingAnchor, constant: 6),
-            sbAddress.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6),
-            sbAddress.centerYAnchor.constraint(equalTo: addrWrap.centerYAnchor),
-            
-            actions.trailingAnchor.constraint(equalTo: addrWrap.trailingAnchor, constant: -6),
-            actions.centerYAnchor.constraint(equalTo: addrWrap.centerYAnchor),
-        ])
-        
-        sidebarUrlSection.addSubview(addrWrap)
-        NSLayoutConstraint.activate([
-            addrWrap.topAnchor.constraint(equalTo: sidebarUrlSection.topAnchor),
-            addrWrap.leadingAnchor.constraint(equalTo: sidebarUrlSection.leadingAnchor),
-            addrWrap.trailingAnchor.constraint(equalTo: sidebarUrlSection.trailingAnchor),
-            addrWrap.heightAnchor.constraint(equalToConstant: 34),
-            addrWrap.bottomAnchor.constraint(equalTo: sidebarUrlSection.bottomAnchor),
-        ])
-        self.sbAddrWrap = addrWrap
-    }
-    @objc func sidebarAddressSubmit() { navigate(sbAddress.stringValue) }
 
-    /// Settings → Address bar: "top" shows the top bar; "sidebar" moves the URL
-    /// bar + nav into the sidebar and the page fills up to the top.
-    func applyUrlBarMode() {
-        let sidebarMode = Store.shared.string("urlBarPosition") == "sidebar"
-        sidebarUrlSection.isHidden = !sidebarMode
-        topBar.isHidden = sidebarMode
-        pinsTopToStrip.isActive = false; pinsTopToUrl.isActive = false
-        webTopToTopbar.isActive = false; webTopToRoot.isActive = false
-        if sidebarMode { pinsTopToUrl.isActive = true; webTopToRoot.isActive = true }
-        else { pinsTopToStrip.isActive = true; webTopToTopbar.isActive = true }
-        if sidebarMode { topSidebarBtn.isHidden = true }   // no top bar to host it
-        syncChrome()
-    }
 
     func buildFooter() -> NSView {
         let footer = NSView(); footer.translatesAutoresizingMaskIntoConstraints = false
@@ -573,8 +481,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             actions.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
         ])
 
-        topSidebarBtn.onTap = { [weak self] in self?.setSidebarHidden(false) }
-        topSidebarBtn.isHidden = true
+        topSidebarBtn.onTap = { [weak self] in self?.toggleSidebar() }
+        topSidebarBtn.isHidden = false
         let nav = NSStackView(views: [topSidebarBtn, back, forward, reload]); nav.spacing = 2
         nav.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(nav); topBar.addSubview(addressWrap)
@@ -603,9 +511,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func showActive() {
+        // Detach assistant from webContainer before clearing (it's a shared instance)
+        if assistant.superview == webContainer { assistant.removeFromSuperview() }
         webContainer.subviews.forEach { $0.removeFromSuperview() }
         splitLeftWidthC = nil
         guard let t = current else { return }
+
+        // Chat tabs embed the assistant panel directly in the web container
+        if t.isChatTab {
+            newTab.stopClock()
+            topBar.isHidden = false
+            // Close the sidebar assistant panel if it was open
+            if assistantOpen { setAssistant(false) }
+            assistant.setFullscreen(true, clearLights: false)
+            webContainer.addSubview(assistant); assistant.pin(to: webContainer)
+            assistant.focusInput()
+            syncChrome()
+            scheduleReflow()
+            return
+        }
+
         let primary: NSView = t.isNewTab ? newTab : t.webView
         if t.isNewTab { newTab.startClock() } else { newTab.stopClock() }
 
@@ -640,6 +565,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             ])
         } else {
             topBar.isHidden = false
+            // Re-attach assistant to its normal position if it was in a chat tab
+            if assistant.superview == nil {
+                root.addSubview(assistant)
+            }
             webContainer.addSubview(primary); primary.pin(to: webContainer)
         }
         syncChrome()
@@ -680,19 +609,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func windowDidResize(_ n: Notification) {
         splitLeftWidthC?.constant = max(webContainer.bounds.width, 1) * splitRatio - 3
-        if assistantFullscreen {
-            let w = assistantFSWidth()
-            assistantWidthC.constant = w
-            assistantLeadingC.constant = -w
-            webTrailC.constant = -(w + 6)
-            topTrailC.constant = -(w + 8)
-        }
+        updateRainbowFrame()
         scheduleReflow()
     }
 
     func makeTabRow(_ t: Tab) -> TabRowView {
         let i = tabs.firstIndex { $0.id == t.id } ?? 0
-        let row = TabRowView(title: t.title, host: hostOf(t.webView.url), active: i == active,
+        let title = t.isChatTab ? "Breeze Chat" : t.title
+        let host = t.isChatTab ? "assistant" : hostOf(t.webView.url)
+        let row = TabRowView(title: title, host: host, active: i == active,
                              perf: t.perfMode, asleep: t.sleeping)
         row.onSelect = { [weak self] in self?.select(i) }
         row.onClose = { [weak self] in self?.closeTab(t) }
@@ -986,20 +911,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func syncChrome() {
         applyChromeTheme()
-        // re-assert URL-bar placement so the transparent top bar never lingers
-        // over the page in sidebar mode
-        let sidebarMode = Store.shared.string("urlBarPosition") == "sidebar"
-        topBar.isHidden = sidebarMode
-        sidebarUrlSection.isHidden = !sidebarMode
         guard let wv = current?.webView else { return }
         back.isEnabled = wv.canGoBack; forward.isEnabled = wv.canGoForward
-        sbBack.isEnabled = wv.canGoBack; sbForward.isEnabled = wv.canGoForward
         let urlStr = (current?.isNewTab ?? false) ? "" : displayURL(wv)
         if window.firstResponder !== address.currentEditor() { address.stringValue = urlStr }
-        if window.firstResponder !== sbAddress.currentEditor() { sbAddress.stringValue = urlStr }
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
-        sbBookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
         // keep split panes' address bars current
         if let sid = splitTabId, let s = tabs.first(where: { $0.id == sid }), let t = current {
             leftPane.setURL(t.isNewTab ? "" : (t.webView.url?.absoluteString ?? ""))
@@ -1036,7 +953,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebarHidden = hidden
         if !peek { peeking = false }
         edgeHandle.isHidden = !hidden          // edge strip is only live when hidden
-        topSidebarBtn.isHidden = !hidden       // show the top-bar opener only when collapsed
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
             sidebarLeft.constant = hidden ? -sidebarWidth : 0
@@ -1075,17 +991,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         else { try? line.write(toFile: p, atomically: true, encoding: .utf8) }
     }
 
-    /// Fullscreen chat fills the tab content area (right of the sidebar).
-    func assistantFSWidth() -> CGFloat {
-        max(400, root.bounds.width - (sidebarHidden ? 0 : sidebarWidth))
-    }
-
     func setAssistant(_ open: Bool) {
         assistantOpen = open
-        if !open { assistantFullscreen = false }      // reset so reopening is clean
-        assistant.setFullscreen(assistantFullscreen, clearLights: assistantFullscreen && sidebarHidden)
+        // If assistant is currently embedded in a chat tab, don't animate the sidebar panel
+        if current?.isChatTab == true && !open { return }
+        assistant.setFullscreen(false, clearLights: false)
         breezeCorner.isHidden = open
-        let w: CGFloat = assistantFullscreen ? assistantFSWidth() : ASSISTANT_W
+        let w: CGFloat = ASSISTANT_W
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
             assistantWidthC.constant = w
@@ -1130,21 +1042,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         else { llm.resetChat() }
     }
 
-    var assistantFullscreen = false
+    /// Open or switch to the dedicated chat tab.
     func toggleAssistantFullscreen() {
-        assistantFullscreen.toggle()
-        assistant.setFullscreen(assistantFullscreen, clearLights: assistantFullscreen && sidebarHidden)
-        breezeCorner.isHidden = true
-        let w: CGFloat = assistantFullscreen ? assistantFSWidth() : ASSISTANT_W
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
-            assistantWidthC.constant = w
-            assistantLeadingC.constant = -w
-            webTrailC.constant = -(w + 6)
-            topTrailC.constant = -(w + 8)
-            root.layoutSubtreeIfNeeded()
+        // If there's already a chat tab, switch to it
+        if let i = tabs.firstIndex(where: { $0.isChatTab }) {
+            select(i)
+            return
         }
-        scheduleReflow()
+        // Create a new chat tab
+        let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Breeze Chat"
+        wire(t)
+        tabs.append(t); active = tabs.count - 1
+        // Close the sidebar assistant panel
+        if assistantOpen { setAssistant(false) }
+        prepareAIStatus()
+        updateAIContextPills()
+        showActive(); refreshSidebar()
     }
 
     func sendToAI(_ text: String) {
@@ -1153,6 +1066,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let preparing = !useFM && !llm.ready
         assistant.setInputEnabled(false, placeholder: preparing ? "Preparing model…" : "Thinking…")
         assistant.setStatus(preparing ? "Preparing the model, then sending…" : "Thinking…")
+        showRainbowGlow()
 
         Task { [weak self] in
             guard let self else { return }
@@ -1161,6 +1075,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
                 guard let self else { return }
                 self.ailog("model returned")
+                self.hideRainbowGlow()
                 self.assistant.setStatus(nil); self.assistant.setInputEnabled(true); self.assistant.focusInput()
                 switch r {
                 case .success(let (answer, toolChips)):
@@ -1179,6 +1094,97 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    // MARK: - Rainbow glow border --------------------------------------------
+
+    func showRainbowGlow() {
+        guard rainbowLayer == nil else { return }
+        guard let rootLayer = root.layer else { return }
+
+        let gl = CAGradientLayer()
+        gl.type = .conic
+        gl.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gl.endPoint = CGPoint(x: 0.5, y: 0)   // start angle = top
+        gl.colors = [
+            NSColor(red: 1.0, green: 0.2, blue: 0.3, alpha: 0.9).cgColor,   // red
+            NSColor(red: 1.0, green: 0.6, blue: 0.1, alpha: 0.9).cgColor,   // orange
+            NSColor(red: 1.0, green: 0.9, blue: 0.2, alpha: 0.9).cgColor,   // yellow
+            NSColor(red: 0.2, green: 0.9, blue: 0.4, alpha: 0.9).cgColor,   // green
+            NSColor(red: 0.2, green: 0.7, blue: 1.0, alpha: 0.9).cgColor,   // blue
+            NSColor(red: 0.6, green: 0.3, blue: 1.0, alpha: 0.9).cgColor,   // purple
+            NSColor(red: 1.0, green: 0.2, blue: 0.6, alpha: 0.9).cgColor,   // pink
+            NSColor(red: 1.0, green: 0.2, blue: 0.3, alpha: 0.9).cgColor,   // back to red
+        ]
+        gl.frame = rootLayer.bounds.insetBy(dx: -3, dy: -3)
+        gl.cornerRadius = 12
+        gl.name = "rainbowGlow"
+
+        // Mask: only show a thin border (3pt) around the edge
+        let mask = CAShapeLayer()
+        let outer = CGPath(roundedRect: gl.bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
+        let inner = CGPath(roundedRect: gl.bounds.insetBy(dx: 3, dy: 3), cornerWidth: 10, cornerHeight: 10, transform: nil)
+        let path = CGMutablePath()
+        path.addPath(outer)
+        path.addPath(inner)
+        mask.path = path
+        mask.fillRule = .evenOdd
+        gl.mask = mask
+
+        rootLayer.addSublayer(gl)
+        rainbowLayer = gl
+        rainbowMask = mask
+
+        // Spin the gradient continuously
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = CGFloat.pi * 2
+        spin.duration = 2.5
+        spin.repeatCount = .infinity
+        spin.isRemovedOnCompletion = false
+        gl.add(spin, forKey: "rainbowSpin")
+
+        // Subtle pulse
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.7
+        pulse.toValue = 1.0
+        pulse.duration = 0.8
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        gl.add(pulse, forKey: "rainbowPulse")
+    }
+
+    func hideRainbowGlow() {
+        guard let gl = rainbowLayer else { return }
+        // Fade out then remove
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            gl.removeFromSuperlayer()
+            self?.rainbowLayer = nil
+            self?.rainbowMask = nil
+        }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = gl.presentation()?.opacity ?? 1.0
+        fade.toValue = 0
+        fade.duration = 0.4
+        fade.fillMode = .forwards
+        fade.isRemovedOnCompletion = false
+        gl.add(fade, forKey: "fadeOut")
+        CATransaction.commit()
+    }
+
+    /// Keep the rainbow layer sized to the window when resizing.
+    func updateRainbowFrame() {
+        guard let gl = rainbowLayer, let rootLayer = root.layer else { return }
+        gl.frame = rootLayer.bounds.insetBy(dx: -3, dy: -3)
+        if let mask = rainbowMask {
+            let outer = CGPath(roundedRect: gl.bounds, cornerWidth: 12, cornerHeight: 12, transform: nil)
+            let inner = CGPath(roundedRect: gl.bounds.insetBy(dx: 3, dy: 3), cornerWidth: 10, cornerHeight: 10, transform: nil)
+            let path = CGMutablePath()
+            path.addPath(outer)
+            path.addPath(inner)
+            mask.path = path
+        }
+    }
+
     func ctxLabel(_ t: Tab) -> String {
         let s = t.title.isEmpty ? hostOf(t.webView.url) : t.title
         return "📄 " + String(s.prefix(22))
@@ -1186,7 +1192,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @MainActor func gatherContexts() async -> [AIContext] {
         var out: [AIContext] = []
-        if let t = current, !t.isNewTab {
+        if let t = current, !t.isNewTab, !t.isChatTab {
             out.append(AIContext(label: ctxLabel(t), text: await readText(of: t)))
         }
         for e in aiExtras {
@@ -1195,6 +1201,30 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             } else if let txt = e.imageText {
                 out.append(AIContext(label: e.label, text: txt))
             }
+        }
+        // Feed recent browsing history so the AI knows what the user has been doing
+        let recentHistory = Store.shared.history.prefix(15)
+        if !recentHistory.isEmpty {
+            let lines = recentHistory.compactMap { h -> String? in
+                guard let url = h["url"] as? String, let title = h["title"] as? String else { return nil }
+                return "• \(title) (\(url))"
+            }
+            out.append(AIContext(label: "🕐 Recent history", text: "Recent browsing history:\n" + lines.joined(separator: "\n")))
+        }
+        // Feed bookmarks so the AI knows user's saved sites
+        let bookmarks = Store.shared.bookmarks.prefix(20)
+        if !bookmarks.isEmpty {
+            let lines = bookmarks.compactMap { b -> String? in
+                guard let url = b["url"] as? String, let title = b["title"] as? String else { return nil }
+                return "• \(title) (\(url))"
+            }
+            out.append(AIContext(label: "🔖 Bookmarks", text: "User's bookmarks:\n" + lines.joined(separator: "\n")))
+        }
+        // Feed open tab titles/URLs so the AI knows the full session
+        let openTabs = tabs.filter { !$0.isNewTab && !$0.isChatTab && $0.id != current?.id }
+        if !openTabs.isEmpty {
+            let lines = openTabs.map { "• \($0.title) (\(hostOf($0.webView.url)))" }
+            out.append(AIContext(label: "📑 Open tabs", text: "Other open tabs:\n" + lines.joined(separator: "\n")))
         }
         return out
     }
@@ -1657,7 +1687,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         applyThemeFromSettings()                  // posts Theme.didChange → chrome restyles
         pinSize = PinSize(rawValue: Store.shared.string("pinSize")) ?? .large
         renderPins()
-        applyUrlBarMode()                         // top vs sidebar URL bar
         applyChromeTheme()
         if Store.shared.settings["adblockEnabled"] as? Bool ?? true {
             AdBlocker.shared.apply(to: sharedConfig.userContentController)
@@ -1689,8 +1718,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let p = Theme.shared.palette
         addressWrap.layer?.backgroundColor = p.surface.cgColor
         address.textColor = p.text
-        sbAddrWrap?.layer?.backgroundColor = p.surface.cgColor
-        sbAddress.textColor = p.text
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
         root.needsDisplay = true
@@ -1719,5 +1746,82 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let t = tabs.first(where: { $0.webView === w }), blockedPopups.contains(t.id) { return nil }
         if let u = a.request.url { openTab(url: u.absoluteString) }
         return nil
+    }
+}
+
+extension BrowserController: AddressSuggestionsDelegate {
+    func didSelectSuggestion(_ url: String) {
+        navigate(url)
+    }
+    
+    func textChanged(to text: String) {
+        if let f = window.firstResponder as? NSTextView, let tf = f.delegate as? NSTextField {
+            tf.stringValue = text
+        }
+    }
+    
+    // MARK: - NSTextFieldDelegate
+    
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === address else { return }
+        if suggestionsPopover.isInternalUpdate { return }
+        
+        let q = field.stringValue.lowercased()
+        if q.isEmpty {
+            suggestionsPopover.hide()
+            return
+        }
+        
+        var items: [SuggestionItem] = []
+        
+        let bms = Store.shared.bookmarks.filter { 
+            let t = ($0["title"] as? String ?? "").lowercased()
+            let u = ($0["url"] as? String ?? "").lowercased()
+            return t.contains(q) || u.contains(q)
+        }.prefix(3)
+        for b in bms { items.append(SuggestionItem(title: b["title"] as? String ?? "", url: b["url"] as? String ?? "", type: .bookmark)) }
+        
+        let hist = Store.shared.history.filter {
+            let t = ($0["title"] as? String ?? "").lowercased()
+            let u = ($0["url"] as? String ?? "").lowercased()
+            return t.contains(q) || u.contains(q)
+        }.prefix(7)
+        
+        var seen = Set(items.map { $0.url })
+        for h in hist {
+            let u = h["url"] as? String ?? ""
+            if !seen.contains(u) {
+                items.append(SuggestionItem(title: h["title"] as? String ?? "", url: u, type: .history))
+                seen.insert(u)
+            }
+        }
+        
+        if items.isEmpty {
+            suggestionsPopover.hide()
+        } else {
+            suggestionsPopover.show(relativeTo: field, items: items)
+        }
+    }
+    
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if control === address {
+            if suggestionsPopover.isShown {
+                if commandSelector == #selector(NSResponder.moveUp(_:)) {
+                    suggestionsPopover.moveSelectionUp()
+                    return true
+                } else if commandSelector == #selector(NSResponder.moveDown(_:)) {
+                    suggestionsPopover.moveSelectionDown()
+                    return true
+                } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                    if suggestionsPopover.triggerSelected() {
+                        return true
+                    }
+                } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                    suggestionsPopover.hide()
+                    return true
+                }
+            }
+        }
+        return false
     }
 }

@@ -12,7 +12,7 @@ rm -rf dist
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 echo "Compiling…"
-swiftc -O Sources/Breeze/*.swift \
+swiftc -O -whole-module-optimization Sources/Breeze/*.swift \
   -o "$APP/Contents/MacOS/Breeze" \
   -target arm64-apple-macosx14.0 -sdk "$SDK" \
   -framework Cocoa -framework WebKit -framework UserNotifications \
@@ -33,8 +33,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Breeze</string>
   <key>CFBundleDisplayName</key><string>Breeze</string>
   <key>CFBundleIdentifier</key><string>com.jakefreudinger.breeze.native</string>
-  <key>CFBundleVersion</key><string>3.0.7</string>
-  <key>CFBundleShortVersionString</key><string>3.0.7</string>
+  <key>CFBundleVersion</key><string>3.0.8</string>
+  <key>CFBundleShortVersionString</key><string>3.0.8</string>
   <key>CFBundleExecutable</key><string>Breeze</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
