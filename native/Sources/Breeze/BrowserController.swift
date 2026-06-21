@@ -30,6 +30,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var blockedPopups: Set<UUID> = []  // tabs with "Allow Popups" turned off
     var titleObs: [UUID: NSKeyValueObservation] = [:]
     var urlObs: [UUID: NSKeyValueObservation] = [:]
+    var popupWindows: [UUID: NSWindow] = [:]
 
     // chrome
     let root = GradientBackgroundView()
@@ -390,12 +391,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = HoverButton(symbol: "sun.max"); theme.onTap = { [weak self] in
             self?.cycleThemeSetting(); self?.refreshThemeIcon(theme)
         }
-        let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: [adblockPill, spacer, settings, dl, bookmarks, history, theme])
-        row.spacing = 4; row.alignment = .centerY
-        footer.addSubview(row)
-        row.pin(to: footer)
+        
+        let rail = NSStackView(views: [dl, bookmarks, history, theme, settings])
+        rail.orientation = .vertical
+        rail.spacing = 10
+        rail.alignment = .centerX
+        rail.translatesAutoresizingMaskIntoConstraints = false
+        
+        let mainStack = NSStackView(views: [adblockPill, rail])
+        mainStack.orientation = .vertical
+        mainStack.spacing = 12
+        mainStack.alignment = .leading
+        mainStack.translatesAutoresizingMaskIntoConstraints = false
+        
+        footer.addSubview(mainStack)
+        mainStack.pin(to: footer)
+        
         refreshThemeIcon(theme)
         return footer
     }
@@ -715,6 +726,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func windowDidMove(_ n: Notification) {
         updateRainbowFrame()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        if let win = notification.object as? NSWindow {
+            if win === window {
+                for (_, w) in popupWindows {
+                    w.close()
+                }
+                popupWindows.removeAll()
+            } else {
+                for (id, w) in popupWindows {
+                    if w === win {
+                        popupWindows.removeValue(forKey: id)
+                        break
+                    }
+                }
+            }
+        }
     }
 
     func makeTabRow(_ t: Tab) -> TabRowView {
@@ -1262,15 +1291,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     /// OpenAI BYOK is active when selected in Settings and a key is present.
     var useOpenAI: Bool {
-        Store.shared.string("aiBackend") == "openai" && !Store.shared.string("openaiKey").isEmpty
+        Store.shared.string("aiBackend") == "openai" && !Keychain.get("openaiKey").isEmpty
     }
     var openaiModel: String {
-        let m = Store.shared.string("openaiModel"); return m.isEmpty ? "gpt-4.1-mini" : m
+        let m = Store.shared.string("openaiModel"); return m.isEmpty ? "gpt-5.4-mini" : m
     }
     /// Reuse one OpenAIAI but refresh key/model from Settings each send.
     private func ensureOpenAI() -> OpenAIAI {
-        let o = openai ?? OpenAIAI(tools: self, apiKey: Store.shared.string("openaiKey"), model: openaiModel)
-        o.apiKey = Store.shared.string("openaiKey"); o.model = openaiModel
+        let key = Keychain.get("openaiKey")
+        let o = openai ?? OpenAIAI(tools: self, apiKey: key, model: openaiModel)
+        o.apiKey = key; o.model = openaiModel
         openai = o
         return o
     }
@@ -2207,6 +2237,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "setSetting":
             if let key = args["key"] as? String { Store.shared.settings[key] = args["value"]; Store.shared.saveSettings() }
             applySettingsChange()
+        case "setSecret":
+            if let key = args["key"] as? String, let val = args["value"] as? String {
+                Keychain.set(key, val)
+                applySettingsChange()
+            }
+        case "hasSecret":
+            if let key = args["key"] as? String {
+                let has = !Keychain.get(key).isEmpty
+                resolve(Store.json(has))
+            }
+        case "deleteSecret":
+            if let key = args["key"] as? String {
+                Keychain.delete(key)
+                applySettingsChange()
+            }
         case "getHistory":
             resolve(Store.json(Store.shared.history))
         case "clearHistory":
@@ -2353,20 +2398,42 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
                  for a: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let t = tabs.first(where: { $0.webView === w }), blockedPopups.contains(t.id) { return nil }
-        // Build the popup as a REAL child web view from the configuration WebKit gives us,
-        // so window.open() returns a valid window and window.opener/postMessage keep working.
-        // OAuth / Google sign-in popups depend on this — returning nil makes those sites
-        // report "popup blocked". We present it as a tab; window.close() closes it again.
+        
+        cfg.websiteDataStore = w.configuration.websiteDataStore
+        
         let t = Tab(configuration: cfg)
         t.isNewTab = false
         t.isPopup = true
         wire(t)
-        tabs.append(t); active = tabs.count - 1
-        showActive(); refreshSidebar()
-        return t.webView      // WebKit loads the initial request into it for us
+        
+        let width = CGFloat(windowFeatures.width?.doubleValue ?? 600)
+        let height = CGFloat(windowFeatures.height?.doubleValue ?? 650)
+        
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                           styleMask: [.titled, .closable, .resizable],
+                           backing: .buffered, defer: false)
+        win.title = "Sign In"
+        win.contentView = t.webView
+        win.delegate = self
+        win.center()
+        
+        popupWindows[t.id] = win
+        win.makeKeyAndOrderFront(nil)
+        
+        return t.webView
     }
     func webViewDidClose(_ webView: WKWebView) {
-        if let t = tabs.first(where: { $0.webView === webView }) { closeTab(t) }
+        if let t = tabs.first(where: { $0.webView === webView }) {
+            closeTab(t)
+        } else {
+            for (id, win) in popupWindows {
+                if win.contentView === webView {
+                    win.close()
+                    popupWindows.removeValue(forKey: id)
+                    break
+                }
+            }
+        }
     }
 }
 

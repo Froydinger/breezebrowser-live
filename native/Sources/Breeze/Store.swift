@@ -83,6 +83,13 @@ final class Store {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
+
+        // migration: if settings JSON has openaiKey, move it to Keychain and delete it from JSON
+        if let key = settings["openaiKey"] as? String, !key.isEmpty {
+            Keychain.set("openaiKey", key)
+            settings.removeValue(forKey: "openaiKey")
+            saveSettings()
+        }
     }
 
     func saveOpenTabs() {
