@@ -148,7 +148,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
-      { v: '3.1.2', icon: 'plug', title: 'Use your own OpenAI key, working sign-in popups', major: true, items: [
+      { v: '3.2.0', icon: 'key-round', title: 'Keychain Storage, Custom Models, Vertical Rail, & Popup Fixes', major: true, items: [
+        '<b>Secure Keychain Storage</b> — Your OpenAI API key is now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
+        '<b>Custom OpenAI Models</b> — Choose from the latest GPT-5.4 family (gpt-5.4-mini default, nano, or full), or type in any custom model ID.',
+        '<b>Vertical Sidebar Button Rail</b> — Footer navigation buttons are stacked vertically to free horizontal space so the now-playing player is never truncated.',
+        '<b>Real Popup Windows for OAuth</b> — window.open popups (Google/GitHub/Lovable sign-in) open in a real native window sharing session state, resolving loops and login failures.',
+        '<b>Legible Light Mode Chat</b> — Synced the materials and text rendering so AI replies and selection highlights are clear and high-contrast in light mode.' ] },
+      { v: '3.1.2', icon: 'plug', title: 'Use your own OpenAI key, working sign-in popups', items: [
         '<b>Bring your own OpenAI key</b> — in Settings → AI you can switch Breeze AI to OpenAI for stronger multi-step tasks like filling out forms. Choose from three cheap, capable models. Your key is stored only on your Mac and calls OpenAI directly — there is no Breeze server, and you pay OpenAI for your own usage.',
         '<b>Sign-in popups work now</b> — “Continue with Google / Apple / GitHub” pop-up windows no longer get blocked, so OAuth logins actually complete.',
         '<b>Cleaner fullscreen</b> — the gap reserved for the traffic-light buttons is reclaimed in fullscreen, where they only appear when you hover.' ] },
