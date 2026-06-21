@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         browser = BrowserController()
         NSApp.activate(ignoringOtherApps: true)
+        browser?.showWhatsNewIfUpdated()
+        Updater.shared.start()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ n: Notification) { browser?.llm.shutdown() }
@@ -29,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openDownloads() { browser?.openInternal(.downloads) }
     @objc func openPasswords() { browser?.openInternal(.passwords) }
     @objc func openUpdates() { browser?.openInternal(.updates) }
+    @objc func checkForUpdates() { Updater.shared.check(manual: true) }
 }
 
 func mi(_ title: String, _ sel: Selector, _ key: String = "",
@@ -48,6 +51,8 @@ let mainMenu = NSMenu()
 let appItem = NSMenuItem(); mainMenu.addItem(appItem)
 let appMenu = NSMenu()
 appMenu.addItem(withTitle: "About Breeze", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+appMenu.addItem(.separator())
+appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates), keyEquivalent: "")
 appMenu.addItem(.separator())
 appMenu.addItem(mi("Settings…", #selector(AppDelegate.openSettings), ","))
 appMenu.addItem(.separator())

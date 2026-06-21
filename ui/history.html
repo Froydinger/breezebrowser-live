@@ -162,6 +162,32 @@
       font-size: 14px;
       padding: 80px 0;
     }
+
+    .seg {
+      display: inline-flex;
+      gap: 2px;
+      background: var(--surface);
+      border-radius: 11px;
+      padding: 3px;
+      margin-bottom: 18px;
+    }
+    .seg button {
+      border: none;
+      background: transparent;
+      color: var(--text-soft);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s var(--ease), color 0.15s var(--ease);
+    }
+    .seg button.on {
+      background: var(--surface-hover);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
   </style>
 </head>
 <body>
@@ -170,6 +196,10 @@
       <h1>History</h1>
       <button id="clear">Clear all history</button>
     </header>
+    <div class="seg" id="seg">
+      <button data-mode="pages" class="on">Pages</button>
+      <button data-mode="chats">Breeze AI chats</button>
+    </div>
     <input id="search" type="text" placeholder="Search history…" autofocus />
     <div id="list"></div>
     <div id="empty" style="display:none">Nothing here yet.</div>
@@ -177,8 +207,12 @@
 
   <script>
     let all = [];
+    let chats = [];
+    let mode = 'pages';
     const listEl = document.getElementById('list');
     const emptyEl = document.getElementById('empty');
+    const clearBtn = document.getElementById('clear');
+    const searchEl = document.getElementById('search');
 
     function dayLabel(ts) {
       const d = new Date(ts);
@@ -191,7 +225,8 @@
     }
 
     function render() {
-      const q = document.getElementById('search').value.trim().toLowerCase();
+      if (mode === 'chats') { renderChats(); return; }
+      const q = searchEl.value.trim().toLowerCase();
       const items = q
         ? all.filter((h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q))
         : all;
@@ -245,6 +280,51 @@
       }
     }
 
+    function renderChats() {
+      const q = searchEl.value.trim().toLowerCase();
+      const items = q ? chats.filter((c) => (c.title || '').toLowerCase().includes(q)) : chats;
+      listEl.textContent = '';
+      emptyEl.style.display = items.length ? 'none' : '';
+      emptyEl.textContent = 'No Breeze AI chats yet.';
+      for (const c of items) {
+        const el = document.createElement('div');
+        el.className = 'entry';
+        const img = document.createElement('img');
+        img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%235b7cfa" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>');
+        const t = document.createElement('div');
+        t.className = 't';
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = c.title || 'Chat';
+        t.append(title);
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = '✕';
+        del.title = 'Delete chat';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          breezeInternal.deleteChat(c.id);
+          chats = chats.filter((x) => x.id !== c.id);
+          render();
+        });
+        el.append(img, t, del);
+        el.addEventListener('click', () => breezeInternal.openChat(c.id));
+        listEl.appendChild(el);
+      }
+    }
+
+    function setMode(m) {
+      mode = m;
+      for (const b of document.querySelectorAll('#seg button')) b.classList.toggle('on', b.dataset.mode === m);
+      clearBtn.style.display = m === 'pages' ? '' : 'none';
+      searchEl.placeholder = m === 'pages' ? 'Search history…' : 'Search chats…';
+      emptyEl.textContent = m === 'pages' ? 'Nothing here yet.' : 'No Breeze AI chats yet.';
+      render();
+    }
+    for (const b of document.querySelectorAll('#seg button')) {
+      b.addEventListener('click', () => setMode(b.dataset.mode));
+    }
+
     breezeInternal.getSettings().then((s) => {
       document.documentElement.classList.toggle('dark', s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches));
       if (s.accent) document.documentElement.style.setProperty('--accent', s.accent);
@@ -253,7 +333,8 @@
       document.documentElement.classList.toggle('dark', t === 'dark'));
 
     breezeInternal.getHistory().then((h) => { all = h; render(); });
-    document.getElementById('search').addEventListener('input', render);
+    if (breezeInternal.getChats) breezeInternal.getChats().then((c) => { chats = c || []; if (mode === 'chats') render(); });
+    searchEl.addEventListener('input', render);
     document.getElementById('clear').addEventListener('click', () => {
       if (!confirm('Clear all browsing history?')) return;
       breezeInternal.clearHistory();

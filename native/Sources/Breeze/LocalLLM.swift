@@ -38,14 +38,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     }
 
     func resetChat() {
-        let df = DateFormatter(); df.dateStyle = .full
-        history = [["role": "system", "content": """
-        You are Breeze, a private assistant inside a web browser, running entirely on \
-        the user's Mac via a local model. Today is \(df.string(from: Date())). Be concise. \
-        You may be given the text of the page the user is viewing — use it when they ask \
-        about "this page". When a question needs current or factual info you're unsure of, \
-        reply with ONLY one line: SEARCH: <query>. Never invent facts.
-        """]]
+        history = [["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))]]
     }
 
     private func llamaServerPath() -> String? {
@@ -135,27 +128,28 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
 
     // MARK: - Chat
 
-    func send(_ text: String, contexts: [AIContext], completion: @escaping (Result<(String, Bool), Error>) -> Void) {
+    func send(_ text: String, contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {
         ensure { ok in
-            guard ok else { completion(.failure(NSError(domain: "Breeze", code: 1, userInfo: [NSLocalizedDescriptionKey: "The local model isn't ready yet."]))); return }
+            guard ok, let tools = self.browser else { completion(.failure(NSError(domain: "Breeze", code: 1, userInfo: [NSLocalizedDescriptionKey: "The local model isn't ready yet."]))); return }
             Task {
                 do {
-                    var ctx = ""
-                    for c in contexts { ctx += "[\(c.label)]\n\(String(c.text.prefix(1500)))\n\n" }
-                    let userMsg = ctx.isEmpty ? text : "Context from open tabs:\n\(ctx)\nUser: \(text)"
-                    self.history.append(["role": "user", "content": userMsg])
-                    var reply = try await self.complete()
-                    var usedSearch = false
-                    if let q = Self.extractSearch(reply), let b = self.browser {
-                        usedSearch = true
-                        let results = await b.aiSearchWeb(q)
-                        self.history.append(["role": "assistant", "content": reply])
-                        self.history.append(["role": "user", "content": "Web search results for \"\(q)\":\n\(String(results.prefix(2600)))\n\nUsing these, answer my question fully."])
-                        reply = try await self.complete()
-                    }
-                    self.history.append(["role": "assistant", "content": reply])
-                    let final = reply, searched = usedSearch
-                    await MainActor.run { completion(.success((final, searched))) }
+                    let (answer, chips) = try await Agent.run(
+                        userText: text, contexts: contexts, tools: tools,
+                        ask: { msg in
+                            self.history.append(["role": "user", "content": msg])
+                            let reply = try await self.complete()
+                            self.history.append(["role": "assistant", "content": reply])
+                            return reply
+                        },
+                        askFresh: { msg in
+                            // reset to just the system prompt + this self-contained turn
+                            self.resetChat()
+                            self.history.append(["role": "user", "content": msg])
+                            let reply = try await self.complete()
+                            self.history.append(["role": "assistant", "content": reply])
+                            return reply
+                        })
+                    await MainActor.run { completion(.success((answer, chips))) }
                 } catch {
                     await MainActor.run { completion(.failure(error)) }
                 }
@@ -178,16 +172,5 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
             throw NSError(domain: "Breeze", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unexpected response from the model."])
         }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func extractSearch(_ s: String) -> String? {
-        for line in s.split(separator: "\n") {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if t.uppercased().hasPrefix("SEARCH:") {
-                let q = t.dropFirst(7).trimmingCharacters(in: .whitespaces)
-                return q.isEmpty ? nil : q
-            }
-        }
-        return nil
     }
 }

@@ -38,8 +38,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         logo.translatesAutoresizingMaskIntoConstraints = false
         let title = NSTextField(labelWithString: "Assistant")
         title.font = .systemFont(ofSize: 13, weight: .semibold)
-        let history = HoverButton(symbol: "clock.arrow.circlepath", size: 28, point: 14)
-        history.onTap = { [weak self] in self?.toggleHistory() }
+        // Chat history lives on the History page now (breeze://history → Chats),
+        // not as an in-panel overlay.
         let fs = HoverButton(symbol: "arrow.up.left.and.arrow.down.right", size: 28, point: 13)
         fs.onTap = { [weak self] in self?.onToggleFullscreen?() }
         let newChat = HoverButton(symbol: "square.and.pencil", size: 28, point: 14)
@@ -47,7 +47,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let close = HoverButton(symbol: "xmark", size: 28, point: 13)
         close.onTap = { [weak self] in self?.onClose?() }
         let hspacer = NSView(); hspacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let header = NSStackView(views: [logo, title, hspacer, history, fs, newChat, close])
+        let header = NSStackView(views: [logo, title, hspacer, fs, newChat, close])
         header.spacing = 8; header.alignment = .centerY
         header.translatesAutoresizingMaskIntoConstraints = false
 
@@ -238,9 +238,13 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         chatId = id
         messages = Store.shared.chatMessages(id: id)
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        empty.isHidden = !messages.isEmpty
         for m in messages { addMessage(m["text"] ?? "", user: m["role"] == "user") }
         setMode(history: false)
     }
+    /// Open a saved chat in the panel (called when a chat is tapped on the
+    /// History page).
+    func openChat(id: Double) { loadChat(id: id) }
 
     private func addChipsRow(_ chips: [String]) {
         empty.isHidden = true

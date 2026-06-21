@@ -1,14 +1,15 @@
 // Apple Foundation Models assistant — fully on-device (no third-party cloud).
-// Agentic page-context + web search. We drive the "tool" loop ourselves in text
-// (a SEARCH: protocol) rather than FM tool-calling, because the @Generable macro
-// plugin ships only with Xcode (not the Command Line Tools) — the effect matches
-// the old Qwen function-calling build. Requires macOS 26 + Apple Intelligence.
+// Agentic via the shared text protocol in Agent.swift (OPEN/SEARCH/READ/REMIND):
+// the @Generable tool-calling macro ships only with Xcode, so we drive the loop
+// ourselves — the effect matches the Electron Qwen function-calling build.
+// Requires macOS 26 + Apple Intelligence.
 
 import Foundation
 import FoundationModels
 
 /// Browser capabilities the AI calls back into (main-actor UI work).
 protocol BrowserAITools: AnyObject {
+    @MainActor func aiOpenURL(_ url: String) async -> String
     @MainActor func aiReadCurrentPage() async -> String
     @MainActor func aiSearchWeb(_ query: String) async -> String
     @MainActor func aiSetReminder(_ text: String, minutes: Int) async -> String
@@ -16,7 +17,7 @@ protocol BrowserAITools: AnyObject {
 
 @available(macOS 26.0, *)
 final class FoundationAI {
-    private let session: LanguageModelSession
+    private var session: LanguageModelSession
     weak var browser: (any BrowserAITools)?
 
     static func available() -> Bool {
@@ -38,58 +39,32 @@ final class FoundationAI {
 
     init(tools: any BrowserAITools) {
         browser = tools
-        let df = DateFormatter(); df.dateStyle = .full
-        let instructions = """
-        You are Breeze, a private assistant inside a web browser, running entirely \
-        on the user's Mac. Today is \(df.string(from: Date())). Give complete, genuinely \
-        helpful answers in a friendly, natural tone. You may be given the text of one or \
-        more open tabs as context — use it to ground your answer when relevant. When a \
-        question needs current or factual information you're unsure of, you can request a \
-        web search. Never invent facts.
-        """
-        session = LanguageModelSession(instructions: instructions)
+        let extra = Store.shared.string("aiInstructions")
+        session = LanguageModelSession(instructions: Agent.systemPrompt(extra: extra))
     }
 
-    func send(_ text: String, contexts: [AIContext], completion: @escaping (Result<(String, Bool), Error>) -> Void) {
+    func send(_ text: String, contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {
+        guard let tools = browser else {
+            completion(.failure(NSError(domain: "Breeze", code: 1))); return
+        }
+        // Apple's on-device model has a small context window, and an agentic loop
+        // feeds it large page/search text. Start each message from a fresh session
+        // so a prior turn's tool output can't overflow the transcript.
+        session = LanguageModelSession(instructions: Agent.systemPrompt(extra: Store.shared.string("aiInstructions")))
         Task {
             do {
-                var ctx = ""
-                for c in contexts { ctx += "[\(c.label)]\n\(String(c.text.prefix(1500)))\n\n" }
-                let first = """
-                \(ctx.isEmpty ? "" : "Context from the user's open tabs:\n\(ctx)")The user asks: \(text)
-
-                If answering this needs current or live web information you don't already \
-                know, reply with ONLY one line: SEARCH: <query>. Otherwise answer fully now.
-                """
-                var out = try await session.respond(to: first).content
-                var usedSearch = false
-                if let query = Self.extractSearch(out), let b = browser {
-                    usedSearch = true
-                    let results = await b.aiSearchWeb(query)
-                    let second = """
-                    Web search results for "\(query)":
-                    \(String(results.prefix(2600)))
-
-                    Using these results and any tab context, answer the user's question fully.
-                    """
-                    out = try await session.respond(to: second).content
-                }
-                let final = out
-                await MainActor.run { completion(.success((final, usedSearch))) }
+                let (answer, chips) = try await Agent.run(
+                    userText: text, contexts: contexts, tools: tools,
+                    ask: { msg in try await self.session.respond(to: msg).content },
+                    askFresh: { msg in
+                        // brand-new context window (recovers from an overflow)
+                        self.session = LanguageModelSession(instructions: Agent.systemPrompt(extra: Store.shared.string("aiInstructions")))
+                        return try await self.session.respond(to: msg).content
+                    })
+                await MainActor.run { completion(.success((answer, chips))) }
             } catch {
                 await MainActor.run { completion(.failure(error)) }
             }
         }
-    }
-
-    private static func extractSearch(_ s: String) -> String? {
-        for line in s.split(separator: "\n") {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            if t.uppercased().hasPrefix("SEARCH:") {
-                let q = t.dropFirst(7).trimmingCharacters(in: .whitespaces)
-                return q.isEmpty ? nil : q
-            }
-        }
-        return nil
     }
 }

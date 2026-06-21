@@ -148,6 +148,15 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.0.1', icon: 'sparkles', title: 'A smarter, agentic Breeze AI', major: true, items: [
+        'Breeze AI can now <b>do things in the browser</b> — open sites, search the web, read the current page, and answer live questions (weather, prices, news) with real, cited info instead of refusing.',
+        'It <b>never hard-fails</b> on long tasks: if it runs low on context it quietly starts a fresh window with just what it needs and keeps going.',
+        'Chat history moved to the History page (a new “Breeze AI chats” tab) — click any chat to reopen it in the assistant.',
+        'Long URLs now truncate cleanly in the address bar, pages always load at 100% zoom, and auto-update is built in.' ] },
+      { v: '3.0.0', icon: 'shapes', title: 'Breeze goes native', major: true, items: [
+        'Breeze is now a <b>native Mac app built on Apple’s WebKit</b> — no more Chromium. That means DRM video (Netflix &amp; co.), real passkeys, lower memory, and better battery.',
+        'Breeze AI now runs on <b>Apple Foundation Models</b> (the on-device intelligence behind Apple Intelligence), with a local Qwen model as automatic backup. Nothing leaves your Mac.',
+        '<b>First install note:</b> because Breeze is independently signed (not paid Apple notarization), macOS shows an “unverified” warning the first time. Open <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>“Open Anyway”</b> next to Breeze. You only do this once.' ] },
       { v: '2.10.1', icon: 'shapes', title: 'Mac only, from here on', major: true, items: [
         'Breeze is now a <b>macOS-only</b> app (Apple Silicon). The Windows build has been retired so we can focus everything on the best possible Mac experience.',
         'No change for Mac users — your install keeps auto-updating as always.' ] },

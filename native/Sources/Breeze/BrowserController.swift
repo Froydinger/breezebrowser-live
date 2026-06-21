@@ -328,6 +328,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sbAddress.placeholderString = "Search or enter URL"
         sbAddress.font = .systemFont(ofSize: 13.5)
         sbAddress.isBordered = false; sbAddress.drawsBackground = false; sbAddress.focusRingType = .none
+        sbAddress.usesSingleLineMode = true; sbAddress.lineBreakMode = .byTruncatingTail
+        sbAddress.cell?.truncatesLastVisibleLine = true
         sbAddress.translatesAutoresizingMaskIntoConstraints = false
         sbAddress.target = self; sbAddress.action = #selector(sidebarAddressSubmit)
         addrWrap.addSubview(sbAddress)
@@ -473,6 +475,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         address.placeholderString = "Search or enter URL"
         address.font = .systemFont(ofSize: 13.5)
         address.isBordered = false; address.drawsBackground = false; address.focusRingType = .none
+        address.usesSingleLineMode = true; address.lineBreakMode = .byTruncatingTail
+        address.cell?.truncatesLastVisibleLine = true
         address.translatesAutoresizingMaskIntoConstraints = false
         address.delegate = self
         address.target = self; address.action = #selector(addressSubmit)
@@ -1051,15 +1055,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             guard let self else { return }
             let contexts = await self.gatherContexts()
             let labels = contexts.map { $0.label }
-            let done: (Result<(String, Bool), Error>) -> Void = { [weak self] r in
+            let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
                 guard let self else { return }
                 self.ailog("model returned")
                 self.assistant.setStatus(nil); self.assistant.setInputEnabled(true); self.assistant.focusInput()
                 switch r {
-                case .success(let (answer, usedSearch)):
-                    var chips = labels
-                    if usedSearch { chips.append("🔎 Web search") }
-                    self.assistant.addAI(answer, chips: chips)
+                case .success(let (answer, toolChips)):
+                    let chips = labels + toolChips
+                    let text = answer.isEmpty ? "…" : answer
+                    self.assistant.addAI(text, chips: chips)
                 case .failure(let e):
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
@@ -1165,6 +1169,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard let t = current, !t.isNewTab else { return "The user is on a blank new-tab page (no web content)." }
         let text = await readText(of: t)
         return "Current page (\(t.webView.url?.absoluteString ?? "")):\n\n" + text
+    }
+
+    /// Open a site in the browser (the user's current tab, so they see it) and
+    /// return its title + text so the model can summarize / answer about it.
+    @MainActor func aiOpenURL(_ url: String) async -> String {
+        var s = url.trimmingCharacters(in: .whitespaces)
+        if !s.contains("://") { s = "https://" + s }
+        guard let u = URL(string: s), u.host != nil else { return "Couldn't open \"\(url)\" — that doesn't look like a valid web address." }
+        let t: Tab
+        if let cur = current { cur.isNewTab = false; t = cur }
+        else { let nt = Tab(); nt.isNewTab = false; wire(nt); tabs.append(nt); active = tabs.count - 1; t = nt }
+        showActive(); refreshSidebar()
+        assistant.setStatus("Opening \(hostOf(u))…")
+        t.webView.load(URLRequest(url: u))
+        await waitForLoad(t)
+        try? await Task.sleep(nanoseconds: 700_000_000)   // let the page settle
+        let text = await readText(of: t)
+        syncChrome(); refreshSidebar()
+        assistant.setStatus("Thinking…")
+        return "Opened \(u.absoluteString) in the browser. Title: \(t.webView.title ?? "")\n\nPage text:\n" + String(text.prefix(2500))
     }
 
     @MainActor func aiSearchWeb(_ query: String) async -> String {
@@ -1323,6 +1347,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func isInternal(_ wv: WKWebView) -> Bool { wv.url?.isFileURL ?? false }
 
+    /// On the first launch after an update, auto-open What's New (gated on the
+    /// stored lastSeenVersion, like the Electron build). Fresh installs don't pop
+    /// it. `BREEZE_WHATSNEW_FROM=<ver>` forces it for testing.
+    func showWhatsNewIfUpdated() {
+        let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let lastSeen = Store.shared.string("lastSeenVersion")
+        let forced = ProcessInfo.processInfo.environment["BREEZE_WHATSNEW_FROM"] != nil
+        Store.shared.settings["lastSeenVersion"] = current; Store.shared.saveSettings()
+        guard forced || (!lastSeen.isEmpty && lastSeen != current) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in self?.openInternal(.updates) }
+    }
+
     /// 'system' resolves to the actual effective light/dark for the HTML pages.
     func effectiveTheme() -> String {
         let m = Store.shared.string("theme")
@@ -1431,6 +1467,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             resolve("[]")
         case "switchToTab":
             if let id = args["id"] as? String, let i = tabs.firstIndex(where: { $0.id.uuidString == id }) { select(i) }
+        case "getChats":
+            resolve(Store.json(Store.shared.chats.map { ["id": $0["id"] ?? 0, "title": $0["title"] ?? "Chat"] }))
+        case "openChat":
+            if let id = chatId(from: args["id"]) {
+                if !assistantOpen { setAssistant(true) }
+                assistant.openChat(id: id)
+            }
+        case "deleteChat":
+            if let id = chatId(from: args["id"]) { Store.shared.deleteChat(id: id) }
         case "clearBrowsingData":
             clearCache(); resolve("{}")
         case "resetBrowser":
@@ -1441,6 +1486,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         default:
             break
         }
+    }
+
+    /// Chat ids are JS numbers (a Double timestamp); accept Double/Int/String.
+    private func chatId(from v: Any?) -> Double? {
+        if let d = v as? Double { return d }
+        if let i = v as? Int { return Double(i) }
+        if let s = v as? String { return Double(s) }
+        return nil
     }
 
     func applySettingsChange() {
@@ -1489,6 +1542,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
+        w.magnification = 1.0                 // every page loads at 100% — no stray pinch/smart-zoom carryover
         syncChrome()
         if isInternal(w) { injectBridgeState(into: w) }
     }

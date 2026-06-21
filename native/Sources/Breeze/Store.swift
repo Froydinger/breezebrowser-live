@@ -38,6 +38,7 @@ final class Store {
         "tabSleepHours": 1,
         "aiModel": "",
         "aiInstructions": "",
+        "lastSeenVersion": "",
         "permissions": [String: Any](),
         "reminders": [Any]()
     ]

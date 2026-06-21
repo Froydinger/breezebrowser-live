@@ -122,6 +122,8 @@ final class SplitPane: NSView {
         address.placeholderString = "Search or enter URL"
         address.font = .systemFont(ofSize: 12.5)
         address.isBordered = false; address.drawsBackground = false; address.focusRingType = .none
+        address.usesSingleLineMode = true; address.lineBreakMode = .byTruncatingTail
+        address.cell?.truncatesLastVisibleLine = true
         address.translatesAutoresizingMaskIntoConstraints = false
         address.target = self; address.action = #selector(submit)
         addressWrap.addSubview(address)
