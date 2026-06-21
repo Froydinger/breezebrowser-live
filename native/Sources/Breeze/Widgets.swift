@@ -121,7 +121,7 @@ final class HoverTextButton: NSButton {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
-        let color = hovering ? p.text : p.textSoft
+        let color = hovering ? p.text : p.textSoft.withAlphaComponent(0.3)
         let titleStr = hovering ? hoverText : defaultText
         attributedTitle = NSAttributedString(string: titleStr, attributes: [
             .foregroundColor: color,

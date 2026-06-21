@@ -18,7 +18,7 @@ final class NewTabView: NSView {
     private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
     let field = NSTextField()
-    var onSubmit: ((String) -> Void)?
+    var onSubmit: ((String, Bool) -> Void)?
     private var timer: Timer?
 
     override init(frame: NSRect) {
@@ -56,6 +56,11 @@ final class NewTabView: NSView {
         fieldWrap.addSubview(field)
 
         addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap)
+        let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 560)
+        widthC.priority = .defaultHigh
+        let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
+        maxC.priority = .required
+
         NSLayoutConstraint.activate([
             logo.widthAnchor.constraint(equalToConstant: 64),
             logo.heightAnchor.constraint(equalToConstant: 64),
@@ -70,7 +75,8 @@ final class NewTabView: NSView {
 
             fieldWrap.centerXAnchor.constraint(equalTo: centerXAnchor),
             fieldWrap.topAnchor.constraint(equalTo: greeting.bottomAnchor, constant: 26),
-            fieldWrap.widthAnchor.constraint(equalToConstant: 560),
+            widthC,
+            maxC,
             fieldWrap.heightAnchor.constraint(equalToConstant: 54),
 
             field.leadingAnchor.constraint(equalTo: fieldWrap.leadingAnchor, constant: 22),
@@ -117,6 +123,7 @@ final class NewTabView: NSView {
         let t = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         field.stringValue = ""
-        onSubmit?(t)
+        let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        onSubmit?(t, isCmd)
     }
 }

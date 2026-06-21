@@ -55,6 +55,8 @@ final class Tab {
     var sleeping = false         // discarded to save memory; reloads on activate
     var sleptURL: String?        // URL to restore when woken
     var lastActive = Date()
+    var splitPartnerId: UUID?    // if in a split pair, the UUID of the other tab
+    var splitIsRight = false     // true if this tab is placed on the right side of the split
 
     init() {
         webView = WKWebView(frame: .zero, configuration: sharedConfig)

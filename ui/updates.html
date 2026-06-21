@@ -148,6 +148,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.1.0', icon: 'bot', title: 'Intelligent Browser Use — the AI can actually use websites now', major: true, items: [
+        '<b>Vimium-style interactive element tagging</b> — every clickable button, link, and input on the page gets a visible numbered badge. The AI sees and targets these IDs with pinpoint accuracy instead of guessing at text labels.',
+        '<b>The AI actually completes tasks now</b> — ask "pizza near me" and it will search, read results, pick a top option, and tell you about it in the chat. No more "I opened it for you" cop-outs.',
+        '<b>Multi-step page interaction</b> — CLICK and TYPE actions now return the full updated page state after each step, so the AI can chain form fills, button clicks, and navigation seamlessly.',
+        '<b>Auto-dock sidebar on agent tasks</b> — when the AI navigates from a chat tab to a webpage, the assistant sidebar automatically slides open so you never lose the conversation.',
+        '<b>Smarter navigation</b> — the AI no longer invents broken map URLs or guesses at page-internal links. It opens Google, uses the search field, and reads real results like a human would.',
+        '<b>Agent completion snapshots</b> — when the AI finishes a task, it captures a screenshot of the final browser state for your records.' ] },
       { v: '3.0.9', icon: 'zap', title: 'UI alignment, screen-wide Siri glow, and fullscreen chat tab', items: [
         '<b>Unified top bar layout</b> — navigation controls, the URL bar, and the AI corner button are now perfectly center-aligned and remain completely static when toggling the sidebar.',
         '<b>Screen-wide Siri glow</b> — the rainbow glow animation now blurs beautifully around the edges of your entire screen when the AI is active (like Apple Intelligence), with zero visual clipping.',

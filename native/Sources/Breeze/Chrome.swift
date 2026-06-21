@@ -11,10 +11,12 @@ final class TabRowView: NSView {
     private let close = HoverButton(symbol: "xmark", size: 20, point: 9)
     private let perfBadge = NSTextField(labelWithString: "🚀")
     private var active: Bool
+    private var inSplit: Bool
     private var hovering = false
 
-    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false) {
+    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false, inSplit: Bool = false) {
         self.active = active
+        self.inSplit = inSplit
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -68,13 +70,33 @@ final class TabRowView: NSView {
     @objc func applyTheme() {
         let p = Theme.shared.palette
         titleLabel.textColor = p.text
-        let bg: NSColor = active ? p.surfaceActive : (hovering ? p.surfaceHover : .clear)
+        
+        var bg: NSColor = active ? p.surfaceActive : (hovering ? p.surfaceHover : .clear)
+        if inSplit {
+            bg = p.accent.withAlphaComponent(active ? 0.25 : 0.12)
+        }
         layer?.backgroundColor = bg.cgColor
+        
         if active {
             layer?.shadowColor = NSColor.black.cgColor
             layer?.shadowOpacity = p.isDark ? 0.25 : 0.06
             layer?.shadowRadius = 8; layer?.shadowOffset = CGSize(width: 0, height: -2)
-        } else { layer?.shadowOpacity = 0 }
+            
+            if inSplit {
+                layer?.borderWidth = 1.5
+                layer?.borderColor = p.accent.cgColor
+            } else {
+                layer?.borderWidth = 0
+            }
+        } else {
+            layer?.shadowOpacity = 0
+            if inSplit {
+                layer?.borderWidth = 1.5
+                layer?.borderColor = p.accent.withAlphaComponent(0.4).cgColor
+            } else {
+                layer?.borderWidth = 0
+            }
+        }
     }
 
     override func updateTrackingAreas() {
@@ -104,6 +126,7 @@ final class TabRowView: NSView {
 /// One split-view pane: its own URL-bar strip (back/fwd/reload + address) over a
 /// hosted web view. Mirrors the Electron per-pane split-bar.
 final class SplitPane: NSView {
+    let sidebarToggle = HoverButton(symbol: "sidebar.left", size: 26, point: 13)
     let back = HoverButton(symbol: "chevron.left", size: 26, point: 13)
     let forward = HoverButton(symbol: "chevron.right", size: 26, point: 13)
     let reload = HoverButton(symbol: "arrow.clockwise", size: 26, point: 12)
@@ -111,11 +134,22 @@ final class SplitPane: NSView {
     private let addressWrap = NSView()
     let content = NSView()
     var onNavigate: ((String) -> Void)?
+    var onSidebarToggle: (() -> Void)?
+    var showsSidebarToggle = false {
+        didSet {
+            sidebarToggle.isHidden = !showsSidebarToggle
+        }
+    }
+    private var navLeadingC: NSLayoutConstraint?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true; layer?.masksToBounds = true; layer?.cornerRadius = 10
+
+        sidebarToggle.translatesAutoresizingMaskIntoConstraints = false
+        sidebarToggle.isHidden = true
+        sidebarToggle.onTap = { [weak self] in self?.onSidebarToggle?() }
 
         addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 9
         addressWrap.translatesAutoresizingMaskIntoConstraints = false
@@ -133,18 +167,22 @@ final class SplitPane: NSView {
             address.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
         ])
 
-        let nav = NSStackView(views: [back, forward, reload]); nav.spacing = 1
+        let nav = NSStackView(views: [sidebarToggle, back, forward, reload]); nav.spacing = 1
         nav.translatesAutoresizingMaskIntoConstraints = false
         let strip = NSView(); strip.translatesAutoresizingMaskIntoConstraints = false
         strip.addSubview(nav); strip.addSubview(addressWrap)
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(strip); addSubview(content)
+
+        let leadingConstraint = nav.leadingAnchor.constraint(equalTo: strip.leadingAnchor, constant: 4)
+        self.navLeadingC = leadingConstraint
+
         NSLayoutConstraint.activate([
             strip.topAnchor.constraint(equalTo: topAnchor),
             strip.leadingAnchor.constraint(equalTo: leadingAnchor),
             strip.trailingAnchor.constraint(equalTo: trailingAnchor),
             strip.heightAnchor.constraint(equalToConstant: 40),
-            nav.leadingAnchor.constraint(equalTo: strip.leadingAnchor, constant: 4),
+            leadingConstraint,
             nav.centerYAnchor.constraint(equalTo: strip.centerYAnchor),
             addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 6),
             addressWrap.trailingAnchor.constraint(equalTo: strip.trailingAnchor, constant: -6),
@@ -157,9 +195,13 @@ final class SplitPane: NSView {
         ])
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
-                                               name: Theme.didChange, object: nil)
+                                                name: Theme.didChange, object: nil)
     }
     required init?(coder: NSCoder) { nil }
+
+    func setLeftSpacingForTrafficLights(_ isLeftPaneWithHiddenSidebar: Bool) {
+        navLeadingC?.constant = isLeftPaneWithHiddenSidebar ? 80 : 4
+    }
 
     func host(_ view: NSView) {
         content.subviews.forEach { $0.removeFromSuperview() }

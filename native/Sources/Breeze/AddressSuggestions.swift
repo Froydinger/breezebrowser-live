@@ -45,6 +45,7 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
         tableView.style = .plain
         tableView.target = self
         tableView.action = #selector(clickedRow)
+        tableView.refusesFirstResponder = true
         
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("SuggestionCol"))
         col.width = 400
@@ -79,6 +80,16 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
         
         if !popover.isShown {
             popover.show(relativeTo: textField.bounds, of: textField, preferredEdge: .minY)
+            if let window = textField.window {
+                DispatchQueue.main.async {
+                    window.makeKeyAndOrderFront(nil)
+                    window.makeFirstResponder(textField)
+                    if let editor = textField.currentEditor() as? NSTextView {
+                        let len = textField.stringValue.count
+                        editor.selectedRange = NSRange(location: len, length: 0)
+                    }
+                }
+            }
         }
         
         // Reset selection without triggering the text field update

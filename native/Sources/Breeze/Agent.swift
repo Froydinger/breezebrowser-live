@@ -11,6 +11,8 @@ enum AgentAction {
     case search(String)        // web search + read the results
     case read                  // read the page the user is viewing
     case remind(Int, String)   // set a reminder in N minutes
+    case click(String)         // click on a button/link/element matching text or selector
+    case type(String, String)  // type text into a field matching text or selector
 }
 
 enum Agent {
@@ -33,6 +35,8 @@ enum Agent {
           READ                  — read the page the user is viewing. Use when they ask \
         about "this page" / "this article".
           REMIND: <minutes> | <text>  — set a reminder.
+          CLICK: <ID or selector>   — click on a link, button, input field, or element. Prefer using the ID in brackets (e.g. CLICK: 3 or CLICK: [3]) from the Interactive Elements list.
+          TYPE: <ID or selector> | <value> — type a value into an input field, text area, or textbox. Prefer using the ID in brackets (e.g. TYPE: 2 | value or TYPE: [2] | value) from the Interactive Elements list.
 
         WHEN TO SEARCH (the ONLY cases):
         • Today's news, live scores, current weather, stock prices
@@ -54,6 +58,13 @@ enum Agent {
 
         Hard rules:
         • You DO have web access. NEVER say you can't browse — just OPEN it.
+        • "OPEN" is only for navigating to actual web addresses or domains in the browser. Do NOT use OPEN to "open" page elements like menus, dialogs, dropdowns, or input/text boxes on the current page — use CLICK or TYPE for those.
+        • If you need to navigate to a specific URL or domain name (e.g. weather.com), ALWAYS use OPEN: <url>, do NOT use SEARCH.
+        • You have access to a list of Interactive Elements at the beginning of the page content. ALWAYS use the ID in brackets (e.g. CLICK: 3 or TYPE: 2 | value) to click or type into elements. This is 100% reliable. ONLY fall back to text matching or CSS selectors if you cannot find the element in the list.
+        • NEVER invent map search URLs or Apple Maps URLs like maps.apple.com or maps.google.com/maps/search. If the user asks to navigate, search, or find an address, OPEN google.com first, then use the Search field to enter the address, click search, and read the results.
+        • DO NOT just say "I opened it for you" or "Done." when you finish. Summarize exactly what is visible on the page (from the page text and elements), explain where you stopped, what the current state is, and how it answers the user's request.
+        • You can perform MULTIPLE steps (up to 8 actions). If a search or page does not give you enough information, do not give up — search again with a better query or use OPEN: <url> to visit a specific link from the results to get more details.
+        • When asked to write a post, comment, or interact with text fields, use the interactive element IDs to find the input/textarea (e.g. searching for text like "What's on your mind", "Add a comment", or CSS selectors) and enter the text. If you cannot find the element or if the page requires you to be logged in to comment/post, explain that to the user.
         • NEVER invent facts, URLs, prices, or sources. SEARCH if truly unsure.
         • Don't describe your own model, architecture, or training.
         • Use the user's open-tab context below when it's relevant.
@@ -80,7 +91,22 @@ enum Agent {
             if up.hasPrefix("OPEN:") || up.hasPrefix("OPEN ") {
                 let v = clean(String(l.dropFirst(5))); if !v.isEmpty { return .open(v) }
             } else if up.hasPrefix("SEARCH:") || up.hasPrefix("SEARCH ") {
-                let v = clean(String(l.dropFirst(7))); if !v.isEmpty { return .search(v) }
+                let v = clean(String(l.dropFirst(7)))
+                if !v.isEmpty {
+                    if isURL(v) {
+                        return .open(v)
+                    } else {
+                        return .search(v)
+                    }
+                }
+            } else if up.hasPrefix("CLICK:") || up.hasPrefix("CLICK ") {
+                let v = clean(String(l.dropFirst(6))); if !v.isEmpty { return .click(v) }
+            } else if up.hasPrefix("TYPE:") || up.hasPrefix("TYPE ") {
+                let body = String(l.dropFirst(5))
+                let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                if parts.count > 1 {
+                    return .type(clean(parts[0]), clean(parts[1]))
+                }
             } else if up.hasPrefix("REMIND:") || up.hasPrefix("REMIND ") {
                 let body = String(l.dropFirst(7))
                 let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -92,6 +118,17 @@ enum Agent {
             }
         }
         return nil
+    }
+
+    private static func isURL(_ q: String) -> Bool {
+        let cleanQ = q.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if cleanQ.hasPrefix("http://") || cleanQ.hasPrefix("https://") {
+            return true
+        }
+        if cleanQ.contains(".") && !cleanQ.contains(" ") {
+            return true
+        }
+        return false
     }
 
     private static func clean(_ s: String) -> String {
@@ -144,12 +181,24 @@ enum Agent {
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've opened \(host) for you."
                 lastResult = await tools.aiOpenURL(u)
-                prompt = "\(cap(lastResult))\n\nThe page is now open in the user's browser. In one or two sentences, tell them it's open and what's on it (or answer their question). Do NOT take another action unless it's truly required."
+                prompt = "\(cap(lastResult))\n\nThe page is now open in the user's browser. If this page contains the answer, explain it to the user now in plain language. If you need to click/visit a link on this page or search again to find the answer, reply with OPEN: <url> or SEARCH: <query>."
             case .search(let q):
                 if !chips.contains("🔎 Web search") { chips.append("🔎 Web search") }
                 lastFallback = "Here's what I found about \"\(q)\"."
                 lastResult = await tools.aiSearchWeb(q)
-                prompt = "\(cap(lastResult))\n\nUsing these results, answer the user's question now in plain language. Only search again if you genuinely cannot answer yet."
+                prompt = "\(cap(lastResult))\n\nUsing these results, answer the user's question in plain language. If you need more details from a specific search result, you can navigate directly to its URL by replying with OPEN: <url>. Otherwise, only search again or open another link if you genuinely cannot answer yet."
+            case .click(let target):
+                let chip = "🖱️ Click: \(target)"
+                if !chips.contains(chip) { chips.append(chip) }
+                lastFallback = "I've clicked on \(target) for you."
+                lastResult = await tools.aiClick(target)
+                prompt = "\(cap(lastResult))\n\nThe click action was executed. If the page loaded new content or navigated, tell the user in plain language. If you need to type into a field now or click another button, do so now (e.g. TYPE: <target> | <value> or CLICK: <target>). Otherwise, explain the outcome or answer their question."
+            case .type(let target, let value):
+                let chip = "⌨️ Type: \(target)"
+                if !chips.contains(chip) { chips.append(chip) }
+                lastFallback = "I've typed \"\(value)\" into \(target) for you."
+                lastResult = await tools.aiType(target, text: value)
+                prompt = "\(cap(lastResult))\n\nThe text was entered. If you need to click a submit button or continue, reply with CLICK: <target>. Otherwise, tell the user you've entered the text or answer their question."
             case .read:
                 if !chips.contains("📄 Page") { chips.append("📄 Page") }
                 lastFallback = "Here's a summary of the page."
@@ -177,7 +226,7 @@ enum Agent {
             var up = line.trimmingCharacters(in: .whitespaces).uppercased()
             if up.hasPrefix("ACTION: ") { up = String(up.dropFirst(8)).trimmingCharacters(in: .whitespaces) }
             else if up.hasPrefix("ACTION ") { up = String(up.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
-            return !(up.hasPrefix("OPEN:") || up.hasPrefix("SEARCH:") || up.hasPrefix("REMIND:") || up == "READ" || up.hasPrefix("OPEN ") || up.hasPrefix("SEARCH ") || up.hasPrefix("REMIND "))
+            return !(up.hasPrefix("OPEN:") || up.hasPrefix("SEARCH:") || up.hasPrefix("REMIND:") || up == "READ" || up.hasPrefix("OPEN ") || up.hasPrefix("SEARCH ") || up.hasPrefix("REMIND ") || up.hasPrefix("CLICK:") || up.hasPrefix("CLICK ") || up.hasPrefix("TYPE:") || up.hasPrefix("TYPE "))
         }
         return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }

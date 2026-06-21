@@ -13,6 +13,8 @@ protocol BrowserAITools: AnyObject {
     @MainActor func aiReadCurrentPage() async -> String
     @MainActor func aiSearchWeb(_ query: String) async -> String
     @MainActor func aiSetReminder(_ text: String, minutes: Int) async -> String
+    @MainActor func aiClick(_ target: String) async -> String
+    @MainActor func aiType(_ target: String, text: String) async -> String
 }
 
 @available(macOS 26.0, *)

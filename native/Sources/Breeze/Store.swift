@@ -47,7 +47,13 @@ final class Store {
 
     private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        dir = base.appendingPathComponent("Breeze", isDirectory: true)
+        var folderName = "Breeze"
+        if let idx = CommandLine.arguments.firstIndex(of: "--profile"), idx + 1 < CommandLine.arguments.count {
+            folderName = CommandLine.arguments[idx + 1]
+        } else if let env = ProcessInfo.processInfo.environment["BREEZE_PROFILE"] {
+            folderName = env
+        }
+        dir = base.appendingPathComponent(folderName, isDirectory: true)
         settingsURL = dir.appendingPathComponent("settings.json")
         pinsURL = dir.appendingPathComponent("pins.json")
         historyURL = dir.appendingPathComponent("history.json")

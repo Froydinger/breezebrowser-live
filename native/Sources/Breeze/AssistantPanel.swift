@@ -26,6 +26,11 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var historyTopToPanelC: NSLayoutConstraint!
     private var headerLeadingC: NSLayoutConstraint!
     private var messageMaxWidth: CGFloat = 250
+    private var messagesWidthC: NSLayoutConstraint!
+    private var inputWidthC: NSLayoutConstraint!
+    private var statusWidthC: NSLayoutConstraint!
+    private var contextWidthC: NSLayoutConstraint!
+    private var historyWidthC: NSLayoutConstraint!
     // chat state
     private var chatId = Date().timeIntervalSince1970
     private var messages: [[String: String]] = []   // {role: user|ai, text}
@@ -119,17 +124,27 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         addSubview(header); addSubview(scroll); addSubview(empty); addSubview(historyView); addSubview(status); addSubview(contextRow); addSubview(inputWrap)
         self.inputWrap = inputWrap
 
+        messagesWidthC = messagesStack.widthAnchor.constraint(equalTo: doc.widthAnchor, constant: -16)
+        inputWidthC = inputWrap.widthAnchor.constraint(equalTo: widthAnchor, constant: -24)
+        statusWidthC = status.widthAnchor.constraint(equalTo: widthAnchor, constant: -32)
+        contextWidthC = contextRow.widthAnchor.constraint(equalTo: widthAnchor, constant: -28)
+        historyWidthC = historyView.widthAnchor.constraint(equalTo: widthAnchor)
+
+        messagesWidthC.isActive = true
+        inputWidthC.isActive = true
+        statusWidthC.isActive = true
+        contextWidthC.isActive = true
+        historyWidthC.isActive = true
+
         scrollTopToHeaderC = scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10)
         scrollTopToPanelC = scroll.topAnchor.constraint(equalTo: topAnchor, constant: 12)
         historyTopToHeaderC = historyView.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 6)
         historyTopToPanelC = historyView.topAnchor.constraint(equalTo: topAnchor, constant: 12)
 
         NSLayoutConstraint.activate([
-            contextRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            contextRow.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -14),
+            contextRow.centerXAnchor.constraint(equalTo: centerXAnchor),
             contextRow.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
-            historyView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            historyView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            historyView.centerXAnchor.constraint(equalTo: centerXAnchor),
             historyView.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
             historyTopToHeaderC,
         ])
@@ -146,20 +161,17 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             scroll.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -8),
             doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             messagesStack.topAnchor.constraint(equalTo: doc.topAnchor, constant: 6),
-            messagesStack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 8),
-            messagesStack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -8),
+            messagesStack.centerXAnchor.constraint(equalTo: doc.centerXAnchor),
             messagesStack.bottomAnchor.constraint(equalTo: doc.bottomAnchor),
 
             empty.centerXAnchor.constraint(equalTo: scroll.centerXAnchor),
             empty.centerYAnchor.constraint(equalTo: scroll.centerYAnchor),
             empty.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -40),
 
-            status.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            status.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            status.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
+            status.centerXAnchor.constraint(equalTo: centerXAnchor),
+            status.bottomAnchor.constraint(equalTo: contextRow.topAnchor, constant: -4),
 
-            inputWrap.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            inputWrap.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            inputWrap.centerXAnchor.constraint(equalTo: centerXAnchor),
             inputWrap.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
             inputWrap.heightAnchor.constraint(equalToConstant: 52),
             attachBtn.leadingAnchor.constraint(equalTo: inputWrap.leadingAnchor, constant: 6),
@@ -184,16 +196,29 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         logo.translatesAutoresizingMaskIntoConstraints = false
         let h = NSTextField(labelWithString: "Private intelligence")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
+        h.translatesAutoresizingMaskIntoConstraints = false
         let p = NSTextField(labelWithString: "Runs on your Mac.\nReads pages, searches the web — all on-device.")
         p.font = .systemFont(ofSize: 12.5); p.alignment = .center; p.maximumNumberOfLines = 3
         p.textColor = Theme.shared.palette.textSoft
+        p.translatesAutoresizingMaskIntoConstraints = false
+        p.cell?.wraps = true
+        p.cell?.lineBreakMode = .byWordWrapping
+        
         let chips = NSStackView(views: ["Summarize this page", "Key takeaways", "Explain this simply"].map { chip($0) })
         chips.orientation = .vertical; chips.spacing = 6; chips.alignment = .centerX
+        chips.translatesAutoresizingMaskIntoConstraints = false
+        
         let s = NSStackView(views: [logo, h, p, chips]); s.orientation = .vertical; s.spacing = 10; s.alignment = .centerX
         s.translatesAutoresizingMaskIntoConstraints = false
         empty.addSubview(s); s.pin(to: empty)
-        logo.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        logo.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        
+        NSLayoutConstraint.activate([
+            logo.widthAnchor.constraint(equalToConstant: 44),
+            logo.heightAnchor.constraint(equalToConstant: 44),
+            h.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16),
+            p.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16),
+            chips.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16)
+        ])
         self.emptyTitle = h; self.emptySub = p
     }
     private var emptyTitle: NSTextField!
@@ -207,6 +232,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 12); label.textColor = Theme.shared.palette.text
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.lineBreakMode = .byTruncatingTail
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         pill.addSubview(label)
         NSLayoutConstraint.activate([
             pill.heightAnchor.constraint(equalToConstant: 30),
@@ -366,7 +393,33 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         historyTopToPanelC.isActive = on
         headerLeadingC.constant = (on && clearLights) ? 82 : 14
         // wider reading column for messages when fullscreen
-        messageMaxWidth = on ? 620 : 250
+        messageMaxWidth = on ? 600 : 250
+
+        messagesWidthC.isActive = false
+        inputWidthC.isActive = false
+        statusWidthC.isActive = false
+        contextWidthC.isActive = false
+        historyWidthC.isActive = false
+
+        if on {
+            messagesWidthC = messagesStack.widthAnchor.constraint(equalToConstant: 600)
+            inputWidthC = inputWrap.widthAnchor.constraint(equalToConstant: 600)
+            statusWidthC = status.widthAnchor.constraint(equalToConstant: 600)
+            contextWidthC = contextRow.widthAnchor.constraint(equalToConstant: 600)
+            historyWidthC = historyView.widthAnchor.constraint(equalToConstant: 600)
+        } else {
+            messagesWidthC = messagesStack.widthAnchor.constraint(equalTo: scroll.documentView!.widthAnchor, constant: -16)
+            inputWidthC = inputWrap.widthAnchor.constraint(equalTo: widthAnchor, constant: -24)
+            statusWidthC = status.widthAnchor.constraint(equalTo: widthAnchor, constant: -32)
+            contextWidthC = contextRow.widthAnchor.constraint(equalTo: widthAnchor, constant: -28)
+            historyWidthC = historyView.widthAnchor.constraint(equalTo: widthAnchor)
+        }
+
+        messagesWidthC.isActive = true
+        inputWidthC.isActive = true
+        statusWidthC.isActive = true
+        contextWidthC.isActive = true
+        historyWidthC.isActive = true
     }
 
     private func renderHistory() {

@@ -7,12 +7,20 @@ import WebKit
 import UserNotifications
 import CoreImage
 
-let SIDEBAR_W: CGFloat = 280
+let SIDEBAR_W: CGFloat = 216
 
 final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, BrowserAITools {
     let window: NSWindow
     var tabs: [Tab] = []
-    var active = 0
+    var active = 0 {
+        willSet {
+            if newValue != active {
+                if window.firstResponder === address.currentEditor() {
+                    window.makeFirstResponder(nil)
+                }
+            }
+        }
+    }
     var pins: [Pin] = []
     var pinSize: PinSize = .large      // Settings: small / medium / large
     var downloads: [DownloadItem] = []
@@ -41,7 +49,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     let nowPlaying = NowPlayingView()
     var nowPlayingTab: Tab?
-    var splitTabId: UUID?                 // secondary tab shown beside the active one
     var splitRatio: CGFloat = 0.5
     var splitLeftWidthC: NSLayoutConstraint?
     let splitDivider = ColumnResizeView()
@@ -53,8 +60,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var assistantOpen = false
     var assistantLeadingC: NSLayoutConstraint!
     var assistantWidthC: NSLayoutConstraint!
+    var assistantTopC: NSLayoutConstraint!
+    var assistantBottomC: NSLayoutConstraint!
     var webTrailC: NSLayoutConstraint!
     var topTrailC: NSLayoutConstraint!
+    var sidebarTopC: NSLayoutConstraint!
+    var webContainerTopC: NSLayoutConstraint!
+    var pinsTopC: NSLayoutConstraint!
     lazy var llm = LocalLLM(tools: self)     // local Qwen via llama-server (fallback)
     private var fmAny: Any?                   // FoundationAI (Apple Intelligence, preferred)
     var useFM = false
@@ -91,6 +103,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Breeze"
+        window.tabbingMode = .disallowed
         window.center()
         super.init()
         window.delegate = self
@@ -109,8 +122,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebarLeft = sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 0)
         sidebarWidthC = sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth)
         topTrailC = addressWrap.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -54)
+        topTrailC.isActive = true
+
+        sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
+        sidebarTopC.isActive = true
+
         NSLayoutConstraint.activate([
-            sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor),
             sidebar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             sidebarWidthC,
             sidebarLeft,
@@ -126,7 +143,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ])
         webTrailC = webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6)
         webTrailC.isActive = true
-        webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6).isActive = true
+
+        webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
+        webContainerTopC.isActive = true
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
@@ -177,9 +196,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         root.addSubview(assistant)
         assistantLeadingC = assistant.leadingAnchor.constraint(equalTo: root.trailingAnchor, constant: 0)
         assistantWidthC = assistant.widthAnchor.constraint(equalToConstant: ASSISTANT_W)
+        assistantTopC = assistant.topAnchor.constraint(equalTo: root.topAnchor)
+        assistantBottomC = assistant.bottomAnchor.constraint(equalTo: root.bottomAnchor)
         NSLayoutConstraint.activate([
-            assistant.topAnchor.constraint(equalTo: root.topAnchor),
-            assistant.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            assistantTopC,
+            assistantBottomC,
             assistantWidthC,
             assistantLeadingC,
         ])
@@ -276,7 +297,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         tabsDoc.translatesAutoresizingMaskIntoConstraints = false
         tabsDoc.addSubview(tabsStack)
 
-        let newTabBtn = HoverTextButton(defaultText: " ——————  +  —————— ", hoverText: "       New Tab       ")
+        let newTabBtn = HoverTextButton(defaultText: " ——————  +  —————— ", hoverText: " ——————  +  —————— ")
         newTabBtn.onTap = { [weak self] in self?.openNewTab() }
         newTabBtn.translatesAutoresizingMaskIntoConstraints = false
         tabsDoc.addSubview(newTabBtn)
@@ -303,8 +324,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebar.addSubview(pinsStack)
         sidebar.addSubview(tabsScroll)
         sidebar.addSubview(bottomStack)
+        pinsTopC = pinsStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 12)
         NSLayoutConstraint.activate([
-            pinsStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 12),
+            pinsTopC,
             pinsStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
             pinsStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
 
@@ -475,7 +497,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 82),
             nav.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 8),
-            addressWrap.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            addressWrap.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: 2),
             addressWrap.heightAnchor.constraint(equalToConstant: 38),
         ])
 
@@ -491,7 +513,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.translatesAutoresizingMaskIntoConstraints = false
         webContainer.wantsLayer = true
         newTab.translatesAutoresizingMaskIntoConstraints = false
-        newTab.onSubmit = { [weak self] t in self?.newTabSubmit(t) }
+        newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
     }
 
     func showActive() {
@@ -505,6 +527,23 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if t.isChatTab {
             newTab.stopClock()
             topBar.isHidden = false
+            
+            sidebarTopC.isActive = false
+            sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
+            sidebarTopC.isActive = true
+
+            webContainerTopC.isActive = false
+            webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
+            webContainerTopC.isActive = true
+
+            pinsTopC.constant = 12
+            
+            // Deactivate sidebar constraints so it can stretch to fill the container
+            assistantLeadingC.isActive = false
+            assistantWidthC.isActive = false
+            assistantTopC.isActive = false
+            assistantBottomC.isActive = false
+            
             // Close the sidebar assistant panel if it was open
             if assistantOpen { setAssistant(false) }
             assistant.setFullscreen(true, clearLights: false)
@@ -518,14 +557,52 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let primary: NSView = t.isNewTab ? newTab : t.webView
         if t.isNewTab { newTab.startClock() } else { newTab.stopClock() }
 
-        if let sid = splitTabId, sid != t.id, let s = tabs.first(where: { $0.id == sid }) {
+        // If assistant was in a chat tab, re-attach it to root and restore sidebar constraints
+        if assistant.superview == nil || assistant.superview == webContainer {
+            let wasInChatTab = (assistant.superview == webContainer)
+            assistant.removeFromSuperview()
+            root.addSubview(assistant)
+            assistantLeadingC.isActive = true
+            assistantWidthC.isActive = true
+            assistantTopC.isActive = true
+            assistantBottomC.isActive = true
+            let w = ASSISTANT_W
+            assistantWidthC.constant = w
+            if wasInChatTab {
+                setAssistant(true)
+            } else {
+                assistantLeadingC.constant = assistantOpen ? -w : 0
+            }
+        }
+
+        if let partnerId = t.splitPartnerId, let s = tabs.first(where: { $0.id == partnerId }) {
             topBar.isHidden = true                       // per-pane URL bars replace the global one
-            leftPane.host(primary)
-            rightPane.host(s.webView)
-            wireSplitPane(leftPane, tab: t)
-            wireSplitPane(rightPane, tab: s)
-            leftPane.setURL(t.isNewTab ? "" : (t.webView.url?.absoluteString ?? ""))
-            rightPane.setURL(s.webView.url?.absoluteString ?? "")
+            
+            sidebarTopC.isActive = false
+            sidebarTopC = sidebar.topAnchor.constraint(equalTo: root.topAnchor)
+            sidebarTopC.isActive = true
+
+            webContainerTopC.isActive = false
+            webContainerTopC = webContainer.topAnchor.constraint(equalTo: root.topAnchor, constant: 6)
+            webContainerTopC.isActive = true
+
+            pinsTopC.constant = 54
+
+            let isCurrentOnRight = t.splitIsRight
+            let leftTab = isCurrentOnRight ? s : t
+            let rightTab = isCurrentOnRight ? t : s
+            
+            leftPane.host(leftTab.isNewTab ? newTab : leftTab.webView)
+            rightPane.host(rightTab.isNewTab ? newTab : rightTab.webView)
+            wireSplitPane(leftPane, tab: leftTab)
+            wireSplitPane(rightPane, tab: rightTab)
+            leftPane.setURL(leftTab.isNewTab ? "" : (leftTab.webView.url?.absoluteString ?? ""))
+            rightPane.setURL(rightTab.isNewTab ? "" : (rightTab.webView.url?.absoluteString ?? ""))
+            leftPane.showsSidebarToggle = true
+            rightPane.showsSidebarToggle = false
+            leftPane.setLeftSpacingForTrafficLights(sidebarHidden)
+            rightPane.setLeftSpacingForTrafficLights(false)
+
             splitDivider.layer?.backgroundColor = Theme.shared.palette.surfaceHover.cgColor
             [leftPane, splitDivider, rightPane].forEach {
                 webContainer.addSubview($0); $0.translatesAutoresizingMaskIntoConstraints = false
@@ -548,11 +625,23 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 rightPane.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
             ])
         } else {
-            topBar.isHidden = false
-            // Re-attach assistant to its normal position if it was in a chat tab
-            if assistant.superview == nil {
-                root.addSubview(assistant)
+            // Clean up partner if it was set but partner is no longer in tabs list
+            if t.splitPartnerId != nil {
+                t.splitPartnerId = nil
+                t.splitIsRight = false
             }
+            topBar.isHidden = false
+            
+            sidebarTopC.isActive = false
+            sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
+            sidebarTopC.isActive = true
+
+            webContainerTopC.isActive = false
+            webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
+            webContainerTopC.isActive = true
+
+            pinsTopC.constant = 12
+
             webContainer.addSubview(primary); primary.pin(to: webContainer)
         }
         syncChrome()
@@ -564,6 +653,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pane.back.onTap = { [weak tab] in tab?.webView.goBack() }
         pane.forward.onTap = { [weak tab] in tab?.webView.goForward() }
         pane.reload.onTap = { [weak tab] in tab?.webView.reload() }
+        pane.onSidebarToggle = { [weak self] in self?.toggleSidebar() }
     }
 
     func navigateTab(_ t: Tab, _ text: String) {
@@ -578,10 +668,29 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Split view ----------------------------------------------------
 
     func enterSplit(_ t: Tab) {
-        guard t.id != current?.id else { return }
-        splitTabId = t.id; showActive()
+        guard let current = current, t.id != current.id else { return }
+        // Ensure both are fully populated
+        guard !current.isNewTab && !current.isChatTab && !t.isNewTab && !t.isChatTab else { return }
+        
+        current.splitPartnerId = t.id
+        current.splitIsRight = false
+        
+        t.splitPartnerId = current.id
+        t.splitIsRight = true
+        
+        showActive()
+        refreshSidebar()
     }
-    func exitSplit() { splitTabId = nil; showActive() }
+    func exitSplit(_ t: Tab) {
+        if let partnerId = t.splitPartnerId, let partner = tabs.first(where: { $0.id == partnerId }) {
+            partner.splitPartnerId = nil
+            partner.splitIsRight = false
+        }
+        t.splitPartnerId = nil
+        t.splitIsRight = false
+        showActive()
+        refreshSidebar()
+    }
 
     @objc func dragSplit(_ g: NSPanGestureRecognizer) {
         let w = max(webContainer.bounds.width, 1)
@@ -605,8 +714,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let i = tabs.firstIndex { $0.id == t.id } ?? 0
         let title = t.isChatTab ? "Breeze Chat" : t.title
         let host = t.isChatTab ? "assistant" : hostOf(t.webView.url)
+        let inSplit = (t.splitPartnerId != nil)
         let row = TabRowView(title: title, host: host, active: i == active,
-                             perf: t.perfMode, asleep: t.sleeping)
+                             perf: t.perfMode, asleep: t.sleeping, inSplit: inSplit)
         row.onSelect = { [weak self] in self?.select(i) }
         row.onClose = { [weak self] in self?.closeTab(t) }
         row.menuProvider = { [weak self] in self?.tabMenu(for: t) ?? [] }
@@ -645,12 +755,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         e.append(.separator)
         // Split view
-        if splitTabId != nil {
-            e.append(.item("Exit Split View", { [weak self] in self?.exitSplit() }))
-        } else if t.id != current?.id && tabs.count > 1 {
-            e.append(.item("Open in Split View", { [weak self] in self?.enterSplit(t) }))
+        if t.splitPartnerId != nil {
+            e.append(.item("Exit Split View", { [weak self] in self?.exitSplit(t) }))
         } else {
-            e.append(.disabled("Open in Split View"))
+            let canSplit = !t.isNewTab && !t.isChatTab && t.id != current?.id && tabs.count > 1 &&
+                           (current != nil && !current!.isNewTab && !current!.isChatTab)
+            if canSplit {
+                e.append(.item("Open in Split View", { [weak self] in self?.enterSplit(t) }))
+            } else {
+                e.append(.disabled("Open in Split View"))
+            }
         }
         e.append(.separator)
         // Performance Mode (boost) + Allow Popups — checkboxes, like Electron
@@ -750,16 +864,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard let i = tabs.firstIndex(where: { $0.id == t.id }) else { return }
         titleObs[t.id] = nil; urlObs[t.id] = nil
         if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
-        if splitTabId == t.id { splitTabId = nil }
+        if let partnerId = t.splitPartnerId, let partner = tabs.first(where: { $0.id == partnerId }) {
+            partner.splitPartnerId = nil
+            partner.splitIsRight = false
+        }
         t.webView.removeFromSuperview(); tabs.remove(at: i)
         if tabs.isEmpty { openNewTab(); return }
         active = min(active, tabs.count - 1); showActive(); refreshSidebar(); updateNowPlaying()
     }
 
     func select(_ i: Int) {
-        // activating any tab leaves split view (the divider must not persist)
-        if splitTabId != nil && tabs.indices.contains(i) && tabs[i].id != splitTabId { splitTabId = nil }
-        
         if Store.shared.settings["autoPip"] as? Bool != false, let t = current, t.isPlaying, active != i {
             t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.requestPictureInPicture)v.requestPictureInPicture();})()")
         }
@@ -863,6 +977,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, let t = current else { return }
         if q.hasPrefix("breeze://"), let page = InternalPage(rawValue: String(q.dropFirst(9))) {
+            t.isChatTab = false
             openInternal(page); return
         }
         var s = q
@@ -871,30 +986,67 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         else { s = searchURL(for: q) }
         guard let u = URL(string: s) else { return }
         t.isNewTab = false
+        t.isChatTab = false
         showActive()
         t.webView.load(URLRequest(url: u))
         window.makeFirstResponder(nil)
     }
 
-    @objc func addressSubmit() { navigate(address.stringValue) }
+    @objc func addressSubmit() {
+        let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        submitQuery(address.stringValue, isCmdEnter: isCmd)
+    }
 
     /// Friendly address for internal pages: file://…/ui/settings.html → breeze://settings
     func displayURL(_ wv: WKWebView) -> String {
+        if let t = tabs.first(where: { $0.webView === wv }), t.isChatTab {
+            return "breeze://chat"
+        }
         guard let u = wv.url else { return "" }
         if u.isFileURL { return "breeze://" + u.deletingPathExtension().lastPathComponent }
         return u.absoluteString
     }
 
-    /// New-tab omnibox doubles as the chat bar: a URL navigates, anything else
-    /// starts a fresh chat in the assistant.
-    func newTabSubmit(_ text: String) {
+    func submitQuery(_ text: String, isCmdEnter: Bool) {
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
+
         let isURL = q.contains("://") || (q.contains(".") && !q.contains(" "))
-        if isURL { navigate(q); return }
-        if !assistantOpen { setAssistant(true) }
-        newChat()
-        sendToAI(q)
+        if isURL {
+            var s = q
+            if !q.contains("://") { s = "https://" + q }
+            navigate(s)
+            return
+        }
+
+        if isCmdEnter {
+            let s = searchURL(for: q)
+            navigate(s)
+            return
+        }
+
+        // Check if "no tab is open" (no web page tabs exist)
+        let hasOpenWebTab = tabs.contains { !$0.isNewTab && !$0.isChatTab }
+
+        if !hasOpenWebTab {
+            // Just start a fullscreen chat!
+            if let t = current {
+                t.isNewTab = false
+                t.isChatTab = true
+                t.title = "Breeze Chat"
+                if assistantOpen { setAssistant(false) }
+                prepareAIStatus()
+                newChat()
+                showActive()
+                refreshSidebar()
+                sendToAI(q)
+            }
+        } else {
+            // AI gate: assistant will choose what to do
+            if !assistantOpen { setAssistant(true) }
+            newChat()
+            sendToAI(q)
+        }
     }
 
     func syncChrome() {
@@ -905,10 +1057,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if window.firstResponder !== address.currentEditor() { address.stringValue = urlStr }
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
-        // keep split panes' address bars current
-        if let sid = splitTabId, let s = tabs.first(where: { $0.id == sid }), let t = current {
-            leftPane.setURL(t.isNewTab ? "" : (t.webView.url?.absoluteString ?? ""))
-            rightPane.setURL(s.webView.url?.absoluteString ?? "")
+        // keep split panes' address bars and nav buttons current
+        if let t = current, let partnerId = t.splitPartnerId, let s = tabs.first(where: { $0.id == partnerId }) {
+            let isCurrentOnRight = t.splitIsRight
+            let leftTab = isCurrentOnRight ? s : t
+            let rightTab = isCurrentOnRight ? t : s
+            leftPane.setURL(leftTab.isNewTab ? "" : (leftTab.webView.url?.absoluteString ?? ""))
+            rightPane.setURL(rightTab.isNewTab ? "" : (rightTab.webView.url?.absoluteString ?? ""))
+            leftPane.back.isEnabled = leftTab.webView.canGoBack
+            leftPane.forward.isEnabled = leftTab.webView.canGoForward
+            rightPane.back.isEnabled = rightTab.webView.canGoBack
+            rightPane.forward.isEnabled = rightTab.webView.canGoForward
         }
     }
 
@@ -941,6 +1100,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebarHidden = hidden
         if !peek { peeking = false }
         edgeHandle.isHidden = !hidden          // edge strip is only live when hidden
+        if let current = current, current.splitPartnerId != nil {
+            leftPane.setLeftSpacingForTrafficLights(hidden)
+        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
             sidebarLeft.constant = hidden ? -sidebarWidth : 0
@@ -964,6 +1126,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func openAssistant() { toggleAssistant() }
     func toggleAssistant() {
+        if current?.isChatTab == true { return }
         // On a blank new-tab screen you don't open an empty sidebar — you "Ask
         // Breeze" from the new-tab bar, which starts a page-disconnected chat.
         if !assistantOpen, current?.isNewTab == true {
@@ -1068,8 +1231,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 switch r {
                 case .success(let (answer, toolChips)):
                     let chips = labels + toolChips
-                    let text = answer.isEmpty ? "…" : answer
-                    self.assistant.addAI(text, chips: chips)
+                    let textAns = answer.isEmpty ? "…" : answer
+                    self.assistant.addAI(textAns, chips: chips)
+                    self.saveAgentSnapshotAndWalkthrough(query: text, answer: textAns)
                 case .failure(let e):
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
@@ -1082,7 +1246,74 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    func saveAgentSnapshotAndWalkthrough(query: String, answer: String) {
+        guard let current = current, !current.isNewTab else { return }
+        let config = WKSnapshotConfiguration()
+        current.webView.takeSnapshot(with: config) { [weak self] image, _ in
+            guard let _ = self, let img = image else { return }
+            
+            let baseDir = "/Users/jakefreudinger/.gemini/antigravity/brain/5f11ebc9-6519-40e0-8b6a-f1e88f6ad5a0"
+            let imgURL = URL(fileURLWithPath: baseDir).appendingPathComponent("agent_snapshot.png")
+            
+            if let tiff = img.tiffRepresentation,
+               let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: imgURL)
+            }
+            
+            let walkthroughURL = URL(fileURLWithPath: baseDir).appendingPathComponent("walkthrough.md")
+            var content = ""
+            if let existingData = try? Data(contentsOf: walkthroughURL),
+               let existingStr = String(data: existingData, encoding: .utf8) {
+                content = existingStr
+            }
+            
+            let summarySection = """
+            ## Last Agent Action Summary
+            * **User Query:** "\(query)"
+            * **AI Answer / Outcome:**
+              \(answer.replacingOccurrences(of: "\n", with: "\n  "))
+            
+            ![Agent Stop State](file://\(imgURL.path))
+            
+            ---
+            
+            """
+            
+            let lines = content.components(separatedBy: "\n")
+            var newLines: [String] = []
+            var inserted = false
+            
+            for line in lines {
+                newLines.append(line)
+                if !inserted && line.hasPrefix("# ") {
+                    newLines.append("")
+                    newLines.append(summarySection)
+                    inserted = true
+                }
+            }
+            
+            let finalContent: String
+            if !inserted {
+                finalContent = summarySection + content
+            } else {
+                finalContent = newLines.joined(separator: "\n")
+            }
+            
+            try? finalContent.data(using: .utf8)?.write(to: walkthroughURL)
+        }
+    }
+
     // MARK: - Rainbow glow border --------------------------------------------
+
+    private func createGlowPath(bounds: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let outer = CGPath(roundedRect: bounds.insetBy(dx: 12, dy: 12), cornerWidth: 32, cornerHeight: 32, transform: nil)
+        let inner = CGPath(roundedRect: bounds.insetBy(dx: 36, dy: 36), cornerWidth: 20, cornerHeight: 20, transform: nil)
+        path.addPath(outer)
+        path.addPath(inner)
+        return path
+    }
 
     func showRainbowGlow() {
         guard glowPanel == nil else { return }
@@ -1111,16 +1342,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         container.frame = rootLayer.bounds
         container.name = "rainbowGlowContainer"
 
+        let maskedLayer = CALayer()
+        maskedLayer.frame = container.bounds
+        maskedLayer.name = "rainbowGlowMasked"
+
         // Mask: only show a 24pt border around the edge
         let mask = CAShapeLayer()
-        let outer = CGPath(rect: container.bounds, transform: nil)
-        let inner = CGPath(rect: container.bounds.insetBy(dx: 24, dy: 24), transform: nil)
-        let path = CGMutablePath()
-        path.addPath(outer)
-        path.addPath(inner)
-        mask.path = path
+        mask.path = createGlowPath(bounds: container.bounds)
         mask.fillRule = .evenOdd
-        container.mask = mask
+        maskedLayer.mask = mask
 
         // Add a Gaussian blur filter to the container to soften the masked border (Siri style bloom)
         if let blur = CIFilter(name: "CIGaussianBlur") {
@@ -1148,7 +1378,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         gl.frame = CGRect(x: (container.bounds.width - size)/2, y: (container.bounds.height - size)/2, width: size, height: size)
         gl.name = "rainbowGlow"
 
-        container.addSublayer(gl)
+        maskedLayer.addSublayer(gl)
+        container.addSublayer(maskedLayer)
         rootLayer.addSublayer(container)
 
         glowPanel = panel
@@ -1204,13 +1435,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             panel.setFrame(screenFrame, display: true)
         }
         container.frame = CGRect(origin: .zero, size: screenFrame.size)
+        if let maskedLayer = container.sublayers?.first(where: { $0.name == "rainbowGlowMasked" }) {
+            maskedLayer.frame = container.bounds
+        }
         if let mask = rainbowMask {
-            let outer = CGPath(rect: container.bounds, transform: nil)
-            let inner = CGPath(rect: container.bounds.insetBy(dx: 24, dy: 24), transform: nil)
-            let path = CGMutablePath()
-            path.addPath(outer)
-            path.addPath(inner)
-            mask.path = path
+            mask.path = createGlowPath(bounds: container.bounds)
         }
         let size = max(container.bounds.width, container.bounds.height) * 1.5
         gl.frame = CGRect(x: (container.bounds.width - size)/2, y: (container.bounds.height - size)/2, width: size, height: size)
@@ -1312,11 +1541,157 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func readText(of t: Tab) async -> String {
         await withCheckedContinuation { cont in
-            let js = "document.title + '\\n\\n' + (document.body ? document.body.innerText : '')"
+            let js = #"""
+            (function() {
+                // Remove old badges
+                var oldBadges = document.querySelectorAll('.breeze-agent-badge');
+                oldBadges.forEach(function(b) { b.remove(); });
+                
+                function isVisible(el) {
+                    var rect = el.getBoundingClientRect();
+                    if (rect.width === 0 || rect.height === 0) return false;
+                    var style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                    return true;
+                }
+                
+                function isInteractive(el) {
+                    var tag = el.tagName.toLowerCase();
+                    if (tag === 'a' || tag === 'button' || tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+                    if (el.hasAttribute('onclick')) return true;
+                    if (el.isContentEditable) return true;
+                    var role = el.getAttribute('role');
+                    if (role && ['button', 'link', 'checkbox', 'radio', 'textbox', 'tab', 'menuitem'].indexOf(role.toLowerCase()) !== -1) return true;
+                    
+                    var style = window.getComputedStyle(el);
+                    if (style && style.cursor === 'pointer') {
+                        var rect = el.getBoundingClientRect();
+                        if (rect.width > 600 && rect.height > 600) return false;
+                        return true;
+                    }
+                    return false;
+                }
+                
+                function hasInteractiveAncestor(el, list) {
+                    var p = el.parentElement;
+                    while (p && p !== document.body) {
+                        if (list.indexOf(p) !== -1) {
+                            var pTag = p.tagName.toLowerCase();
+                            var pRole = p.getAttribute('role');
+                            if (pTag === 'button' || pTag === 'a' || pTag === 'input' || pTag === 'textarea' || pTag === 'select' ||
+                                (pRole && ['button', 'link', 'checkbox', 'radio', 'tab', 'menuitem'].indexOf(pRole.toLowerCase()) !== -1)) {
+                                return true;
+                            }
+                        }
+                        p = p.parentElement;
+                    }
+                    return false;
+                }
+                
+                var selectors = 'a, button, input, textarea, select, [role], [onclick], div, span, p, li, img';
+                var all = Array.from(document.querySelectorAll(selectors));
+                var interactiveList = [];
+                for (var i = 0; i < all.length; i++) {
+                    var el = all[i];
+                    if (isVisible(el) && isInteractive(el)) {
+                        if (!hasInteractiveAncestor(el, interactiveList)) {
+                            interactiveList.push(el);
+                        }
+                    }
+                }
+                
+                var elementStrings = [];
+                var id = 1;
+                for (var i = 0; i < interactiveList.length; i++) {
+                    var el = interactiveList[i];
+                    el.setAttribute('data-breeze-id', id);
+                    
+                    var rect = el.getBoundingClientRect();
+                    var badge = document.createElement('div');
+                    badge.className = 'breeze-agent-badge';
+                    badge.innerText = id;
+                    badge.style.position = 'absolute';
+                    badge.style.left = (window.scrollX + rect.left) + 'px';
+                    badge.style.top = (window.scrollY + rect.top) + 'px';
+                    badge.style.backgroundColor = '#10b981';
+                    badge.style.color = '#fff';
+                    badge.style.padding = '2px 5px';
+                    badge.style.fontSize = '10px';
+                    badge.style.fontWeight = 'bold';
+                    badge.style.borderRadius = '3px';
+                    badge.style.border = '1px solid #ffffff';
+                    badge.style.boxShadow = '0px 1px 3px rgba(0,0,0,0.4)';
+                    badge.style.zIndex = '2147483647';
+                    badge.style.pointerEvents = 'none';
+                    badge.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+                    
+                    if (document.body) {
+                        document.body.appendChild(badge);
+                    }
+                    
+                    var desc = "";
+                    var tag = el.tagName.toLowerCase();
+                    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+                        var type = el.getAttribute('type') || 'text';
+                        var placeholder = el.getAttribute('placeholder') || '';
+                        var name = el.getAttribute('name') || '';
+                        var value = el.value || '';
+                        desc = '(Input/' + tag + ')';
+                        if (placeholder) desc += ' placeholder="' + placeholder + '"';
+                        if (name) desc += ' name="' + name + '"';
+                        if (value) desc += ' value="' + value + '"';
+                    } else {
+                        var text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
+                        if (text.length > 80) text = text.substring(0, 77) + '...';
+                        desc = '(' + tag + ')';
+                        if (text) desc += ' "' + text + '"';
+                        var href = el.getAttribute('href');
+                        if (href) desc += ' href="' + href + '"';
+                    }
+                    elementStrings.push('[' + id + '] ' + desc);
+                    id++;
+                    if (id > 80) break;
+                }
+                
+                var title = document.title || 'No Title';
+                var pageText = (document.body ? document.body.innerText : '').trim().replace(/\s+/g, ' ');
+                if (pageText.length > 2000) {
+                    pageText = pageText.substring(0, 2000) + '...';
+                }
+                
+                return JSON.stringify({
+                    title: title,
+                    url: window.location.href,
+                    elements: elementStrings,
+                    text: pageText
+                });
+            })()
+            """#
             t.webView.evaluateJavaScript(js) { result, _ in
-                var s = (result as? String) ?? ""
-                if s.count > 6000 { s = String(s.prefix(6000)) }
-                cont.resume(returning: s)
+                guard let jsonStr = result as? String,
+                      let data = jsonStr.data(using: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    cont.resume(returning: "Failed to read page content.")
+                    return
+                }
+                
+                let title = obj["title"] as? String ?? "No Title"
+                let url = obj["url"] as? String ?? ""
+                let elements = obj["elements"] as? [String] ?? []
+                let text = obj["text"] as? String ?? ""
+                
+                var formatted = "URL: \(url)\nPage Title: \(title)\n\n"
+                formatted += "Interactive Elements (use CLICK: <ID> or TYPE: <ID> | <value>):\n"
+                if elements.isEmpty {
+                    formatted += "(No interactive elements found on the page)\n"
+                } else {
+                    for el in elements {
+                        formatted += "\(el)\n"
+                    }
+                }
+                formatted += "\nPage text content:\n\(text)"
+                
+                cont.resume(returning: formatted)
             }
         }
     }
@@ -1343,7 +1718,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if !s.contains("://") { s = "https://" + s }
         guard let u = URL(string: s), u.host != nil else { return "Couldn't open \"\(url)\" — that doesn't look like a valid web address." }
         let t: Tab
-        if let cur = current { cur.isNewTab = false; t = cur }
+        if let cur = current {
+            cur.isNewTab = false
+            cur.isChatTab = false
+            t = cur
+        }
         else { let nt = Tab(); nt.isNewTab = false; wire(nt); tabs.append(nt); active = tabs.count - 1; t = nt }
         showActive(); refreshSidebar()
         assistant.setStatus("Opening \(hostOf(u))…")
@@ -1367,6 +1746,139 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let text = await readText(of: t)
         assistant.setStatus("Thinking…")
         return "Web search results for \"\(query)\":\n\n" + text
+    }
+
+    @MainActor func aiClick(_ target: String) async -> String {
+        guard let t = current, !t.isNewTab else { return "No web page open to click on." }
+        let escapedTarget = target.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let js = """
+        (function() {
+            var target = '\(escapedTarget)'.trim().toLowerCase();
+            
+            function clickElement(el) {
+                el.click();
+                el.focus();
+                if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
+                    el.checked = !el.checked;
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                return true;
+            }
+
+            // 1. Try numeric ID matching
+            var id = target.replace(/[\\[\\]]/g, '').trim();
+            if (/^\\d+$/.test(id)) {
+                var el = document.querySelector('[data-breeze-id="' + id + '"]');
+                if (el) {
+                    clickElement(el);
+                    return "Clicked element [" + id + "]";
+                }
+            }
+            
+            // 2. Try selector if it looks like one
+            try {
+                var el = document.querySelector(target);
+                if (el) { clickElement(el); return "Clicked element matching selector '" + target + "'"; }
+            } catch(e) {}
+            
+            // 3. Try finding by text content in clickable elements
+            var candidates = Array.from(document.querySelectorAll('a, button, input, [role="button"], textarea, div, span, p'));
+            for (var el of candidates) {
+                var txt = (el.innerText || el.value || el.placeholder || "").trim().toLowerCase();
+                if (txt === target || txt.includes(target)) {
+                    clickElement(el);
+                    return "Clicked element containing text '" + target + "'";
+                }
+            }
+            return "Could not find any element matching '" + target + "' to click.";
+        })()
+        """
+        assistant.setStatus("Clicking \(target)…")
+        let clickResult: String = await withCheckedContinuation { cont in
+            t.webView.evaluateJavaScript(js) { result, _ in
+                let s = (result as? String) ?? "Failed to execute click."
+                cont.resume(returning: s)
+            }
+        }
+        
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        let updatedPage = await readText(of: t)
+        assistant.setStatus("Thinking…")
+        return "\(clickResult)\n\nUpdated Page State:\n\(updatedPage)"
+    }
+
+    @MainActor func aiType(_ target: String, text: String) async -> String {
+        guard let t = current, !t.isNewTab else { return "No web page open to type in." }
+        let escapedTarget = target.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let escapedText = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let js = """
+        (function() {
+            var target = '\(escapedTarget)'.trim().toLowerCase();
+            var val = '\(escapedText)';
+            
+            function setValue(el, v) {
+                el.focus();
+                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                    el.value = v;
+                } else if (el.isContentEditable) {
+                    el.innerHTML = v;
+                } else {
+                    el.innerText = v;
+                }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+            }
+
+            // 1. Try numeric ID matching first
+            var id = target.replace(/[\\[\\]]/g, '').trim();
+            if (/^\\d+$/.test(id)) {
+                var el = document.querySelector('[data-breeze-id="' + id + '"]');
+                if (el) {
+                    setValue(el, val);
+                    return "Typed into element [" + id + "]";
+                }
+            }
+
+            // 2. Try selector first
+            try {
+                var el = document.querySelector(target);
+                if (el && setValue(el, val)) { return "Typed into element matching selector '" + target + "'"; }
+            } catch(e) {}
+            
+            // 3. Try finding input/textarea/editable by placeholder, label, value, or text
+            var inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], div, span'));
+            for (var el of inputs) {
+                var pl = (el.placeholder || "").trim().toLowerCase();
+                var valTxt = (el.value || "").trim().toLowerCase();
+                var inner = (el.innerText || "").trim().toLowerCase();
+                var label = "";
+                if (el.id) {
+                    var lblEl = document.querySelector('label[for="' + el.id + '"]');
+                    if (lblEl) label = lblEl.innerText.trim().toLowerCase();
+                }
+                
+                if (pl.includes(target) || valTxt.includes(target) || inner.includes(target) || label.includes(target)) {
+                    if (setValue(el, val)) {
+                        return "Typed into element matching '" + target + "'";
+                    }
+                }
+            }
+            return "Could not find any input field matching '" + target + "' to type in.";
+        })()
+        """
+        assistant.setStatus("Typing…")
+        let typeResult: String = await withCheckedContinuation { cont in
+            t.webView.evaluateJavaScript(js) { result, _ in
+                let s = (result as? String) ?? "Failed to execute type."
+                cont.resume(returning: s)
+            }
+        }
+        
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        let updatedPage = await readText(of: t)
+        assistant.setStatus("Thinking…")
+        return "\(typeResult)\n\nUpdated Page State:\n\(updatedPage)"
     }
 
     @MainActor func aiSetReminder(_ text: String, minutes: Int) async -> String {
@@ -1764,6 +2276,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             Store.shared.addHistory(url: u, title: (w.title?.isEmpty == false ? w.title! : u))
         }
         // wake any AI agentic-search waiter for this tab
+        if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
+            c.resume()
+        }
+    }
+    func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
+        syncChrome()
+        if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
+            c.resume()
+        }
+    }
+    func webView(_ w: WKWebView, didFail n: WKNavigation!, withError error: Error) {
+        syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
         }
