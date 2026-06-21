@@ -1659,6 +1659,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         renderPins()
         applyUrlBarMode()                         // top vs sidebar URL bar
         applyChromeTheme()
+        if Store.shared.settings["adblockEnabled"] as? Bool ?? true {
+            AdBlocker.shared.apply(to: sharedConfig.userContentController)
+        } else {
+            AdBlocker.shared.remove(from: sharedConfig.userContentController)
+        }
         broadcastToInternalPages()
         newTab.applyTheme(); newTab.tick()
     }

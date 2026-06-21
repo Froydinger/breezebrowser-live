@@ -23,6 +23,8 @@ cp ../icon.png "$APP/Contents/Resources/icon.png" 2>/dev/null || true
 # Bundle the internal HTML pages (settings, updates, history, bookmarks, …).
 mkdir -p "$APP/Contents/Resources/ui"
 cp -R ../ui/. "$APP/Contents/Resources/ui/" 2>/dev/null || true
+# Bundle the EasyList adblock rules
+cp easylist.json "$APP/Contents/Resources/easylist.json" 2>/dev/null || true
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

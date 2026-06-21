@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var browser: BrowserController?
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.regular)
+        AdBlocker.shared.compileIfNeeded {}
         browser = BrowserController()
         NSApp.activate(ignoringOtherApps: true)
         browser?.showWhatsNewIfUpdated()
