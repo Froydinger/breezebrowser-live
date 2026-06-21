@@ -1025,6 +1025,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
 
+        // Heuristic routing (with AI fallback): a bare, search-term-looking query just
+        // goes to Google like a normal address bar — no AI, no waiting. Questions and
+        // tasks (and anything ambiguous) go to the AI, which answers directly or runs
+        // the agent. Holding ⌘ (isCmdEnter, above) always forces a plain search.
+        if looksLikeSearchTerm(q) {
+            navigate(searchURL(for: q))
+            return
+        }
+
         // Check if "no tab is open" (no web page tabs exist)
         let hasOpenWebTab = tabs.contains { !$0.isNewTab && !$0.isChatTab }
 
@@ -1047,6 +1056,34 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             newChat()
             sendToAI(q)
         }
+    }
+
+    /// True when the query reads like something you'd type into Google (bare
+    /// keywords) rather than a question to answer or a task to perform. Routes
+    /// Ask-bar input: search terms → Google directly; everything else → the AI.
+    func looksLikeSearchTerm(_ raw: String) -> Bool {
+        let q = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if q.isEmpty { return false }
+        if q.hasSuffix("?") { return false }                         // a question → let the AI answer
+        // Explicit "search/google/look up X" → just search for it.
+        if q.hasPrefix("search ") || q.hasPrefix("google ") || q.hasPrefix("look up ") { return true }
+        let words = q.split(separator: " ")
+        // Conversational / question / command openers → AI.
+        let aiOpeners: Set<String> = [
+            "what","what's","whats","who","who's","whos","whose","whom","when","where",
+            "why","how","how's","hows","is","are","am","was","were","do","does","did",
+            "can","could","should","would","will","may","might","which","tell","explain",
+            "define","summarize","summarise","write","translate","calculate","convert",
+            "help","give","make","create","compare","suggest","recommend","please"]
+        if let first = words.first, aiOpeners.contains(String(first)) { return false }
+        // Task / browser-action phrasing → AI (it needs to click, type, or navigate).
+        let taskPhrases = ["go to","take me to","open ","click","log in","sign in","add to cart",
+                           "fill ","book ","order ","buy ","play ","post ","comment","reply ",
+                           "navigate","download","sign up"]
+        for p in taskPhrases where q.contains(p) { return false }
+        // A short keyword phrase with none of the above reads like a search term.
+        // Longer, sentence-like input is ambiguous → fall back to the AI.
+        return words.count <= 6
     }
 
     func syncChrome() {
@@ -1252,7 +1289,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         current.webView.takeSnapshot(with: config) { [weak self] image, _ in
             guard let _ = self, let img = image else { return }
             
-            let baseDir = "/Users/jakefreudinger/.gemini/antigravity/brain/5f11ebc9-6519-40e0-8b6a-f1e88f6ad5a0"
+            // Was a hardcoded Antigravity dev path that doesn't exist on user machines
+            // (3.1.0 leak); write to the app's own Application Support folder instead.
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let baseDir = appSupport.appendingPathComponent("Breeze/agent").path
+            try? FileManager.default.createDirectory(atPath: baseDir, withIntermediateDirectories: true)
             let imgURL = URL(fileURLWithPath: baseDir).appendingPathComponent("agent_snapshot.png")
             
             if let tiff = img.tiffRepresentation,
@@ -1606,28 +1647,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     var el = interactiveList[i];
                     el.setAttribute('data-breeze-id', id);
                     
-                    var rect = el.getBoundingClientRect();
-                    var badge = document.createElement('div');
-                    badge.className = 'breeze-agent-badge';
-                    badge.innerText = id;
-                    badge.style.position = 'absolute';
-                    badge.style.left = (window.scrollX + rect.left) + 'px';
-                    badge.style.top = (window.scrollY + rect.top) + 'px';
-                    badge.style.backgroundColor = '#10b981';
-                    badge.style.color = '#fff';
-                    badge.style.padding = '2px 5px';
-                    badge.style.fontSize = '10px';
-                    badge.style.fontWeight = 'bold';
-                    badge.style.borderRadius = '3px';
-                    badge.style.border = '1px solid #ffffff';
-                    badge.style.boxShadow = '0px 1px 3px rgba(0,0,0,0.4)';
-                    badge.style.zIndex = '2147483647';
-                    badge.style.pointerEvents = 'none';
-                    badge.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-                    
-                    if (document.body) {
-                        document.body.appendChild(badge);
-                    }
+                    // No visible badge is drawn: data-breeze-id (above) is enough for
+                    // 100% reliable CLICK/TYPE. The numbered overlays cluttered the
+                    // user's view and lingered after the agent finished (3.1.0 regression).
                     
                     var desc = "";
                     var tag = el.tagName.toLowerCase();
@@ -1725,6 +1747,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         else { let nt = Tab(); nt.isNewTab = false; wire(nt); tabs.append(nt); active = tabs.count - 1; t = nt }
         showActive(); refreshSidebar()
+        if !assistantOpen { setAssistant(true) }   // dock the chat so the user sees the answer as the page opens
         assistant.setStatus("Opening \(hostOf(u))…")
         t.webView.load(URLRequest(url: u))
         await waitForLoad(t)
@@ -1739,6 +1762,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let t = Tab(); t.isNewTab = false
         wire(t); tabs.append(t); active = tabs.count - 1
         showActive(); refreshSidebar()
+        if !assistantOpen { setAssistant(true) }   // dock the chat so the user sees results as they come in
         assistant.setStatus("Searching the web…")
         if let u = URL(string: searchURL(for: query)) { t.webView.load(URLRequest(url: u)) }
         await waitForLoad(t)

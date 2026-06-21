@@ -149,6 +149,11 @@ enum Agent {
         var chips: [String] = []
         var lastFallback = "Done."
         var lastResult = ""            // most relevant info gathered, for overflow recovery
+        // Restated on every continuation step. The FM backend uses a fresh session per
+        // message and a tiny context window, so without this the model loses sight of
+        // the user's goal mid-task and just describes the page instead of finishing it
+        // (e.g. it found the first result but never clicked it).
+        let goal = "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
         // Tool output is trimmed so the small on-device context window doesn't overflow.
         func cap(_ s: String, _ n: Int = 1500) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
 
@@ -181,29 +186,29 @@ enum Agent {
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've opened \(host) for you."
                 lastResult = await tools.aiOpenURL(u)
-                prompt = "\(cap(lastResult))\n\nThe page is now open in the user's browser. If this page contains the answer, explain it to the user now in plain language. If you need to click/visit a link on this page or search again to find the answer, reply with OPEN: <url> or SEARCH: <query>."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe page is now open. If finishing the request needs you to click a link/button or read further, do it NOW with CLICK: <ID> (use the Interactive Elements IDs above) or OPEN: <url>. Only once the request is fully satisfied, answer the user in plain language describing what you found."
             case .search(let q):
                 if !chips.contains("🔎 Web search") { chips.append("🔎 Web search") }
                 lastFallback = "Here's what I found about \"\(q)\"."
                 lastResult = await tools.aiSearchWeb(q)
-                prompt = "\(cap(lastResult))\n\nUsing these results, answer the user's question in plain language. If you need more details from a specific search result, you can navigate directly to its URL by replying with OPEN: <url>. Otherwise, only search again or open another link if you genuinely cannot answer yet."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThese are the search results. If the request asks you to open, click, or go to a result (or you need a specific page's details), do it NOW with CLICK: <ID> from the Interactive Elements list or OPEN: <url> — do NOT just describe the results. Only answer in plain language once the request is fully satisfied."
             case .click(let target):
                 let chip = "🖱️ Click: \(target)"
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've clicked on \(target) for you."
                 lastResult = await tools.aiClick(target)
-                prompt = "\(cap(lastResult))\n\nThe click action was executed. If the page loaded new content or navigated, tell the user in plain language. If you need to type into a field now or click another button, do so now (e.g. TYPE: <target> | <value> or CLICK: <target>). Otherwise, explain the outcome or answer their question."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe click was executed; above is the updated page. If more steps are needed to finish the request, continue NOW with CLICK: <ID>, TYPE: <ID> | <value>, or OPEN: <url>. Otherwise, tell the user the outcome in plain language."
             case .type(let target, let value):
                 let chip = "⌨️ Type: \(target)"
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've typed \"\(value)\" into \(target) for you."
                 lastResult = await tools.aiType(target, text: value)
-                prompt = "\(cap(lastResult))\n\nThe text was entered. If you need to click a submit button or continue, reply with CLICK: <target>. Otherwise, tell the user you've entered the text or answer their question."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe text was entered. If you need to submit or continue, reply with CLICK: <ID>. Otherwise, tell the user what you did in plain language."
             case .read:
                 if !chips.contains("📄 Page") { chips.append("📄 Page") }
                 lastFallback = "Here's a summary of the page."
                 lastResult = await tools.aiReadCurrentPage()
-                prompt = "\(cap(lastResult))\n\nUsing this, answer the user's question about the page now in plain language."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nUsing this, answer the user's question about the page now in plain language."
             case .remind(let m, let t):
                 chips.append("⏰ Reminder")
                 lastFallback = "Reminder set."

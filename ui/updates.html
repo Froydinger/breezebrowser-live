@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.1.1', icon: 'wrench', title: 'Agent fixes — cleaner, smarter, finishes the job', items: [
+        '<b>No more numbers all over the page</b> — the AI now tags page elements invisibly, so the green numbered badges no longer clutter your view or linger after it finishes.',
+        '<b>The AI follows through</b> — when you ask it to open or go to a result, it actually clicks through and completes the task instead of just describing what it found.',
+        '<b>Chat docks open automatically</b> — when the AI opens a page or runs a search, the assistant slides open beside it so you see the answer right away.',
+        '<b>Smarter Ask bar</b> — a plain search term goes straight to Google like a normal address bar, while questions get answered directly and only real tasks spin up the agent.' ] },
       { v: '3.1.0', icon: 'bot', title: 'Intelligent Browser Use — the AI can actually use websites now', major: true, items: [
         '<b>Vimium-style interactive element tagging</b> — every clickable button, link, and input on the page gets a visible numbered badge. The AI sees and targets these IDs with pinpoint accuracy instead of guessing at text labels.',
         '<b>The AI actually completes tasks now</b> — ask "pizza near me" and it will search, read results, pick a top option, and tell you about it in the chat. No more "I opened it for you" cop-outs.',
