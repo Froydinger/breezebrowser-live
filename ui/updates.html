@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.3.0', icon: 'columns', title: 'Multi-Window Syncing & Ephemeral Private Browsing', major: true, items: [
+        '<b>Multi-Window Real-Time Sync</b> — Open separate windows (⌘N) that share the same pins, groups, and tabs. If you view a tab in window B, it is instantly pulled into that window and leaves a placeholder with a "Pull Tab Here" button in window A.',
+        '<b>Ephemeral Private Browsing</b> — Open private windows (⌘⇧N) or private tabs (⌘⇧T) utilizing ephemeral, non-persistent website data stores. Private tabs discard cookies, history, and storage on close, and are marked with a 🕵️ badge.',
+        '<b>Removed OAuth Popup Windows</b> — Replaced separate login windows with a simpler, cleaner inline tab redirection loop.',
+        '<b>Fluid Window Resizing</b> — Resizing windows is now completely seamless, matching the window background color directly to the active theme to avoid rendering glitches.',
+        '<b>Fixed Settings Accent Color Crash</b> — Solved a crash that occurred when opening Settings by safely parsing the device RGB color space.' ] },
       { v: '3.2.0', icon: 'key-round', title: 'Keychain Storage, Custom Models, Vertical Rail, & Popup Fixes', major: true, items: [
         '<b>Secure Keychain Storage</b> — Your OpenAI API key is now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
         '<b>Custom OpenAI Models</b> — Choose from the latest GPT-5.4 family (gpt-5.4-mini default, nano, or full), or type in any custom model ID.',
