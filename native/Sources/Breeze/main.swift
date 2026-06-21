@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browsers.append(b)
     }
     @objc func newTab() { activeBrowser?.openNewTab() }
+    @objc func newChatTab() { activeBrowser?.newFullscreenChat() }
     @objc func newPrivateTab() { activeBrowser?.openNewTab(isPrivate: true) }
     @objc func closeTab() { if let t = activeBrowser?.current { activeBrowser?.closeTab(t) } }
     @objc func focusAddr() {
@@ -113,7 +114,8 @@ let fileMenu = NSMenu(title: "File")
     fileMenu.addItem(mi("New Window", #selector(AppDelegate.newWindow), "n"))
     fileMenu.addItem(mi("New Private Window", #selector(AppDelegate.newPrivateWindow), "N", [.command, .shift]))
     fileMenu.addItem(mi("New Tab", #selector(AppDelegate.newTab), "t"))
-    fileMenu.addItem(mi("New Private Tab", #selector(AppDelegate.newPrivateTab), "T", [.command, .shift]))
+    fileMenu.addItem(mi("New Chat", #selector(AppDelegate.newChatTab), "T", [.command, .shift]))
+    fileMenu.addItem(mi("New Private Tab", #selector(AppDelegate.newPrivateTab), "t", [.command, .option]))
     fileMenu.addItem(mi("Close Tab", #selector(AppDelegate.closeTab), "w"))
     fileMenu.addItem(.separator())
 fileMenu.addItem(mi("Open Location…", #selector(AppDelegate.focusAddr), "l"))

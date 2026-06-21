@@ -13,6 +13,7 @@ let sharedConfig: WKWebViewConfiguration = {
     c.mediaTypesRequiringUserActionForPlayback = []
     c.defaultWebpagePreferences.allowsContentJavaScript = true
     if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
+    c.enablePictureInPictureAPI()
     // Internal-page bridge (defined only on file:// pages — see breezeBridgeJS).
     let script = WKUserScript(source: breezeBridgeJS, injectionTime: .atDocumentStart,
                               forMainFrameOnly: true)
@@ -22,6 +23,27 @@ let sharedConfig: WKWebViewConfiguration = {
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     return c
 }()
+
+extension WKWebViewConfiguration {
+    /// Enable the JS Picture-in-Picture API. In a WKWebView it's OFF by default
+    /// (Safari has it on), which is why `video.requestPictureInPicture()` throws
+    /// `NotSupportedError`. Walks WebKit's private feature list and flips on the
+    /// PiP feature(s). Fully guarded — silently no-ops if the SPI shape changes,
+    /// so it can never crash.
+    func enablePictureInPictureAPI() {
+        let prefs = preferences
+        // The WebKit preference that gates requestPictureInPicture() on macOS —
+        // defaults OFF in WKWebView (Safari has it on). Verified via the live SDK:
+        // -[WKPreferences _setAllowsPictureInPictureMediaPlayback:] exists and
+        // flipping it true makes both the native control button and the JS PiP API
+        // work. responds() guards it, so this can never crash if the SPI changes.
+        let pipSel = NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")
+        if prefs.responds(to: pipSel), let imp = prefs.method(for: pipSel) {
+            typealias BoolFn = @convention(c)(NSObject, Selector, ObjCBool) -> Void
+            unsafeBitCast(imp, to: BoolFn.self)(prefs, pipSel, true)
+        }
+    }
+}
 
 let breezeMediaJS = """
 (function () {
@@ -73,6 +95,7 @@ final class Tab {
             c.mediaTypesRequiringUserActionForPlayback = []
             c.defaultWebpagePreferences.allowsContentJavaScript = true
             if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
+            c.enablePictureInPictureAPI()
             // Re-inject media script for play/pause detection in private tabs
             c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))

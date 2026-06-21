@@ -148,6 +148,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.4.4', icon: 'bot', title: 'Picture-in-Picture, Instant Chat & a Polished Sidebar', major: true, items: [
+        '<b>Picture-in-Picture works again</b> — Video now pops out into a floating window. And it’s automatic: switch tabs or open a new one while you’re watching and the video follows you in PiP so it never stops. Toggle it off anytime in Settings.',
+        '<b>New Chat shortcut (⌘⇧T)</b> — Instantly open a fresh, blank full-window chat and start typing. Unlike the new-tab Ask bar, it goes straight to an independent chat — no guessing between search, navigation, and AI. (New Private Tab moved to ⌥⌘T.)',
+        '<b>Ask bar opens a full chat</b> — Typing a question into the new-tab Ask bar now opens a full-window chat instead of the side panel.',
+        '<b>Redesigned now-playing</b> — The sidebar player is now a proper little media module — album art, title, and transport controls — instead of a tile that looked like a tab.',
+        '<b>Cleaner address bar</b> — The page path is dimmed so the domain stands out at a glance.',
+        '<b>Fixed new-tab input crash</b> — Submitting a query from the new-tab page (e.g. a quick “hey”) could crash the app. Resolved the underlying first-responder reentrancy so any input is safe.' ] },
       { v: '3.4.0', icon: 'zap', title: 'Startup Window Animation & External Link Handler', major: true, items: [
         '<b>Slide-up Startup Animation</b> — Added a gorgeous window transition on app startup that fades and slides up smoothly.',
         '<b>External Link Redirection</b> — Handled links clicked from third-party applications (like Discord/Slack) correctly to focus Breeze and load the clicked URL.',

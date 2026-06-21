@@ -298,10 +298,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: nil) { [weak self] _ in
             guard let self = self else { return }
             if Store.shared.settings["autoPip"] as? Bool != false, let t = self.current, t.isPlaying {
-                t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.requestPictureInPicture)v.requestPictureInPicture();})()")
+                self.pip(for: t.webView, toggle: false)
             }
         }
-        
+
         NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: nil) { [weak self] _ in
             // Traffic lights hide until hover in fullscreen — reclaim the space we
             // normally reserve for them next to the sidebar/nav buttons.
@@ -952,6 +952,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Tab ops -------------------------------------------------------
 
     func openNewTab(isPrivate: Bool = false) {
+        autoPipLeavingTab()                       // keep a playing video alive via PiP
         let p = isPrivate || isPrivateWindow
         let t = Tab(isPrivate: p)
         wire(t)
@@ -999,11 +1000,19 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
+    /// When leaving a tab that's playing a video, pop it into Picture-in-Picture so
+    /// it keeps playing (otherwise WebKit pauses it once the web view leaves the
+    /// window). Gated by the autoPip setting. Must be called BEFORE the active tab
+    /// changes — the video has to still be on screen/ready for the request to take.
+    func autoPipLeavingTab() {
+        guard Store.shared.settings["autoPip"] as? Bool != false,
+              let t = current, t.isPlaying else { return }
+        pip(for: t.webView, toggle: false)
+    }
+
     func select(_ i: Int) {
-        if Store.shared.settings["autoPip"] as? Bool != false, let t = current, t.isPlaying, active != i {
-            t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.requestPictureInPicture)v.requestPictureInPicture();})()")
-        }
-        
+        if active != i { autoPipLeavingTab() }
+
         active = i
         if let t = current { t.lastActive = Date(); if t.sleeping { wake(t) } }
         showActive(); refreshSidebar()
@@ -1133,6 +1142,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return u.absoluteString
     }
 
+    /// Address text with the path/slug dimmed to 50% opacity so the domain stands
+    /// out. Applied only when the field isn't being edited (full opacity returns on
+    /// focus — see controlTextDidBeginEditing). breeze:// pages have no slug → full.
+    func styledAddress(_ s: String) -> NSAttributedString {
+        let p = Theme.shared.palette
+        let font = address.font ?? .systemFont(ofSize: 13.5)
+        let attr = NSMutableAttributedString(string: s, attributes: [.foregroundColor: p.text, .font: font])
+        let ns = s as NSString
+        let scheme = ns.range(of: "://")
+        if scheme.location != NSNotFound {
+            let afterScheme = scheme.location + scheme.length
+            let slash = ns.range(of: "/", options: [], range: NSRange(location: afterScheme, length: ns.length - afterScheme))
+            if slash.location != NSNotFound {
+                attr.addAttribute(.foregroundColor, value: p.text.withAlphaComponent(0.5),
+                                  range: NSRange(location: slash.location, length: ns.length - slash.location))
+            }
+        }
+        return attr
+    }
+
     func submitQuery(_ text: String, isCmdEnter: Bool) {
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
@@ -1160,24 +1189,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
 
-        // Check if "no tab is open" (no web page tabs exist)
-        let hasOpenWebTab = tabs.contains { !$0.isNewTab && !$0.isChatTab }
-
-        if !hasOpenWebTab {
-            // Just start a fullscreen chat!
-            if let t = current {
-                t.isNewTab = false
-                t.isChatTab = true
-                t.title = "Breeze Chat"
-                if assistantOpen { setAssistant(false) }
-                prepareAIStatus()
-                newChat()
-                showActive()
-                refreshSidebar()
-                sendToAI(q)
-            }
+        // Conversational / task input → AI. From the new-tab page, the Ask bar is
+        // a chat starter: turn the current tab into a full-window chat tab. From a
+        // web page's address bar, open the side assistant so the page stays visible.
+        if current?.isNewTab == true, let t = current {
+            t.isNewTab = false
+            t.isChatTab = true
+            t.title = "Breeze Chat"
+            if assistantOpen { setAssistant(false) }
+            prepareAIStatus()
+            newChat()
+            showActive()
+            refreshSidebar()
+            sendToAI(q)
         } else {
-            // AI gate: assistant will choose what to do
+            // AI gate alongside the current page.
             if !assistantOpen { setAssistant(true) }
             newChat()
             sendToAI(q)
@@ -1222,7 +1248,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard let wv = current?.webView else { return }
         back.isEnabled = wv.canGoBack; forward.isEnabled = wv.canGoForward
         let urlStr = (current?.isNewTab ?? false) ? "" : displayURL(wv)
-        if window.firstResponder !== address.currentEditor() { address.stringValue = urlStr }
+        if window.firstResponder !== address.currentEditor() { address.attributedStringValue = styledAddress(urlStr) }
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
         // keep split panes' address bars and nav buttons current
@@ -1382,6 +1408,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         prepareAIStatus()
         updateAIContextPills()
         showActive(); refreshSidebar()
+    }
+
+    /// ⇧⌘T — jump straight to a fresh, blank full-window chat ready for a typed
+    /// request. Unlike the new-tab Ask bar (which routes between search/navigate/
+    /// AI), this always starts an independent full-window chat conversation. Any
+    /// previous chat is preserved in History → Breeze AI chats.
+    func newFullscreenChat() {
+        if let i = tabs.firstIndex(where: { $0.isChatTab }) {
+            active = i
+        } else {
+            let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Breeze Chat"
+            wire(t)
+            tabs.append(t); active = tabs.count - 1
+        }
+        if assistantOpen { setAssistant(false) }
+        prepareAIStatus()
+        newChat()                       // fresh, blank conversation
+        updateAIContextPills()
+        showActive(); refreshSidebar()  // chat-tab showActive() focuses the input
     }
 
     /// OpenAI BYOK is active when selected in Settings and a key is present.
@@ -2151,7 +2196,27 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.webView.evaluateJavaScript("(function(){var m=document.querySelector('video,audio');if(!m)return;m.paused?m.play():m.pause();})()")
     }
     func nowPlayingPip() {
-        nowPlayingTab?.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.requestPictureInPicture)v.requestPictureInPicture();})()")
+        pip(for: nowPlayingTab?.webView, toggle: true)
+    }
+
+    /// Toggle/enter Picture-in-Picture for a tab's main <video>. Uses
+    /// callAsyncJavaScript (which AWAITS the promise, unlike evaluateJavaScript) so
+    /// rejections don't get silently swallowed. PiP itself is enabled on the web
+    /// view config via `enablePictureInPictureAPI()`; without that the request
+    /// rejects with NotSupportedError on macOS.
+    func pip(for webView: WKWebView?, toggle: Bool) {
+        guard let webView else { return }
+        let onAlready = toggle ? "await document.exitPictureInPicture(); return 'exited';"
+                               : "return 'already-pip';"
+        let body = """
+        const v = document.querySelector('video');
+        if (!v) return 'no-video';
+        if (document.pictureInPictureElement) { \(onAlready) }
+        if (v.disablePictureInPicture || !document.pictureInPictureEnabled) return 'unsupported';
+        try { await v.requestPictureInPicture(); return 'ok'; }
+        catch (e) { return 'error: ' + (e && e.name ? e.name : String(e)); }
+        """
+        webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { _ in }
     }
     func backToNowPlaying() {
         if let t = nowPlayingTab, let i = tabs.firstIndex(where: { $0.id == t.id }) { select(i) }
@@ -2546,7 +2611,14 @@ extension BrowserController: AddressSuggestionsDelegate {
     }
     
     // MARK: - NSTextFieldDelegate
-    
+
+    func controlTextDidBeginEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === address else { return }
+        // Edit at full opacity — drop the dimmed-slug styling while typing.
+        field.textColor = Theme.shared.palette.text
+        field.stringValue = field.stringValue
+    }
+
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, field === address else { return }
         if suggestionsPopover.isInternalUpdate { return }

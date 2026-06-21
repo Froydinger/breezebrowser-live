@@ -5,15 +5,24 @@
 # Sources/Breeze. When llama.cpp lands (Phase C) add its -I/-L/-l flags here.
 set -e
 cd "$(dirname "$0")"
-APP="dist/Breeze.app"
+
+# Variant support: build an isolated test app without touching the live install.
+#   BREEZE_APP_NAME=BreezeTest BREEZE_BUNDLE_ID=com.jakefreudinger.breeze.native.test \
+#   BREEZE_DIST=dist-test ./build.sh
+# Defaults reproduce the shipping Breeze build exactly. Launch the test variant
+# with its own data dir:  open -n dist-test/BreezeTest.app --args --profile BreezeTest
+APP_NAME="${BREEZE_APP_NAME:-Breeze}"
+BUNDLE_ID="${BREEZE_BUNDLE_ID:-com.jakefreudinger.breeze.native}"
+OUT_DIR="${BREEZE_DIST:-dist}"
+APP="$OUT_DIR/${APP_NAME}.app"
 SDK="$(xcrun --show-sdk-path)"
 
-rm -rf dist
+rm -rf "$OUT_DIR"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-echo "Compiling…"
+echo "Compiling… ($APP_NAME / $BUNDLE_ID)"
 swiftc -O -whole-module-optimization Sources/Breeze/*.swift \
-  -o "$APP/Contents/MacOS/Breeze" \
+  -o "$APP/Contents/MacOS/$APP_NAME" \
   -target arm64-apple-macosx14.0 -sdk "$SDK" \
   -framework Cocoa -framework WebKit -framework UserNotifications \
   -Xlinker -weak_framework -Xlinker FoundationModels
@@ -26,16 +35,16 @@ cp -R ../ui/. "$APP/Contents/Resources/ui/" 2>/dev/null || true
 # Bundle the EasyList adblock rules
 cp easylist.json "$APP/Contents/Resources/easylist.json" 2>/dev/null || true
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Breeze</string>
-  <key>CFBundleDisplayName</key><string>Breeze</string>
-  <key>CFBundleIdentifier</key><string>com.jakefreudinger.breeze.native</string>
-  <key>CFBundleVersion</key><string>3.4.3</string>
-  <key>CFBundleShortVersionString</key><string>3.4.3</string>
-  <key>CFBundleExecutable</key><string>Breeze</string>
+  <key>CFBundleName</key><string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+  <key>CFBundleVersion</key><string>3.4.4</string>
+  <key>CFBundleShortVersionString</key><string>3.4.4</string>
+  <key>CFBundleExecutable</key><string>$APP_NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

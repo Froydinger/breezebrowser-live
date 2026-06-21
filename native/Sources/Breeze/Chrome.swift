@@ -281,31 +281,62 @@ final class GroupHeaderView: NSView {
     @objc private func clicked() { onToggle?() }
 }
 
-/// Sidebar now-playing card: favicon + title + play/pause + pip + back-to-tab.
+/// Sidebar now-playing mini-player. Deliberately NOT shaped like a tab row:
+/// album-style artwork + title + "now playing" subtitle on top, with a real
+/// transport-control row underneath. The transport row is what sets it apart —
+/// no tab has play/pip/back controls — so it reads as its own little module in
+/// the footer rather than a second selected tab.
 final class NowPlayingView: NSView {
-    private let fav = NSImageView()
+    private let art = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
-    let playBtn = HoverButton(symbol: "pause.fill", size: 26, point: 12)
-    let pipBtn = HoverButton(symbol: "pip", size: 26, point: 12)
-    let backBtn = HoverButton(symbol: "arrow.uturn.left", size: 26, point: 12)
+    private let subtitle = NSTextField(labelWithString: "")
+    let playBtn = HoverButton(symbol: "pause.fill", size: 34, point: 16)
+    let pipBtn = HoverButton(symbol: "pip", size: 30, point: 14)
+    let backBtn = HoverButton(symbol: "arrow.uturn.left", size: 30, point: 14)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
-        layer?.cornerRadius = 12
-        fav.translatesAutoresizingMaskIntoConstraints = false
-        fav.imageScaling = .scaleProportionallyDown
-        fav.wantsLayer = true; fav.layer?.cornerRadius = 4
-        titleLabel.font = .systemFont(ofSize: 12)
+        layer?.cornerRadius = 14
+        layer?.borderWidth = 1
+
+        art.translatesAutoresizingMaskIntoConstraints = false
+        art.imageScaling = .scaleProportionallyUpOrDown
+        art.wantsLayer = true; art.layer?.cornerRadius = 7; art.layer?.masksToBounds = true
+
+        titleLabel.font = .systemFont(ofSize: 12.5, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: [fav, titleLabel, playBtn, pipBtn, backBtn])
-        row.spacing = 6; row.alignment = .centerY
-        addSubview(row); row.pin(to: self, insets: NSEdgeInsets(top: 7, left: 9, bottom: 7, right: 9))
+
+        subtitle.font = .systemFont(ofSize: 10, weight: .medium)
+        subtitle.lineBreakMode = .byTruncatingTail
+        subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let textCol = NSStackView(views: [titleLabel, subtitle])
+        textCol.orientation = .vertical; textCol.spacing = 1; textCol.alignment = .leading
+
+        let topRow = NSStackView(views: [art, textCol])
+        topRow.spacing = 9; topRow.alignment = .centerY
+
+        // Transport controls spread edge-to-edge: back · play/pause · pip.
+        let controls = NSStackView(views: [backBtn, playBtn, pipBtn])
+        controls.distribution = .equalSpacing; controls.alignment = .centerY
+
+        let col = NSStackView(views: [topRow, controls])
+        col.orientation = .vertical; col.spacing = 10; col.alignment = .leading
+        addSubview(col)
+        col.pin(to: self, insets: NSEdgeInsets(top: 11, left: 12, bottom: 11, right: 12))
+
         NSLayoutConstraint.activate([
-            fav.widthAnchor.constraint(equalToConstant: 16),
-            fav.heightAnchor.constraint(equalToConstant: 16),
+            art.widthAnchor.constraint(equalToConstant: 34),
+            art.heightAnchor.constraint(equalToConstant: 34),
+            // Both rows span the card's full inner width so text truncates and the
+            // transport controls spread evenly instead of bunching on the left.
+            topRow.leadingAnchor.constraint(equalTo: col.leadingAnchor),
+            topRow.trailingAnchor.constraint(equalTo: col.trailingAnchor),
+            controls.leadingAnchor.constraint(equalTo: col.leadingAnchor),
+            controls.trailingAnchor.constraint(equalTo: col.trailingAnchor),
         ])
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
@@ -315,16 +346,20 @@ final class NowPlayingView: NSView {
 
     func configure(host: String, title: String, playing: Bool) {
         titleLabel.stringValue = title
+        subtitle.stringValue = host.isEmpty ? "Now playing" : host
         playBtn.symbol = playing ? "pause.fill" : "play.fill"
         if !host.isEmpty {
-            Favicons.shared.image(for: host) { [weak self] img in self?.fav.image = img }
+            Favicons.shared.image(for: host) { [weak self] img in self?.art.image = img }
         }
     }
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
         layer?.backgroundColor = p.surface.cgColor
+        layer?.borderColor = p.text.withAlphaComponent(0.08).cgColor
+        art.layer?.backgroundColor = p.surfaceActive.cgColor
         titleLabel.textColor = p.text
+        subtitle.textColor = p.textSoft
     }
 }
 

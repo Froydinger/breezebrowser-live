@@ -124,6 +124,13 @@ final class NewTabView: NSView {
         guard !t.isEmpty else { return }
         field.stringValue = ""
         let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-        onSubmit?(t, isCmd)
+        // Defer out of the field editor's textDidEndEditing/_giveUpFirstResponder
+        // teardown. Submitting routes to navigate()/the chat path, which calls
+        // showActive() and removes THIS view (whose field editor is still mid-
+        // teardown) from the window. Mutating the hierarchy reentrantly here
+        // corrupts the window's first-responder/field-editor state and crashes
+        // with a use-after-free in applyChromeTheme(). One runloop turn later the
+        // text system has fully unwound, so it's safe to tear the view down.
+        DispatchQueue.main.async { [weak self] in self?.onSubmit?(t, isCmd) }
     }
 }
