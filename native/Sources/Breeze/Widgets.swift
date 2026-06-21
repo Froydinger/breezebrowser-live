@@ -99,6 +99,46 @@ final class HoverButton: NSButton {
     @objc private func tapped() { onTap?() }
 }
 
+final class HoverTextButton: NSButton {
+    var defaultText: String
+    var hoverText: String
+    private var hovering = false
+    var onTap: (() -> Void)?
+
+    init(defaultText: String, hoverText: String) {
+        self.defaultText = defaultText
+        self.hoverText = hoverText
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        isBordered = false
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        target = self; action = #selector(tapped)
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme), name: Theme.didChange, object: nil)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    @objc func applyTheme() {
+        let p = Theme.shared.palette
+        let color = hovering ? p.text : p.textSoft
+        let titleStr = hovering ? hoverText : defaultText
+        attributedTitle = NSAttributedString(string: titleStr, attributes: [
+            .foregroundColor: color,
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+        ])
+        layer?.backgroundColor = (hovering ? p.surfaceHover : .clear).cgColor
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with e: NSEvent) { hovering = true; applyTheme() }
+    override func mouseExited(with e: NSEvent)  { hovering = false; applyTheme() }
+    @objc private func tapped() { onTap?() }
+}
 /// Top-left origin view so scroll-view content starts at the top.
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 

@@ -80,6 +80,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let addressWrap = NSView()
     let address = NSTextField()
     let bookmarkBtn = HoverButton(symbol: "bookmark", size: 22, point: 12)
+    let sbBookmarkBtn = HoverButton(symbol: "bookmark", size: 18, point: 11)
     let breezeCorner = NSButton()
 
     // footer
@@ -235,16 +236,19 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildSidebar() {
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
-        // drag strip: traffic-light pad + sidebar toggle + new tab + downloads
+        // drag strip: traffic-light pad + sidebar toggle + back + forward + reload + downloads
         let tlPad = NSView(); tlPad.translatesAutoresizingMaskIntoConstraints = false
         tlPad.widthAnchor.constraint(equalToConstant: 58).isActive = true
         let toggle = HoverButton(symbol: "sidebar.left"); toggle.onTap = { [weak self] in self?.sidebarToggleClicked() }
-        let plus = HoverButton(symbol: "plus"); plus.onTap = { [weak self] in self?.openNewTab() }
         let dl = HoverButton(symbol: "arrow.down.to.line"); dl.onTap = { [weak self] in self?.openInternal(.downloads) }
         let dragFill = NSView(); dragFill.translatesAutoresizingMaskIntoConstraints = false
         dragFill.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        // toggle sits at the right end, after the download button
-        let strip = NSStackView(views: [tlPad, dragFill, plus, dl, toggle])
+
+        sbBack.onTap = { [weak self] in self?.current?.webView.goBack() }
+        sbForward.onTap = { [weak self] in self?.current?.webView.goForward() }
+        sbReload.onTap = { [weak self] in self?.current?.webView.reload() }
+
+        let strip = NSStackView(views: [tlPad, toggle, sbBack, sbForward, sbReload, dragFill, dl])
         strip.spacing = 3; strip.alignment = .centerY
         strip.translatesAutoresizingMaskIntoConstraints = false
         strip.heightAnchor.constraint(equalToConstant: 40).isActive = true
@@ -259,6 +263,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let tabsDoc = FlippedView()
         tabsDoc.translatesAutoresizingMaskIntoConstraints = false
         tabsDoc.addSubview(tabsStack)
+
+        let newTabBtn = HoverTextButton(defaultText: " ——————  +  —————— ", hoverText: "       New Tab       ")
+        newTabBtn.onTap = { [weak self] in self?.openNewTab() }
+        newTabBtn.translatesAutoresizingMaskIntoConstraints = false
+        tabsDoc.addSubview(newTabBtn)
+
         let tabsScroll = NSScrollView()
         tabsScroll.drawsBackground = false
         tabsScroll.hasVerticalScroller = false
@@ -308,7 +318,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             tabsStack.topAnchor.constraint(equalTo: tabsDoc.topAnchor),
             tabsStack.leadingAnchor.constraint(equalTo: tabsDoc.leadingAnchor),
             tabsStack.trailingAnchor.constraint(equalTo: tabsDoc.trailingAnchor),
-            tabsStack.bottomAnchor.constraint(equalTo: tabsDoc.bottomAnchor),
+
+            newTabBtn.topAnchor.constraint(equalTo: tabsStack.bottomAnchor, constant: 10),
+            newTabBtn.centerXAnchor.constraint(equalTo: tabsDoc.centerXAnchor),
+            newTabBtn.heightAnchor.constraint(equalToConstant: 24),
+            newTabBtn.bottomAnchor.constraint(equalTo: tabsDoc.bottomAnchor, constant: -10),
 
             bottomStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
             bottomStack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
@@ -319,13 +333,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildSidebarUrlSection() {
         sidebarUrlSection.translatesAutoresizingMaskIntoConstraints = false
         sidebarUrlSection.isHidden = true
-        sbBack.onTap = { [weak self] in self?.current?.webView.goBack() }
-        sbForward.onTap = { [weak self] in self?.current?.webView.goForward() }
-        sbReload.onTap = { [weak self] in self?.current?.webView.reload() }
-        let navRow = NSStackView(views: [sbBack, sbForward, sbReload]); navRow.spacing = 2
-        navRow.translatesAutoresizingMaskIntoConstraints = false
+        
         let addrWrap = NSView(); addrWrap.wantsLayer = true; addrWrap.layer?.cornerRadius = 10
         addrWrap.translatesAutoresizingMaskIntoConstraints = false
+        
+        let lock = NSImageView()
+        lock.image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        lock.contentTintColor = NSColor.secondaryLabelColor
+        lock.translatesAutoresizingMaskIntoConstraints = false
+        
         sbAddress.placeholderString = "Search or enter URL"
         sbAddress.font = .systemFont(ofSize: 13.5)
         sbAddress.isBordered = false; sbAddress.drawsBackground = false; sbAddress.focusRingType = .none
@@ -333,20 +349,38 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sbAddress.cell?.truncatesLastVisibleLine = true
         sbAddress.translatesAutoresizingMaskIntoConstraints = false
         sbAddress.target = self; sbAddress.action = #selector(sidebarAddressSubmit)
+        
+        sbBookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
+        let copylink = HoverButton(symbol: "link", size: 18, point: 11)
+        copylink.onTap = { [weak self] in if let t = self?.current { self?.copyLink(t) } }
+        let share = HoverButton(symbol: "square.and.arrow.up", size: 18, point: 11)
+        share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
+        
+        let actions = NSStackView(views: [copylink, sbBookmarkBtn, share]); actions.spacing = 2
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        
+        addrWrap.addSubview(lock)
         addrWrap.addSubview(sbAddress)
+        addrWrap.addSubview(actions)
+        
         NSLayoutConstraint.activate([
-            sbAddress.leadingAnchor.constraint(equalTo: addrWrap.leadingAnchor, constant: 11),
-            sbAddress.trailingAnchor.constraint(equalTo: addrWrap.trailingAnchor, constant: -11),
+            lock.leadingAnchor.constraint(equalTo: addrWrap.leadingAnchor, constant: 10),
+            lock.centerYAnchor.constraint(equalTo: addrWrap.centerYAnchor),
+            
+            sbAddress.leadingAnchor.constraint(equalTo: lock.trailingAnchor, constant: 6),
+            sbAddress.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6),
             sbAddress.centerYAnchor.constraint(equalTo: addrWrap.centerYAnchor),
+            
+            actions.trailingAnchor.constraint(equalTo: addrWrap.trailingAnchor, constant: -6),
+            actions.centerYAnchor.constraint(equalTo: addrWrap.centerYAnchor),
         ])
-        sidebarUrlSection.addSubview(navRow); sidebarUrlSection.addSubview(addrWrap)
+        
+        sidebarUrlSection.addSubview(addrWrap)
         NSLayoutConstraint.activate([
-            navRow.topAnchor.constraint(equalTo: sidebarUrlSection.topAnchor),
-            navRow.leadingAnchor.constraint(equalTo: sidebarUrlSection.leadingAnchor),
-            addrWrap.topAnchor.constraint(equalTo: navRow.bottomAnchor, constant: 6),
+            addrWrap.topAnchor.constraint(equalTo: sidebarUrlSection.topAnchor),
             addrWrap.leadingAnchor.constraint(equalTo: sidebarUrlSection.leadingAnchor),
             addrWrap.trailingAnchor.constraint(equalTo: sidebarUrlSection.trailingAnchor),
-            addrWrap.heightAnchor.constraint(equalToConstant: 38),
+            addrWrap.heightAnchor.constraint(equalToConstant: 34),
             addrWrap.bottomAnchor.constraint(equalTo: sidebarUrlSection.bottomAnchor),
         ])
         self.sbAddrWrap = addrWrap
@@ -485,6 +519,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         clearc.onTap = { [weak self] in self?.clearCache() }
         bookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
         let share = HoverButton(symbol: "square.and.arrow.up", size: 22, point: 12)
+        share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
         addressWrap.addSubview(copylink); addressWrap.addSubview(address)
         addressWrap.addSubview(clearc); addressWrap.addSubview(bookmarkBtn); addressWrap.addSubview(share)
         let actions = NSStackView(views: [clearc, bookmarkBtn, share]); actions.spacing = 2
@@ -921,6 +956,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if window.firstResponder !== sbAddress.currentEditor() { sbAddress.stringValue = urlStr }
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
+        sbBookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
         // keep split panes' address bars current
         if let sid = splitTabId, let s = tabs.first(where: { $0.id == sid }), let t = current {
             leftPane.setURL(t.isNewTab ? "" : (t.webView.url?.absoluteString ?? ""))
@@ -1580,6 +1616,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         applyChromeTheme()
         broadcastToInternalPages()
         newTab.applyTheme(); newTab.tick()
+    }
+
+    func shareCurrentPage(from view: NSView?) {
+        guard let url = current?.webView.url, let view = view else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        picker.show(relativeTo: view.bounds, of: view, preferredEdge: .maxY)
     }
 
     func searchURL(for query: String) -> String {
