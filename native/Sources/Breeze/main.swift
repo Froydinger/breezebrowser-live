@@ -12,7 +12,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.start()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
-    func applicationWillTerminate(_ n: Notification) { browser?.llm.shutdown() }
+    func applicationWillTerminate(_ n: Notification) {
+        if let tabs = browser?.tabs {
+            Store.shared.openTabs = tabs.compactMap { $0.webView.url?.absoluteString }
+            Store.shared.saveOpenTabs()
+        }
+        browser?.llm.shutdown()
+    }
     @objc func newTab() { browser?.openNewTab() }
     @objc func closeTab() { if let t = browser?.current { browser?.closeTab(t) } }
     @objc func focusAddr() {

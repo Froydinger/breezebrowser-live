@@ -71,6 +71,9 @@ final class Updater {
     }
 
     private func promptAndInstall(version: String, zip: URL) {
+        if Store.shared.settings["updateSounds"] as? Bool != false {
+            NSSound(named: "Glass")?.play()
+        }
         let a = NSAlert()
         a.messageText = "Breeze \(version) is available"
         a.informativeText = "You're on \(currentVersion). Download and install the update now? Breeze will relaunch."

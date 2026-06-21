@@ -148,6 +148,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.0.7', icon: 'zap', title: 'Wired up all Browser Settings', items: [
+        'Added Auto Picture-in-Picture logic for videos.',
+        'Wired up "Restore Tabs on Launch" logic so your session is saved automatically.',
+        'Hooked up "Flatten Fullscreen Corners" for better video playback.',
+        'Wired up "Sleep Inactive Tabs" to save memory.',
+        'Ensured Notification and Update Sounds respect their toggles.',
+        'Hooked up the "Show Greeting" toggle on the New Tab page.' ] },
       { v: '3.0.6', icon: 'zap', title: 'Sidebar UI Refresh', items: [
         'Redesigned the sidebar layout with the address bar matching the Arc look and feel.',
         'Moved back, forward, and refresh controls to the top right next to the traffic lights.',

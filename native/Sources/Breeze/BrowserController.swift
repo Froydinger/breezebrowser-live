@@ -223,10 +223,48 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sharedConfig.userContentController.add(self, name: "breezeMedia")
 
         renderPins()
-        openNewTab()
+        
+        let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
+        if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
+            for url in Store.shared.openTabs { openTab(url: url) }
+        } else if restoreMode == "ask" && !Store.shared.openTabs.isEmpty {
+            openNewTab()
+            let alert = NSAlert()
+            alert.messageText = "Restore Previous Session?"
+            alert.informativeText = "You had \(Store.shared.openTabs.count) tabs open. Would you like to restore them?"
+            alert.addButton(withTitle: "Restore")
+            alert.addButton(withTitle: "Start Fresh")
+            if alert.runModal() == .alertFirstButtonReturn {
+                for url in Store.shared.openTabs { openTab(url: url) }
+                closeTab(tabs[0]) // close the initial new tab
+            } else {
+                Store.shared.openTabs = []; Store.shared.saveOpenTabs()
+            }
+        } else {
+            openNewTab()
+        }
         startSleepTimer()
         applyUrlBarMode()
         initReminders()
+        
+        NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: nil) { [weak self] _ in
+            guard let self = self else { return }
+            if Store.shared.settings["autoPip"] as? Bool != false, let t = self.current, t.isPlaying {
+                t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.requestPictureInPicture)v.requestPictureInPicture();})()")
+            }
+        }
+        
+        NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: nil) { [weak self] _ in
+            if Store.shared.settings["flattenFullscreenCorners"] as? Bool != false {
+                self?.window.titlebarAppearsTransparent = false
+                self?.window.backgroundColor = .black
+            }
+        }
+        
+        NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
+            self?.window.titlebarAppearsTransparent = true
+            self?.window.backgroundColor = .windowBackgroundColor
+        }
     }
 
     var current: Tab? { tabs.indices.contains(active) ? tabs[active] : nil }
@@ -808,6 +846,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func select(_ i: Int) {
         // activating any tab leaves split view (the divider must not persist)
         if splitTabId != nil && tabs.indices.contains(i) && tabs[i].id != splitTabId { splitTabId = nil }
+        
+        if Store.shared.settings["autoPip"] as? Bool != false, let t = current, t.isPlaying, active != i {
+            t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.requestPictureInPicture)v.requestPictureInPicture();})()")
+        }
+        
         active = i
         if let t = current { t.lastActive = Date(); if t.sleeping { wake(t) } }
         showActive(); refreshSidebar()
@@ -1284,7 +1327,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 }
 
                 let content = UNMutableNotificationContent()
-                content.title = "Breeze reminder"; content.body = text; content.sound = .default
+                content.title = "Breeze reminder"; content.body = text
+                if Store.shared.settings["notificationSounds"] as? Bool != false { content.sound = .default }
                 let trig = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
                 center.add(UNNotificationRequest(identifier: id, content: content, trigger: trig)) { _ in
                     cont.resume(returning: "Reminder set: \"\(text)\" in \(minutes) minute\(minutes == 1 ? "" : "s").")
@@ -1304,7 +1348,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 let id = r["id"] as? String ?? UUID().uuidString
                 let txt = r["label"] as? String ?? "Reminder"
                 let content = UNMutableNotificationContent()
-                content.title = "Breeze reminder"; content.body = txt; content.sound = .default
+                content.title = "Breeze reminder"; content.body = txt
+                if Store.shared.settings["notificationSounds"] as? Bool != false { content.sound = .default }
                 let trig = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
                 center.add(UNNotificationRequest(identifier: id, content: content, trigger: trig))
                 live.append(r)

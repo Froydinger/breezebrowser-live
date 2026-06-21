@@ -271,6 +271,7 @@
         h < 12 ? 'Good morning.' :
         h < 17 ? 'Good afternoon.' :
         'Good evening.';
+      greeting.style.display = settings.showGreeting === false ? 'none' : 'block';
     }
     tick();
     setInterval(tick, 1000);

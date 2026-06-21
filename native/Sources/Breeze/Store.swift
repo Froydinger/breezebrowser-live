@@ -13,12 +13,14 @@ final class Store {
     private let historyURL: URL
     private let bookmarksURL: URL
     private let chatsURL: URL
+    private let openTabsURL: URL
     var chats: [[String: Any]] = []      // { id, title, messages:[{role,text}] }
 
     var settings: [String: Any]
     var pins: [Pin]
     var history: [[String: Any]]      // { url, title, ts }
     var bookmarks: [[String: Any]]    // { url, title, ts }
+    var openTabs: [String]            // array of tab URLs
 
     static let defaults: [String: Any] = [
         "theme": "system",
@@ -51,6 +53,7 @@ final class Store {
         historyURL = dir.appendingPathComponent("history.json")
         bookmarksURL = dir.appendingPathComponent("bookmarks.json")
         chatsURL = dir.appendingPathComponent("chats.json")
+        openTabsURL = dir.appendingPathComponent("opentabs.json")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         // settings = defaults merged with whatever was saved
@@ -72,6 +75,12 @@ final class Store {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         chats = (try? Data(contentsOf: chatsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
+    }
+
+    func saveOpenTabs() {
+        if let data = try? JSONSerialization.data(withJSONObject: openTabs) { try? data.write(to: openTabsURL) }
     }
 
     // MARK: - Chat history
