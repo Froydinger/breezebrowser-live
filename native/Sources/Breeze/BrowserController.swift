@@ -569,6 +569,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             webContainer.addSubview(primary); primary.pin(to: webContainer)
         }
         syncChrome()
+        scheduleReflow()      // a re-shown web view may have a stale layout width
     }
 
     func wireSplitPane(_ pane: SplitPane, tab: Tab) {
@@ -600,6 +601,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         splitRatio = max(0.2, min(0.8, splitRatio + g.translation(in: webContainer).x / w))
         g.setTranslation(.zero, in: webContainer)
         splitLeftWidthC?.constant = w * splitRatio - 3
+        if g.state == .ended { scheduleReflow() }
     }
 
     func windowDidResize(_ n: Notification) {
@@ -611,6 +613,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             webTrailC.constant = -(w + 6)
             topTrailC.constant = -(w + 8)
         }
+        scheduleReflow()
     }
 
     func makeTabRow(_ t: Tab) -> TabRowView {
@@ -924,6 +927,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    /// After the web area is resized by a *discrete* chrome change (sidebar /
+    /// assistant toggle, split drag, window snap, tab switch) WebKit doesn't
+    /// always re-anchor position:fixed / sticky elements to the new edge — so a
+    /// page can render with a few elements pinned to the old width. Telling the
+    /// page its viewport changed forces those elements to re-layout. Fired after
+    /// the chrome animation settles.
+    func scheduleReflow() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in self?.reflowWebViews() }
+    }
+    func reflowWebViews() {
+        let js = "window.dispatchEvent(new Event('resize'));"
+        for t in tabs where !t.isNewTab && !isInternal(t.webView) {
+            t.webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+    }
+
     func toggleSidebar() { setSidebarHidden(!sidebarHidden) }
 
     /// The toggle button inside the sidebar: if the sidebar is only peeking
@@ -944,6 +963,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             sidebar.alphaValue = hidden ? 0 : 1
             root.layoutSubtreeIfNeeded()
         }
+        scheduleReflow()
     }
 
     @objc func resizeSidebar(_ g: NSPanGestureRecognizer) {
@@ -954,6 +974,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         renderPins()                                  // pin cell size depends on width
         if g.state == .ended {
             Store.shared.settings["sidebarWidth"] = Double(sidebarWidth); Store.shared.saveSettings()
+            scheduleReflow()
         }
     }
 
@@ -999,6 +1020,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.focusInput()
             prepareAIStatus()
         }
+        scheduleReflow()
     }
 
     /// Set the chat input's enabled state + status based on the active backend.
@@ -1042,6 +1064,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             topTrailC.constant = -(w + 8)
             root.layoutSubtreeIfNeeded()
         }
+        scheduleReflow()
     }
 
     func sendToAI(_ text: String) {
