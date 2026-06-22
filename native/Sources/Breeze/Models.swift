@@ -21,6 +21,10 @@ let sharedConfig: WKWebViewConfiguration = {
     // Media (now-playing) detection — reports play/pause to the native side.
     c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    // Element-fullscreen detection — lets us flatten the rounded web-area corners
+    // while a video is fullscreen (rounded corners kill the HW video overlay → black).
+    c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
     return c
 }()
 
@@ -55,6 +59,24 @@ let breezeMediaJS = """
   document.addEventListener('playing', function () { report(true); }, true);
   document.addEventListener('pause', function () { report(false); }, true);
   document.addEventListener('ended', function () { report(false); }, true);
+})();
+"""
+
+// Reports HTML5 element-fullscreen enter/exit (YouTube's fullscreen button, etc.)
+// to the native side. Runs in every frame so cross-origin embeds (e.g. an
+// embedded YouTube iframe) are caught too. postMessage is a no-op if the handler
+// isn't registered (private tabs), so this can never throw.
+let breezeFullscreenJS = """
+(function () {
+  if (location.protocol === 'file:') return;
+  function report() {
+    var el = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement;
+    try { window.webkit.messageHandlers.breezeFullscreen.postMessage(!!el); } catch (e) {}
+  }
+  document.addEventListener('fullscreenchange', report, true);
+  document.addEventListener('webkitfullscreenchange', report, true);
+  document.addEventListener('webkitbeginfullscreen', function () { report(); }, true);
+  document.addEventListener('webkitendfullscreen', function () { report(); }, true);
 })();
 """
 
@@ -96,8 +118,10 @@ final class Tab {
             c.defaultWebpagePreferences.allowsContentJavaScript = true
             if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
             c.enablePictureInPictureAPI()
-            // Re-inject media script for play/pause detection in private tabs
+            // Re-inject media + fullscreen scripts for private tabs
             c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             config = c
         } else {

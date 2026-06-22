@@ -259,6 +259,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         applyThemeFromSettings()
         sharedConfig.userContentController.add(self, name: "breezeMsg")
         sharedConfig.userContentController.add(self, name: "breezeMedia")
+        sharedConfig.userContentController.add(self, name: "breezeFullscreen")
 
         renderPins()
         
@@ -543,6 +544,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layer?.masksToBounds = true
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
+    }
+
+    // Rounded corners on the web area clip WebKit's hardware video overlay to a
+    // black rectangle once a video goes fullscreen (same root cause as the old
+    // Electron "flatten corners in fullscreen" fix). Flatten while fullscreen,
+    // restore the 10pt radius on exit. Driven by breezeFullscreenJS.
+    var webFullscreen = false
+    func setWebFullscreen(_ on: Bool) {
+        guard on != webFullscreen else { return }
+        webFullscreen = on
+        webContainer.layer?.masksToBounds = !on
+        webContainer.layer?.cornerRadius = on ? 0 : 10
     }
 
     func showActive() {
@@ -2261,6 +2274,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             decisionHandler(.cancel)
             return
         }
+        // `<a download>`, blob:/data: download links, and right-click "Download
+        // Linked File" set shouldPerformDownload. WebKit won't save the file
+        // unless we answer .download here — otherwise it just navigates and the
+        // download silently never happens (the "can't download anything" bug).
+        if #available(macOS 11.3, *), navigationAction.shouldPerformDownload {
+            decisionHandler(.download)
+            return
+        }
         decisionHandler(.allow)
     }
 
@@ -2404,6 +2425,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "breezeMedia" {
             handleMedia(message); return
+        }
+        if message.name == "breezeFullscreen" {
+            setWebFullscreen((message.body as? NSNumber)?.boolValue ?? false); return
         }
         guard let body = message.body as? [String: Any],
               let method = body["method"] as? String else { return }
