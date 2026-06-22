@@ -499,20 +499,31 @@
             style="font-family:inherit;font-size:13px;color:var(--text);background:var(--surface-active);border:none;border-radius:10px;padding:10px 12px;outline:none;resize:vertical;width:100%"></textarea>
         </div>
         <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
-            <div style="flex:1;padding-right:20px">
-              <div class="row-label">Model</div>
-              <div class="row-hint">Breeze AI runs <b>on-device</b> locally on your Mac using the <b>Llama 3.1 8B</b> model (nothing leaves your Mac). Apple Foundation Models are used only as a temporary fallback if the local model is not ready.</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:16px">
+            <div style="flex:1">
+              <div class="row-label">OpenAI API key</div>
+              <div class="row-hint">Breeze AI is powered by OpenAI's <b>GPT-5.4-mini</b> using your own API key (BYOK). Your key is stored in the macOS Keychain and is only ever sent to OpenAI.</div>
             </div>
-            <div id="llama-status-container" style="flex-shrink:0">
-              <!-- Dynamically populated -->
+            <button id="aiKeyToggle" style="flex-shrink:0;font-family:inherit;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:500">Manage key</button>
+          </div>
+          <!-- Hidden until the user explicitly opens it. The keychain (hasSecret) is
+               only read on first open, so merely viewing Settings never prompts for
+               the macOS keychain password. -->
+          <div id="aiKeyPanel" hidden style="display:flex;flex-direction:column;gap:10px;background:var(--surface-active);border-radius:10px;padding:14px">
+            <div id="aiKeyStatus" class="row-hint" style="margin:0">Checking…</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="openaiKey" type="password" autocomplete="off" placeholder="sk-…"
+                style="flex:1;min-width:200px;font-family:inherit;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border, rgba(128,128,128,0.25));border-radius:9px;padding:8px 12px;outline:none" />
+              <button id="openaiSaveBtn" style="font-family:inherit;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:500">Save</button>
+              <button id="openaiRemoveBtn" style="font-family:inherit;font-size:12px;color:var(--text-soft);background:transparent;border:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:500">Remove</button>
             </div>
+            <div class="row-hint" style="margin:0">Don't have a key? <a href="#" id="getKeyLink" class="key-link">Create one at platform.openai.com →</a></div>
           </div>
         </div>
         <div class="row">
           <div>
-            <div class="row-label">Web search</div>
-            <div class="row-hint">No key needed. When the assistant needs live info it opens your default search engine in a tab, reads the results, and answers with sources — all in your own browser.</div>
+            <div class="row-label">Web search &amp; browsing</div>
+            <div class="row-hint">When the assistant needs live info or has to act for you, it opens sites and your default search engine in real tabs, reads the results, clicks, and types — all agentically in your own browser.</div>
           </div>
         </div>
       </div>
@@ -627,7 +638,7 @@
       <div class="card" id="faq">
         <details>
           <summary>How does Breeze AI work?</summary>
-          <p>Press <b>⌘E</b> to open it. It runs <b>Llama 3.1 8B</b> <b>entirely on your Mac</b> — nothing you ask ever leaves your device. Ask it to "summarize this page," look something up on the web, or set a reminder, and it decides which tool to use on its own.</p>
+          <p>Press <b>⌘E</b> to open it. It's powered by OpenAI's <b>GPT-5.4-mini</b> using <b>your own API key</b> (add it above in <b>Settings → Breeze AI</b>). Ask it to "summarize this page," open a site, look something up on the web, or set a reminder, and it drives the browser to get it done.</p>
         </details>
         <details>
           <summary>Use the AI on selected text</summary>
@@ -635,7 +646,7 @@
         </details>
         <details>
           <summary>Search the web</summary>
-          <p>Just ask — when a question needs live info, Breeze AI opens your default search engine in a tab, reads the results, and answers with sources. <b>No API key needed.</b></p>
+          <p>Just ask — when a question needs live info, Breeze AI opens your default search engine in a tab, reads the results, and answers with sources. Web browsing uses your normal browser; the AI itself uses your <b>OpenAI API key</b>.</p>
         </details>
         <details>
           <summary>Set a reminder</summary>
@@ -655,7 +666,7 @@
         </details>
         <details>
           <summary>Privacy &amp; your data</summary>
-          <p>History and saved passwords are encrypted on this device with your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. The AI is fully local. Nothing syncs anywhere.</p>
+          <p>History and saved passwords are encrypted on this device with your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Your OpenAI API key is stored in the system keychain and is only ever sent to OpenAI when you use the assistant. Nothing else syncs anywhere.</p>
         </details>
       </div>
     </section>
@@ -717,57 +728,57 @@
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
-      
-      // Render Llama status dynamically
-      const statusContainer = document.getElementById('llama-status-container');
-      if (statusContainer) {
-        if (settings.llamaReady) {
-          statusContainer.innerHTML = `
-            <div style="display:flex;align-items:center;gap:10px">
-              <span class="tag green" style="background:#10b981;color:#fff;padding:5px 10px;border-radius:6px;font-size:12px;font-weight:600;display:inline-block">Ready</span>
-              <button id="redownloadLlamaBtn" style="font-family:inherit;font-size:12px;color:var(--text-soft);background:var(--surface-active);border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:500">Redownload</button>
-            </div>`;
-          const rbtn = document.getElementById('redownloadLlamaBtn');
-          if (rbtn) {
-            rbtn.addEventListener('click', () => {
-              if (typeof breezeInternal.redownloadLlama === 'function') breezeInternal.redownloadLlama();
-            });
-          }
-        } else {
-          const isDownloading = settings.llamaStatus && settings.llamaStatus.includes('Downloading');
-          let progressHtml = '';
-          if (isDownloading) {
-            const match = settings.llamaStatus.match(/(\d+)%/);
-            const pct = match ? parseInt(match[1], 10) : 0;
-            progressHtml = `
-              <div style="width:180px;background:var(--surface-active);height:6px;border-radius:3px;overflow:hidden;margin-top:2px">
-                <div style="width:${pct}%;background:var(--accent);height:100%;transition:width 0.2s"></div>
-              </div>
-            `;
-          }
-          statusContainer.innerHTML = `
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-              <button id="downloadLlamaBtn" style="font-family:inherit;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:500;transition:opacity 0.2s" ${isDownloading ? 'disabled style="opacity:0.6;cursor:default"' : ''}>
-                ${isDownloading ? 'Downloading…' : 'Download Llama 3.1 8B (~4.8 GB)'}
-              </button>
-              ${settings.llamaStatus ? `<div style="font-size:11.5px;color:var(--text-soft);text-align:right">${settings.llamaStatus}</div>` : ''}
-              ${progressHtml}
-            </div>
-          `;
-          const btn = document.getElementById('downloadLlamaBtn');
-          if (btn && !isDownloading) {
-            btn.addEventListener('click', () => {
-              if (typeof breezeInternal.downloadLlama === 'function') {
-                breezeInternal.downloadLlama();
-              }
-            });
-          }
-        }
-      }
 
       renderPerms();
       renderReminders();
     }
+
+    // ---- OpenAI API key (BYOK) -------------------------------------------
+    // The keychain is only touched when the user explicitly opens this panel,
+    // saves, or removes a key — never on page load — so opening Settings can't
+    // trigger the macOS keychain password prompt.
+    (function () {
+      const toggle = document.getElementById('aiKeyToggle');
+      const panel = document.getElementById('aiKeyPanel');
+      const statusEl = document.getElementById('aiKeyStatus');
+      const input = document.getElementById('openaiKey');
+      const saveBtn = document.getElementById('openaiSaveBtn');
+      const removeBtn = document.getElementById('openaiRemoveBtn');
+      const getLink = document.getElementById('getKeyLink');
+      if (!toggle || !panel) return;
+
+      async function refreshStatus() {
+        try {
+          const has = await breezeInternal.hasSecret('openaiKey');
+          statusEl.textContent = has ? '✓ A key is connected. Saving a new one replaces it.' : 'No key saved yet — paste your key below.';
+        } catch {
+          statusEl.textContent = 'Paste your key below.';
+        }
+      }
+
+      toggle.addEventListener('click', () => {
+        const opening = panel.hidden;
+        panel.hidden = !opening;
+        toggle.textContent = opening ? 'Hide' : 'Manage key';
+        if (opening) refreshStatus();   // the one allowed keychain read
+      });
+      saveBtn.addEventListener('click', () => {
+        const v = (input.value || '').trim();
+        if (!v) { statusEl.textContent = 'Enter a key first.'; return; }
+        breezeInternal.setSecret('openaiKey', v);
+        input.value = '';
+        statusEl.textContent = '✓ Key saved. Breeze AI is ready.';
+      });
+      removeBtn.addEventListener('click', () => {
+        breezeInternal.deleteSecret('openaiKey');
+        input.value = '';
+        statusEl.textContent = 'Key removed.';
+      });
+      getLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        breezeInternal.openExternal('https://platform.openai.com/api-keys');
+      });
+    })();
 
     function set(key, value) {
       settings[key] = value;

@@ -15,8 +15,8 @@ native releases are now just normal GitHub "latest". Everything here is native.
 - **Build:** `swiftc` directly (NOT SwiftPM — `swift build` is broken in the
   standalone Command Line Tools: dyld can't load BuildServerProtocol.framework).
   No Xcode. `native/build.sh` compiles all of `Sources/Breeze/*.swift`, bundles
-  `../ui/` + icon, writes Info.plist (with an ATS exception for the local Qwen
-  server), and signs with "Breeze Signing".
+  `../ui/` + icon, writes Info.plist, and signs with "Breeze Signing". No AI
+  runtime is bundled — Breeze AI is BYOK (the user's OpenAI key over HTTPS).
 - **Run:** `cd native && ./build.sh && open dist/Breeze.app`
 - `Sources/Breeze/`:
   - `main.swift` — NSApp bootstrap, menus, AppDelegate. Starts `Updater`, calls
@@ -28,9 +28,9 @@ native releases are now just normal GitHub "latest". Everything here is native.
     NowPlayingView, SplitPane).
   - `AssistantPanel.swift` — the AI chat panel (pure AppKit clone of Electron's
     `#assistant`). Markdown rendering, context pills, @-mention, attach.
-  - `Agent.swift` — **shared agentic loop** for both AI backends (see AI below).
-  - `FoundationAI.swift` — Apple Foundation Models backend (primary).
-  - `LocalLLM.swift` — local Qwen backend via llama-server (fallback).
+  - `Agent.swift` — backend-agnostic agentic loop (see AI below).
+  - `OpenAILLM.swift` — the only AI backend: OpenAI **gpt-5.4-mini** via the
+    user's own API key (BYOK), stored in the macOS Keychain. No local model.
   - `Updater.swift` — native auto-updater (see Releasing below).
   - `Models.swift` — Tab, Pin, sharedConfig (WKWebView config + Safari UA + the
     `breezeMedia`/bridge user scripts), Favicons.
@@ -41,18 +41,29 @@ native releases are now just normal GitHub "latest". Everything here is native.
   - `NewTabView.swift`, `Theme.swift`, `Widgets.swift`, `VisionOCR.swift`,
     `Downloads.swift`.
 - `native/dmg/makebg.swift` — generates the DMG background (see DMG below).
-- `ui/` (repo root) — shared HTML for the internal pages, used by BOTH apps.
+- `ui/` (repo root) — bundled HTML for the native app's internal pages.
 
 ## AI architecture (native) — read before touching the assistant
 
-- **Backends:** Apple **Foundation Models** (`FoundationAI`, primary — on-device,
-  macOS 26 / Apple Intelligence, no download) with local **Qwen2.5 7B** via
-  `llama-server` (`LocalLLM`, automatic fallback when Apple Intelligence isn't
-  available). `useFM` is set in `BrowserController.init` from
-  `FoundationAI.available()`. The 3B model is gone (too weak).
-- **Agentic loop lives in `Agent.swift`** and is shared by both backends. The
-  model drives the browser via a tiny TEXT protocol (the `@Generable`/tool-calling
-  macros ship only with Xcode, so we don't use FM's native tool-calling):
+- **One backend, BYOK only:** OpenAI **`gpt-5.4-mini`** (`OpenAILLM`) over the
+  Chat Completions API, authenticated with the user's OWN API key. The key lives
+  in the macOS Keychain (`Keychain.swift`, account `openaiKey`). Do NOT add a
+  local model (Llama/llama-server/GGUF), Apple Foundation Models, a model picker,
+  or a second model — Breeze AI is gated to gpt-5.4-mini only.
+- **Keychain hygiene (hard rule):** never read the keychain just to show status.
+  A non-secret `aiKeyConnected` flag in settings mirrors "is a key saved", so
+  `llm.ready`, `bridgeStateJS`, and the assistant/settings UI show readiness
+  WITHOUT a keychain read. The keychain is read only (a) on an actual AI send and
+  (b) when the user explicitly opens the OpenAI key panel in Settings (the one
+  `hasSecret` call). This keeps the macOS password prompt from firing on open.
+- **No key → warn, don't fail:** using an AI feature with no key shows a friendly
+  "add your OpenAI key in Settings" message (with a platform.openai.com link via
+  the `openExternal` bridge), not a dead request.
+- **Request shape:** `complete()` sends `model` + `messages` + `max_completion_tokens`
+  + `reasoning_effort:"low"`; on a 400 it retries once with model+messages only, so
+  a future API tweak can't brick the assistant.
+- **Agentic loop lives in `Agent.swift`** (backend-agnostic; takes `ask`/`askFresh`
+  closures). The model drives the browser via a tiny text protocol:
   - `OPEN: <url>` → `aiOpenURL` navigates the user's current tab, waits for load,
     returns title+text.
   - `SEARCH: <query>` → `aiSearchWeb` opens the default engine in a real tab,
@@ -65,13 +76,9 @@ native releases are now just normal GitHub "latest". Everything here is native.
   is told it DOES have web access and must never say "I can't browse / type it
   yourself," never invent facts, and not describe its own model/training. Injects
   today's date and the user's custom `aiInstructions`.
-- **Self-healing context (never hard-fail):** Apple's on-device model has a small
-  (~4k) context window and an agentic loop feeds it large page text. So: FM gets
-  a **fresh session per message**, tool output is **capped** (~1500 chars), and
-  if any `ask` throws (context overflow or otherwise) `Agent.run` calls
-  `askFresh` — a brand-new context window seeded with just the question + the most
-  relevant gathered info — and answers from that. Verified: open+read+search
-  across turns no longer throws "transcript exceeded the model's context size."
+- **Self-healing context (never hard-fail):** tool output is capped and, if a
+  request exceeds the model's context, `Agent.run` calls `askFresh` with only
+  the question and the most relevant gathered information.
 - **Context to the model:** current tab is always included; users `@`-mention
   other tabs (`gatherContexts`/`aiExtras`); images attach via Apple Vision OCR
   (`VisionOCR`).

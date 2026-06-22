@@ -231,7 +231,7 @@
       <div class="onboard-step" data-step="0">
         <img class="onboard-logo" src="icon.png" alt="" draggable="false" />
         <h1>Welcome to Breeze</h1>
-        <p>A fast, beautiful Chromium browser with a private AI baked in — and zero tracking. Your data stays yours. Forever.</p>
+        <p>A fast, beautiful native Mac browser with private local AI baked in — and zero tracking. Your data stays yours. Forever.</p>
         <button class="onboard-next primary">Let's go →</button>
       </div>
 
@@ -265,34 +265,11 @@
       <div class="onboard-step" data-step="4" hidden>
         <img class="brand-icon" src="icon.png" alt="" draggable="false" />
         <h2>You're all set</h2>
-        <p>Everything runs locally and privately. Press <kbd>⌘E</kbd> anytime for the assistant — it can read pages, search the web, and set reminders, all on-device.</p>
+        <p>Press <kbd>⌘E</kbd> anytime for the assistant — powered by your own OpenAI key, it can read pages, search the web, click, type, and set reminders.</p>
         <button class="onboard-next primary" id="onboard-finish">Start browsing</button>
       </div>
 
       <div class="onboard-dots"></div>
-    </div>
-  </div>
-
-  <!-- Choose your AI model (after welcome/update, if not yet chosen) -->
-  <div id="model-modal" class="hidden">
-    <div class="onboard-glow"></div>
-    <div id="model-card">
-      <img class="brand-icon" src="icon.png" alt="" draggable="false" />
-      <h2>Pick your AI brain</h2>
-      <p>Breeze AI runs entirely on your Mac/PC. Based on this device, here's what we'd pick — but it's your call.</p>
-      <div id="model-options">
-        <button class="model-opt" data-tier="smart">
-          <div class="model-opt-head"><span class="model-opt-name">Llama 3.1 8B</span><span class="model-opt-badge" hidden>Recommended</span></div>
-          <div class="model-opt-size">Best balance · ~4.8 GB</div>
-          <div class="model-opt-blurb">Best answers and most reliable at things like “summarize this page.” Ideal on Apple Silicon with 16 GB+.</div>
-        </button>
-        <button class="model-opt" data-tier="fast">
-          <div class="model-opt-head"><span class="model-opt-name">Skip for now</span><span class="model-opt-badge" hidden>Recommended</span></div>
-          <div class="model-opt-size">You can change this later</div>
-          <div class="model-opt-blurb">Breeze will keep using the local Llama model; this just closes the chooser so you can start browsing.</div>
-        </button>
-      </div>
-      <p class="model-fine">You can switch anytime in Settings → AI.</p>
     </div>
   </div>
 

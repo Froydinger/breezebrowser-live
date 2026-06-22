@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by GPT-5.4-mini (BYOK)', major: true, items: [
+        '<b>Bring Your Own Key</b> — Breeze AI now runs on OpenAI\'s GPT-5.4-mini using your own API key. Add it in Settings → Breeze AI; there\'s a link to create one in seconds at platform.openai.com.',
+        '<b>No More Local Model</b> — The on-device Llama engine and its multi-gigabyte download are gone. Breeze installs smaller and the assistant is far smarter and faster.',
+        '<b>Fully Agentic Browsing</b> — Ask Breeze to open sites, search the web, read the current page, click, type, and set reminders — it drives the browser for you to finish the task.',
+        '<b>Friendly Key Prompts</b> — Use an AI feature without a key and Breeze points you to Settings to add one. No key, no surprise charges.',
+        '<b>Your Key Stays Yours</b> — Stored in the macOS Keychain and sent only to OpenAI. Breeze never asks for your keychain password just to open Settings.' ] },
       { v: '3.6.1', icon: 'bot', title: 'Llama-Only Local AI Selection', major: true, items: [
         '<b>Stopped Reusing Old Qwen Files</b> — Breeze now only reuses Llama model files from Application Support, so an old Qwen gguf can no longer get picked up by accident.',
         '<b>Consistent Llama Copy</b> — The assistant and settings now consistently refer to the local Llama 3.1 8B model, which matches what Breeze actually runs.' ] },

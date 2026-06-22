@@ -152,5 +152,6 @@ alone. Written 2026-06-21.
 Follow `CLAUDE.md` → "Releasing a new native version": bump `native/build.sh`
 (CFBundleVersion + CFBundleShortVersionString), add a `ui/updates.html` RELEASES entry,
 `./build.sh`, build the DMG + the **auto-update .zip**, `gh release create vX.Y.Z
---target native-swift-browser --latest=false` with BOTH assets, then update the lander.
-Keep v3.x **not** "latest". Test the build locally before releasing.
+--target native-swift-browser --latest` with BOTH assets, then update the lander.
+Native 3.x is the only product and every release is GitHub latest. Test the build
+locally before releasing.

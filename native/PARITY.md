@@ -1,4 +1,7 @@
-# Breeze native — parity audit vs Electron
+# Breeze native — historical parity audit vs Electron
+
+> Historical planning snapshot only. Do not use this file for current build,
+> release, or AI architecture decisions; follow `AGENTS.md` and `CLAUDE.md`.
 
 Legend: ✅ done · 🟡 partial · ❌ missing
 

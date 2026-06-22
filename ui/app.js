@@ -58,41 +58,11 @@ breeze.getInit().then(({ theme, sidebarVisible, settings }) => {
   setSidebarVisible(sidebarVisible);
   if (settings) applySettings(settings);
   if (settings && !settings.onboarded) startOnboarding();
-  // Onboarded already? Offer the AI model picker if they haven't chosen one yet.
-  // (New users get it right after onboarding finishes instead.)
-  else setTimeout(maybePromptModel, 800);
 });
 
 // ---------------------------------------------------------------------------
 // First-run onboarding
 // ---------------------------------------------------------------------------
-
-// Offer the AI model picker (once) after the welcome/update screen is dismissed,
-// with the device-based recommendation badged. Picking downloads that model.
-async function maybePromptModel() {
-  let info;
-  try { info = await breeze.getModelInfo(); } catch { return; }
-  if (!info || info.chosen) return;
-  const modal = $('#model-modal');
-  if (!modal) return;
-  modal.querySelectorAll('.model-opt').forEach((opt) => {
-    const isRec = opt.dataset.tier === info.recommended;
-    opt.querySelector('.model-opt-badge').hidden = !isRec;
-    opt.classList.toggle('recommended', isRec);
-  });
-  breeze.onboardingActive(true); // detach page views so the modal is visible
-  modal.classList.remove('hidden');
-  requestAnimationFrame(() => modal.classList.add('visible'));
-  const choose = (tier) => {
-    breeze.setAIModel(tier);
-    breeze.onboardingActive(false); // re-attach page view(s)
-    modal.classList.remove('visible');
-    setTimeout(() => modal.classList.add('hidden'), 450);
-  };
-  modal.querySelectorAll('.model-opt').forEach((opt) =>
-    opt.addEventListener('click', () => choose(opt.dataset.tier), { once: true })
-  );
-}
 
 function startOnboarding() {
   const ob = $('#onboard');
@@ -137,7 +107,6 @@ function startOnboarding() {
     breeze.onboardingActive(false); // re-attach the page view
     ob.classList.remove('visible');
     setTimeout(() => ob.classList.add('hidden'), 450);
-    setTimeout(maybePromptModel, 500); // then offer the model picker
   }
 }
 
@@ -1409,7 +1378,7 @@ breeze.onAIStatus((s) => {
         sendAI();
         break;
       }
-      aiStatusbar.textContent = 'Llama3.1 · local · private';
+      aiStatusbar.textContent = 'Breeze AI · GPT-5.4-mini';
       break;
     case 'error':
       aiStatusbar.textContent = `Error: ${s.message}`;

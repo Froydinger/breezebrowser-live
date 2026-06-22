@@ -38,8 +38,10 @@ final class Store {
         "restoreTabs": false,
         "webNotifications": true,
         "tabSleepHours": 1,
-        "aiModel": "",
         "aiInstructions": "",
+        // Non-secret mirror of "is an OpenAI key in the keychain". Lets the UI show
+        // readiness without reading the keychain (which would prompt for a password).
+        "aiKeyConnected": false,
         "lastSeenVersion": "",
         "permissions": [String: Any](),
         "reminders": [Any]()
@@ -88,6 +90,7 @@ final class Store {
         if let key = settings["openaiKey"] as? String, !key.isEmpty {
             Keychain.set("openaiKey", key)
             settings.removeValue(forKey: "openaiKey")
+            settings["aiKeyConnected"] = true   // we already hold the key here — set the flag without a keychain read
             saveSettings()
         }
     }

@@ -88,9 +88,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var sidebarTopC: NSLayoutConstraint!
     var webContainerTopC: NSLayoutConstraint!
     var pinsTopC: NSLayoutConstraint!
-    lazy var llm = LocalLLM(tools: self)     // local Llama 3.1 via llama-server (preferred default)
-    private var fmAny: Any?                   // FoundationAI (Apple Intelligence, fallback)
-    var useFM = false
+    lazy var llm = OpenAILLM(tools: self)    // the only AI backend: OpenAI gpt-5.4-mini via the user's own key (BYOK)
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     let remindersView = RemindersView()
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
@@ -238,8 +236,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
         assistant.onToggleFullscreen = { [weak self] in self?.toggleAssistantFullscreen() }
         assistant.onAttach = { [weak self] in self?.aiAttachImage() }
-        // Prefer Llama-3.1-8B local model.
-        useFM = false
         remindersView.onCancelReminder = { [weak self] id in
             self?.deleteReminderById(id)
         }
@@ -562,7 +558,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func showActive() {
         // Detach assistant from webContainer before clearing (it's a shared instance)
-        if assistant.superview == webContainer { assistant.removeFromSuperview() }
+        let assistantWasInChatTab = assistant.superview == webContainer
+        if assistantWasInChatTab {
+            // Keep its fullscreen-width children from drawing past the right edge
+            // while the panel is moved back under the root view.
+            assistant.isHidden = true
+            assistant.removeFromSuperview()
+        }
         webContainer.subviews.forEach { $0.removeFromSuperview() }
         splitLeftWidthC = nil
         guard let t = current else { return }
@@ -610,7 +612,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         // If assistant was in a chat tab, re-attach it to root and restore sidebar constraints
         if assistant.superview == nil || assistant.superview == webContainer {
-            let wasInChatTab = (assistant.superview == webContainer)
             assistant.removeFromSuperview()
             root.addSubview(assistant)
             assistantLeadingC.isActive = true
@@ -619,7 +620,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistantBottomC.isActive = true
             let w = ASSISTANT_W
             assistantWidthC.constant = w
-            if wasInChatTab {
+            if assistantWasInChatTab {
                 // Leaving a fullscreen chat tab: COLLAPSE the docked panel instead of
                 // force-opening it as a clipped right-side strip (the bug). The chat
                 // stays in its own chat tab (still in the tab list); the user re-opens
@@ -636,6 +637,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 assistant.isHidden = true // Hide instantly!
             } else {
                 assistantLeadingC.constant = assistantOpen ? -w : 0
+                assistant.isHidden = !assistantOpen
             }
         }
 
@@ -1391,17 +1393,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         scheduleReflow()
     }
 
-    /// Set the chat input's enabled state + status based on the active backend.
+    /// Set the chat input's enabled state + status based on whether a key is set.
+    /// Uses the cached `aiKeyConnected` flag — never the keychain — so opening the
+    /// assistant doesn't trigger a macOS keychain password prompt.
     func prepareAIStatus() {
-        if useFM {
+        if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("Apple Intelligence — on-device. Ask anything, or summarize this page.")
-        } else if llm.ready {
-            assistant.setInputEnabled(true)
-            assistant.setModelStatus("On-device model ready (Llama 3.1 8B). Ask anything, or summarize this page.")
+            assistant.setModelStatus("Breeze AI · GPT-5.4-mini. Ask anything, or summarize this page.")
         } else {
-            assistant.setInputEnabled(true, placeholder: "Ask anything (will download Llama 3.1 8B)…")
-            assistant.setModelStatus("Breeze AI runs locally. Type a message below to start downloading Llama 3.1 8B (~4.8 GB).")
+            assistant.setInputEnabled(true, placeholder: "Add your OpenAI key in Settings to start…")
+            assistant.setModelStatus("Breeze AI needs your OpenAI API key. Add it in Settings → Breeze AI (there's a link to create one).")
         }
     }
 
@@ -1409,8 +1410,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.startNewChat()
         aiExtras.removeAll { $0.imageText != nil }   // drop attachments; keep nothing stale
         updateAIContextPills()
-        if useFM, #available(macOS 26.0, *) { fmAny = FoundationAI(tools: self) }
-        else { llm.resetChat() }
+        llm.resetChat()
     }
 
     /// Open or switch to the dedicated chat tab.
@@ -1451,16 +1451,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func sendToAI(_ text: String) {
-        if text.contains("Download Llama 3.1 8B") {
-            useFM = false
+        // No key yet → warn the user and point them to Settings instead of firing a
+        // doomed request. Uses the cached flag, so this never reads the keychain.
+        if !llm.ready {
+            assistant.addUser(text)
+            assistant.addAI("Breeze AI runs on your own OpenAI key. Add your API key in **Settings → Breeze AI** to start — there's a link there to create one at platform.openai.com.", chips: [])
             prepareAIStatus()
             return
         }
-        ailog("sendToAI (\(useFM ? "FM" : "Llama")): \(text)")
+        ailog("sendToAI (gpt-5.4-mini): \(text)")
         assistant.addUser(text)
-        let preparing = !useFM && !llm.ready
-        assistant.setInputEnabled(false, placeholder: preparing ? "Preparing model…" : "Thinking…")
-        assistant.setStatus(preparing ? "Preparing the model, then sending…" : "Thinking…")
+        assistant.setInputEnabled(false, placeholder: "Thinking…")
+        assistant.setStatus("Thinking…")
         showRainbowGlow()
 
         Task { [weak self] in
@@ -1483,11 +1485,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
             }
-            if self.useFM, #available(macOS 26.0, *), let fm = self.fmAny as? FoundationAI {
-                fm.send(text, history: history, contexts: contexts, completion: done)
-            } else {
-                self.llm.send(text, history: history, contexts: contexts, completion: done)
-            }
+            self.llm.send(text, history: history, contexts: contexts, completion: done)
         }
     }
 
@@ -2454,8 +2452,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = effectiveTheme()
         var settings = Store.shared.settings
         settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
-        settings["llamaReady"] = llm.ready
-        settings["llamaStatus"] = llm.lastStatus
+        // Note: deliberately NOT reading the keychain here. Whether a key exists is
+        // mirrored in the non-secret `aiKeyConnected` flag (already in settings), so
+        // injecting bridge state never triggers a keychain password prompt.
         let settingsJSON = Store.json(settings)
         let onText = onAccentTextHex()
         return """
@@ -2465,7 +2464,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if (window.__bzOnSettings) window.__bzOnSettings(window.__bzSettings);
         (function(){var s=document.getElementById('bz-accent-fix')||document.createElement('style');
           s.id='bz-accent-fix';
-          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#downloadLlamaBtn{color:\(onText) !important;}';
+          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#openaiSaveBtn{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
         """
     }
@@ -2506,9 +2505,19 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "setSecret":
             if let key = args["key"] as? String, let val = args["value"] as? String {
                 Keychain.set(key, val)
+                // Mirror key presence in a non-secret flag so status/readiness can be
+                // shown without ever reading the keychain (avoids password prompts).
+                if key == "openaiKey" {
+                    Store.shared.settings["aiKeyConnected"] = !val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    Store.shared.saveSettings()
+                    prepareAIStatus()
+                }
                 applySettingsChange()
             }
         case "hasSecret":
+            // The ONLY keychain read on the settings path. Settings.js calls this
+            // only when the user explicitly opens the OpenAI key section, so the
+            // macOS password prompt can't fire just from opening Settings.
             if let key = args["key"] as? String {
                 let has = !Keychain.get(key).isEmpty
                 resolve(has ? "true" : "false")
@@ -2516,7 +2525,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "deleteSecret":
             if let key = args["key"] as? String {
                 Keychain.delete(key)
+                if key == "openaiKey" {
+                    Store.shared.settings["aiKeyConnected"] = false
+                    Store.shared.saveSettings()
+                    prepareAIStatus()
+                }
                 applySettingsChange()
+            }
+        case "openExternal":
+            if let s = args["url"] as? String, let url = URL(string: s),
+               url.scheme == "https" || url.scheme == "http" {
+                NSWorkspace.shared.open(url)
             }
         case "getHistory":
             resolve(Store.json(Store.shared.history))
@@ -2569,25 +2588,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 sendToAI(text)
             }
         case "aiReady":
-            let ready = useFM || llm.ready
-            resolve(ready ? "true" : "false")
-        case "llamaReady":
+            // Reflects the cached flag, not the keychain — no password prompt.
             resolve(llm.ready ? "true" : "false")
-        case "downloadLlama":
-            useFM = false
-            llm.ensure { [weak self] _ in
-                self?.prepareAIStatus()
-            }
-        case "redownloadLlama":
-            let alert = NSAlert()
-            alert.messageText = "Redownload Llama 3.1 8B?"
-            alert.informativeText = "This deletes the current on-device model and downloads it again (~4.8 GB). Use it if the model seems broken or you want a clean reinstall."
-            alert.addButton(withTitle: "Redownload")
-            alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { break }
-            useFM = false
-            llm.redownload { [weak self] _ in self?.prepareAIStatus() }
-            broadcastToInternalPages()
         case "clearBrowsingData":
             clearCache(); resolve("{}")
         case "resetBrowser":

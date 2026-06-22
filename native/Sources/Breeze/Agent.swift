@@ -1,10 +1,20 @@
-// Shared agentic loop for both AI backends (Apple Foundation Models + Llama).
+// Agentic loop for the Breeze AI backend (OpenAI gpt-5.4-mini, BYOK).
 // The model drives the browser through a tiny text protocol: it replies with a
 // single ACTION line (OPEN/SEARCH/READ/REMIND), we run it against BrowserAITools,
 // feed the result back, and loop until the model gives a plain-language answer.
-// This is the native equivalent of the Electron function-calling build.
+// Backend-agnostic: it only needs `ask`/`askFresh` closures.
 
 import Foundation
+
+/// Browser capabilities the model can call on the main actor.
+protocol BrowserAITools: AnyObject {
+    @MainActor func aiOpenURL(_ url: String) async -> String
+    @MainActor func aiReadCurrentPage() async -> String
+    @MainActor func aiSearchWeb(_ query: String) async -> String
+    @MainActor func aiSetReminder(_ text: String, minutes: Int) async -> String
+    @MainActor func aiClick(_ target: String) async -> String
+    @MainActor func aiType(_ target: String, text: String) async -> String
+}
 
 enum AgentAction {
     case open(String)          // navigate the browser to a site
@@ -16,7 +26,7 @@ enum AgentAction {
 }
 
 enum Agent {
-    /// System prompt shared by both backends. Strong, explicit, anti-refusal.
+    /// Strong, explicit, anti-refusal system prompt for the agentic browser model.
     static func systemPrompt(extra: String = "") -> String {
         let df = DateFormatter(); df.dateStyle = .full; df.timeStyle = .short
         let custom = extra.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -34,8 +44,9 @@ enum Agent {
         }
 
         return """
-        You are Breeze, the AI assistant built into the Breeze web browser. You run \
-        privately on the user's Mac. Right now it is \(df.string(from: Date())).
+        You are Breeze, the AI assistant built into the Breeze web browser. You can \
+        see and control the user's browser to get things done for them. Right now it \
+        is \(df.string(from: Date())).
 
         YOUR DEFAULT BEHAVIOR IS TO ANSWER DIRECTLY. Most questions do not need a web \
         search. You are a knowledgeable AI — just answer the user.
@@ -101,7 +112,7 @@ enum Agent {
         • DO NOT just say "I opened it for you" or "Done." when you finish. Summarize exactly what is visible on the page (from the page text and elements), explain where you stopped, what the current state is, and how it answers the user's request.
         • You can perform MULTIPLE steps (up to 8 actions). If a search or page does not give you enough information, do not give up — search again with a better query, search alternative terms, or use OPEN: <url> to visit a specific link from the results to get more details.
         • When asked to write a post, comment, or interact with text fields, use the interactive element IDs to find the input/textarea (e.g. searching for text like "What's on your mind", "Add a comment", or CSS selectors) and enter the text. If you cannot find the element or if the page requires you to be logged in to comment/post, explain that to the user.
-        • You have access to a Plan Mode: since you run locally with no API limits, for complex tasks (e.g. "do some research, write a blog post, then create a new post on my wordpress site that is logged in"), formulate a multi-step plan, navigate, and perform sequential form fills, button clicks, and search queries across websites to complete the task.
+        • You can plan and chain steps: for complex tasks (e.g. "do some research, write a blog post, then create a new post on my wordpress site that is logged in"), formulate a multi-step plan, navigate, and perform sequential form fills, button clicks, and search queries across websites to complete the task.
         • You are aware of the user's active reminders. You can read, inspect, or suggest new reminders based on this state.
         • NEVER invent facts, URLs, prices, or sources. SEARCH if truly unsure.
         • Don't describe your own model, architecture, or training.
@@ -211,9 +222,9 @@ enum Agent {
         // the user's goal mid-task and just describes the page instead of finishing it
         // (e.g. it found the first result but never clicked it).
         let goal = "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
-        // Tool output is trimmed so the small on-device context window doesn't overflow.
-        // Smaller = far less prompt to re-process every step, so the local model stays
-        // snappy across a multi-step task (most pages answer fine from the first ~4k chars).
+        // Tool output is trimmed to keep each step's prompt lean — faster, cheaper, and
+        // safely under the context limit across a multi-step task (most pages answer
+        // fine from the first ~4k chars).
         func cap(_ s: String, _ n: Int = 4000) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
         // Anti-loop guard: a common small-model failure is repeating the exact same
         // action (re-READ / re-CLICK the same thing) without making progress. We track

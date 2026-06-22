@@ -194,10 +194,10 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let logo = NSImageView(); logo.image = breezeLogo()
         logo.imageScaling = .scaleProportionallyDown
         logo.translatesAutoresizingMaskIntoConstraints = false
-        let h = NSTextField(labelWithString: "Private intelligence")
+        let h = NSTextField(labelWithString: "Breeze AI")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
         h.translatesAutoresizingMaskIntoConstraints = false
-        let p = NSTextField(labelWithString: "Runs on your Mac.\nReads pages, searches the web — all on-device.")
+        let p = NSTextField(labelWithString: "Powered by GPT-5.4-mini.\nReads pages, searches the web, and acts for you.")
         p.font = .systemFont(ofSize: 12.5); p.alignment = .center; p.maximumNumberOfLines = 3
         p.textColor = Theme.shared.palette.textSoft
         p.translatesAutoresizingMaskIntoConstraints = false
