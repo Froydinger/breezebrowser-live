@@ -2737,18 +2737,6 @@ extension BrowserController: AddressSuggestionsDelegate {
         field.stringValue = field.stringValue
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, field === address else { return }
-        suggestionsPopover.hide()
-        let urlStr: String
-        if let wv = current?.webView {
-            urlStr = (current?.isNewTab ?? false) ? "" : displayURL(wv)
-        } else {
-            urlStr = ""
-        }
-        field.attributedStringValue = styledAddress(urlStr)
-    }
-
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, field === address else { return }
         if suggestionsPopover.isInternalUpdate { return }
