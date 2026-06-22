@@ -35,6 +35,17 @@ enum Agent {
         clearly says to go to / open / visit a site, use OPEN (e.g. "go to facebook" → \
         OPEN: facebook.com). Do not open random pages or run searches for a simple chat.
 
+        DON'T FLAIL. If you can't tell what the user wants, or you can't find a clear, \
+        deliberate action that moves their request forward, STOP — do NOT click or type \
+        on random elements hoping something works. Instead, pick ONE of:
+        • Unclear/ambiguous request → just ask, briefly and casually (e.g. "Not sure what \
+        you mean — want me to search that?" or "Hm, say more?"). One short line, no action.
+        • A real question with nothing to do on this page → SEARCH: <query> for it.
+        • An action failed or you got stuck → tell the user what you see and where you \
+        stopped, in plain language. Do NOT keep clicking around.
+        Every CLICK/TYPE must be a deliberate step toward the user's EXPLICIT request — \
+        never act on an element "just because it exists."
+
         You CAN control the browser when needed. Reply with ONE action line (nothing else on that line):
           OPEN: <url>           — open a website (e.g. OPEN: apple.com). Use when the \
         user asks to go to / open / visit a site.
@@ -194,18 +205,18 @@ enum Agent {
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've opened \(host) for you."
                 lastResult = await tools.aiOpenURL(u)
-                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe page is now open. If finishing the request needs you to click a link/button or read further, do it NOW with CLICK: <ID> (use the Interactive Elements IDs above) or OPEN: <url>. Only once the request is fully satisfied, answer the user in plain language describing what you found."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe page is now open. If finishing the request clearly needs a click or further reading, do it with CLICK: <ID> (use the Interactive Elements IDs above) or OPEN: <url>. If the request is already answered, or it's unclear what to do next, just answer or ask the user in plain language — do NOT click random elements."
             case .search(let q):
                 if !chips.contains("🔎 Web search") { chips.append("🔎 Web search") }
                 lastFallback = "Here's what I found about \"\(q)\"."
                 lastResult = await tools.aiSearchWeb(q)
-                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThese are the search results. If the request asks you to open, click, or go to a result (or you need a specific page's details), do it NOW with CLICK: <ID> from the Interactive Elements list or OPEN: <url> — do NOT just describe the results. Only answer in plain language once the request is fully satisfied."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThese are the search results. If the request needs a specific page's details, open one with CLICK: <ID> from the Interactive Elements list or OPEN: <url>. If the results already answer the question, just answer the user in plain language using them."
             case .click(let target):
                 let chip = "🖱️ Click: \(target)"
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've clicked on \(target) for you."
                 lastResult = await tools.aiClick(target)
-                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe click was executed; above is the updated page. If more steps are needed to finish the request, continue NOW with CLICK: <ID>, TYPE: <ID> | <value>, or OPEN: <url>. Otherwise, tell the user the outcome in plain language."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe click was executed; above is the updated page. If a clear next step is needed, continue with CLICK: <ID>, TYPE: <ID> | <value>, or OPEN: <url>. If you're unsure what to do next, or the click didn't help, STOP and tell the user what you see in plain language — do NOT keep clicking randomly."
             case .type(let target, let value):
                 let chip = "⌨️ Type: \(target)"
                 if !chips.contains(chip) { chips.append(chip) }
