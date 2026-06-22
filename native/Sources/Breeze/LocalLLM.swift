@@ -206,7 +206,21 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 120
-        let body: [String: Any] = ["model": "qwen", "messages": history, "temperature": 0.5, "stream": false]
+        // Qwen3 is a hybrid REASONING model: by default it emits a long hidden
+        // <think> block before every answer (~90 wasted tokens even for "hey").
+        // llama-server splits that into `reasoning_content`, so the reply *looks*
+        // clean but you still wait for all the thinking — this was the 10-second
+        // "hi" / slow-agent bug. Appending `/no_think` to the latest user turn
+        // (most-recent instruction wins in Qwen3) keeps it in fast non-thinking
+        // mode. Verified: "hey" drops from 113 generated tokens to 16.
+        var messages = history
+        if let i = messages.lastIndex(where: { $0["role"] == "user" }) {
+            let c = messages[i]["content"] ?? ""
+            if !c.contains("/no_think") { messages[i]["content"] = c + " /no_think" }
+        }
+        let body: [String: Any] = ["model": "qwen", "messages": messages,
+                                   "temperature": 0.5, "stream": false,
+                                   "cache_prompt": true, "n_predict": 1024]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, _) = try await URLSession.shared.data(for: req)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],

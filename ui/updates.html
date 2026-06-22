@@ -148,6 +148,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.4', icon: 'zap', title: 'The Real Speed Fix — Local AI No Longer Overthinks', major: true, items: [
+        '<b>Qwen Stops Overthinking Every Reply</b> — The local Qwen model is a "reasoning" model that secretly wrote a long internal monologue before <i>every</i> answer — even "hey" generated ~113 tokens, ~90 of them hidden thinking, which is why replies took ~10 seconds. Breeze now runs it in fast direct-answer mode, cutting that to ~16 tokens. Chat and agentic steps are dramatically faster.',
+        '<b>Snappier Throughout</b> — Combined with capped generation length and prompt caching, every message and every browser action the AI takes now returns much sooner.' ] },
       { v: '3.5.3', icon: 'zap', title: 'Instant AI Replies (No More 10-Second "Hi")', major: true, items: [
         '<b>Way Faster AI With a Page Open</b> — Every message used to deep-scan the entire page (every button, link, and element) before the AI could respond, so even saying "hi" took ~10 seconds on a heavy page like YouTube. Breeze now grabs just the page title and text for context, and only does the full scan when the AI actually needs to click or type. Quick replies are quick again.' ] },
       { v: '3.5.2', icon: 'bot', title: 'Breeze AI Reads the Page You\'re On', major: true, items: [
