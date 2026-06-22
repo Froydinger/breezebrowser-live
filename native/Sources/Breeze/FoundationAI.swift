@@ -64,6 +64,10 @@ final class FoundationAI {
             do {
                 let (answer, chips) = try await Agent.run(
                     userText: promptText, contexts: contexts, tools: tools,
+                    // Apple's on-device model has a small (~4k) context window, so
+                    // trim page text hard — enough to answer "what is this about"
+                    // without overflowing on the first turn.
+                    contextBudget: 3000,
                     ask: { msg in try await self.session.respond(to: msg).content },
                     askFresh: { msg in
                         self.session = LanguageModelSession(instructions: Agent.systemPrompt(extra: Store.shared.string("aiInstructions")))

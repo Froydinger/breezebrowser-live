@@ -43,8 +43,11 @@ enum Agent {
         CHAT FIRST. Greetings, small talk, opinions, jokes, and general/coding/math \
         questions get a plain conversational reply with NO action line. Only reach for a \
         tool when the user clearly needs it. NEVER narrate, summarize, or act on the \
-        current page or open tabs unless the user's message is explicitly about them \
-        ("this page", "this tab", "summarize this", "what does it say"). When the user \
+        current page or open tabs unless the user's message is about them — but when it \
+        IS (e.g. "this page", "this tab", "this video", "this article", "summarize this", \
+        "what is this about", "what does it say", "who is in this"), answer directly from \
+        the current-page text provided below; do NOT ask which page they mean — you are \
+        given it. When the user \
         clearly says to go to / open / visit a site, use OPEN (e.g. "go to facebook" → \
         OPEN: facebook.com). Do not open random pages or run searches for a simple chat.
 
@@ -175,15 +178,33 @@ enum Agent {
     /// self-contained prompt — used to recover from a context-window overflow so
     /// the assistant never hard-fails. Returns the final answer + tool chips.
     static func run(userText: String, contexts: [AIContext], tools: any BrowserAITools,
-                    maxSteps: Int = 8,
+                    maxSteps: Int = 8, contextBudget: Int = 8000,
                     ask: (String) async throws -> String,
                     askFresh: (String) async throws -> String) async throws -> (answer: String, chips: [String]) {
-        var ctx = ""
-        for c in contexts { ctx += "[\(c.label)]\n\(String(c.text.prefix(8000)))\n\n" }
-        var prompt = (ctx.isEmpty ? "" : "(Reference only — do NOT mention or act on these unless the user's message is about them.)\nOpen tabs:\n\(ctx)\n") + "User: \(userText)"
+        // The page the user is actively viewing is presented FIRST and labelled as
+        // such, so "what is this about / this page / this video" resolves to it.
+        // Everything else (history, bookmarks, other tabs) is reference-only.
+        var currentCtx = ""
+        var refCtx = ""
+        for c in contexts {
+            let block = "[\(c.label)]\n\(String(c.text.prefix(contextBudget)))\n\n"
+            if c.isCurrent { currentCtx += block } else { refCtx += block }
+        }
+        var prompt = ""
+        if !currentCtx.isEmpty {
+            prompt += "The page the user is currently looking at — this is what they mean by \"this page\", \"this video\", \"this article\", \"this\", or \"what is this about\". Answer from it directly:\n\(currentCtx)"
+        }
+        if !refCtx.isEmpty {
+            prompt += "(Reference only — do NOT mention or act on these unless the user's message is about them.)\nOther open tabs / recent history / bookmarks:\n\(refCtx)\n"
+        }
+        prompt += "User: \(userText)"
         var chips: [String] = []
         var lastFallback = "Done."
-        var lastResult = ""            // most relevant info gathered, for overflow recovery
+        // Most relevant info gathered, for overflow recovery. Seed it with the page
+        // the user is viewing so that if the very first turn overflows the model's
+        // context, the recovery window can still answer about the current page
+        // instead of replying blind ("not sure which video you mean").
+        var lastResult = currentCtx
         // Restated on every continuation step. The FM backend uses a fresh session per
         // message and a tiny context window, so without this the model loses sight of
         // the user's goal mid-task and just describes the page instead of finishing it

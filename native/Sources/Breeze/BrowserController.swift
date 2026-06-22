@@ -1678,7 +1678,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @MainActor func gatherContexts() async -> [AIContext] {
         var out: [AIContext] = []
         if let t = current, !t.isNewTab, !t.isChatTab {
-            out.append(AIContext(label: ctxLabel(t), text: await readText(of: t)))
+            out.append(AIContext(label: ctxLabel(t), text: await readText(of: t), isCurrent: true))
         }
         for e in aiExtras {
             if let t = e.tab, tabs.contains(where: { $0.id == t.id }), t.id != current?.id {

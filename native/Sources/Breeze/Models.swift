@@ -148,7 +148,10 @@ struct Pin {
 }
 
 /// A page's text given to the assistant as context (current tab + @-added tabs).
-struct AIContext { let label: String; let text: String }
+/// `isCurrent` marks the tab the user is actively viewing — it's surfaced to the
+/// model as "the page you're looking at" (the referent of "this page/video/article"),
+/// distinct from reference-only context like history, bookmarks, and other tabs.
+struct AIContext { let label: String; let text: String; var isCurrent: Bool = false }
 
 /// An extra context the user added: another open tab, or an attached image
 /// (already described on-device by Vision).

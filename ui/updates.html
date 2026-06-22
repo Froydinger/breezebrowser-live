@@ -148,6 +148,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.2', icon: 'bot', title: 'Breeze AI Reads the Page You\'re On', major: true, items: [
+        '<b>"What is this about?" Just Works</b> — Ask Breeze AI about the page, video, or article you\'re viewing and it answers from that page instead of asking which one you mean. The page you\'re actively looking at is now handed to the model as <i>the</i> current page, separate from your other tabs and history.',
+        '<b>No More Blank Answers on Apple Intelligence</b> — On the small on-device model, a long page could overflow the context window and make the AI reply with nothing useful. We now trim page text to fit and seed the answer with the current page, so it stays on-topic.' ] },
       { v: '3.5.1', icon: 'zap', title: 'Fullscreen Video Fix, Real Downloads & Snappy Local AI', major: true, items: [
         '<b>Fullscreen Video No Longer Goes Black</b> — Fullscreen on YouTube, Netflix, and other players now plays correctly. The rounded web-area corners were clipping the hardware video overlay to black in fullscreen; we now flatten them while a video is fullscreen and restore them on exit.',
         '<b>Downloads That Actually Save</b> — "Download" buttons now save files. We now honor the standard download links (including blob: and data: URLs), so generated files (like mockups from shots.so), images, PDFs, and archives land in your Downloads folder instead of silently doing nothing.',
