@@ -97,6 +97,8 @@ let breezeBridgeJS = """
     askAI: function (text) { send('askAI', { text: text }); },
     aiReady: function () { return call('aiReady'); },
     onAIReady: function () {},
+    qwenReady: function () { return call('qwenReady'); },
+    downloadQwen: function () { send('downloadQwen'); },
     getModelInfo: function () { return Promise.resolve({}); },
     setAIModel: function (tier) { send('setAIModel', { tier: tier }); },
     onFocusInput: function () {},

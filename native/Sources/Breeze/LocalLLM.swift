@@ -17,6 +17,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     private let remote = URL(string: "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf")!
     private var server: Process?
     private(set) var ready = false
+    var lastStatus = "Breeze AI runs locally. Download Qwen 8B to start."
     private var starting = false
     private var history: [[String: String]] = []
     private var downloadDone: ((Bool) -> Void)?
@@ -61,6 +62,16 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
             download { ok in ok ? self.launch { self.finish($0) } : self.finish(false) }
         }
     }
+    private func setStatus(_ s: String) {
+        lastStatus = s
+        if Thread.isMainThread {
+            self.onStatus?(s)
+        } else {
+            DispatchQueue.main.async {
+                self.onStatus?(s)
+            }
+        }
+    }
     private func finish(_ ok: Bool) {
         working = false
         let cbs = pending; pending = []
@@ -68,7 +79,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     }
 
     private func download(_ done: @escaping (Bool) -> Void) {
-        onStatus?("Downloading Qwen 8B (~4.7 GB)… 0%")
+        setStatus("Downloading Qwen 8B (~4.7 GB)… 0%")
         downloadDone = done
         let cfg = URLSessionConfiguration.default
         let session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
@@ -79,7 +90,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite total: Int64) {
         guard total > 0 else { return }
         let pct = Int(Double(totalBytesWritten) / Double(total) * 100)
-        DispatchQueue.main.async { self.onStatus?("Downloading Qwen 8B (~4.7 GB)… \(pct)%") }
+        self.setStatus("Downloading Qwen 8B (~4.7 GB)… \(pct)%")
     }
     func urlSession(_ s: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
@@ -87,37 +98,61 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
             try FileManager.default.moveItem(at: location, to: modelURL)
             DispatchQueue.main.async { self.downloadDone?(true); self.downloadDone = nil }
         } catch {
-            DispatchQueue.main.async { self.onStatus?("Download failed: \(error.localizedDescription)"); self.downloadDone?(false); self.downloadDone = nil }
+            self.setStatus("Download failed: \(error.localizedDescription)")
+            self.downloadDone?(false)
+            self.downloadDone = nil
         }
     }
     func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error { DispatchQueue.main.async { self.onStatus?("Download failed: \(error.localizedDescription)"); self.downloadDone?(false); self.downloadDone = nil } }
+        if let error {
+            self.setStatus("Download failed: \(error.localizedDescription)")
+            self.downloadDone?(false)
+            self.downloadDone = nil
+        }
     }
 
     private func launch(_ done: @escaping (Bool) -> Void) {
         if ready { done(true); return }
         if starting { pollHealth(done); return }
         guard let bin = llamaServerPath() else {
-            onStatus?("llama-server not found. Install with: brew install llama.cpp"); done(false); return
+            setStatus("llama-server not found. Install with: brew install llama.cpp")
+            done(false)
+            return
         }
         starting = true
-        onStatus?("Starting local model…")
+        setStatus("Starting local model…")
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = ["-m", modelURL.path, "--host", "127.0.0.1", "--port", "\(port)",
                        "-c", "4096", "-ngl", "99", "--jinja"]
         p.standardOutput = nil; p.standardError = nil
-        do { try p.run(); server = p } catch { starting = false; onStatus?("Couldn't start model: \(error.localizedDescription)"); done(false); return }
+        do {
+            try p.run()
+            server = p
+        } catch {
+            starting = false
+            setStatus("Couldn't start model: \(error.localizedDescription)")
+            done(false)
+            return
+        }
         pollHealth(done)
     }
 
     private func pollHealth(_ done: @escaping (Bool) -> Void, attempt: Int = 0) {
-        if attempt > 90 { starting = false; onStatus?("Model didn't come up in time."); done(false); return }
+        if attempt > 90 {
+            starting = false
+            setStatus("Model didn't come up in time.")
+            done(false)
+            return
+        }
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/health")!)
         req.timeoutInterval = 2
         URLSession.shared.dataTask(with: req) { data, resp, _ in
             if let http = resp as? HTTPURLResponse, http.statusCode == 200 {
-                DispatchQueue.main.async { self.ready = true; self.starting = false; self.onStatus?("On-device model ready."); done(true) }
+                self.ready = true
+                self.starting = false
+                self.setStatus("On-device model ready.")
+                done(true)
             } else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.pollHealth(done, attempt: attempt + 1) }
             }

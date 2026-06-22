@@ -237,14 +237,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
         assistant.onToggleFullscreen = { [weak self] in self?.toggleAssistantFullscreen() }
         assistant.onAttach = { [weak self] in self?.aiAttachImage() }
-        // Prefer Qwen3-8B local model. If Qwen is NOT downloaded/ready, and Apple Foundation Models are available,
-        // we use Apple Intelligence as fallback until Qwen is ready.
-        if !llm.ready, #available(macOS 26.0, *), FoundationAI.available() {
-            useFM = true
-            fmAny = FoundationAI(tools: self)
-        } else {
-            useFM = false
-        }
+        // Prefer Qwen3-8B local model.
+        useFM = false
         remindersView.onCancelReminder = { [weak self] id in
             self?.deleteReminderById(id)
         }
@@ -946,7 +940,23 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let t = Tab(isPrivate: p); t.isNewTab = false
         wire(t)
         tabs.append(t); active = tabs.count - 1
-        if let u = URL(string: url) { t.webView.load(URLRequest(url: u)) }
+        
+        var targetURL: URL?
+        if url.hasPrefix("file://") {
+            let path = String(url.dropFirst(7)).removingPercentEncoding ?? String(url.dropFirst(7))
+            targetURL = URL(fileURLWithPath: path)
+        } else if url.hasPrefix("/") {
+            targetURL = URL(fileURLWithPath: url)
+        } else if let u = URL(string: url) {
+            targetURL = u
+        } else if let escaped = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            targetURL = URL(string: escaped)
+        }
+        
+        if let u = targetURL {
+            t.webView.load(URLRequest(url: u))
+        }
+        
         showActive(); refreshSidebar()
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
@@ -1351,19 +1361,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.setInputEnabled(true)
             assistant.setModelStatus("On-device model ready (Qwen 8B). Ask anything, or summarize this page.")
         } else {
-            assistant.setInputEnabled(false, placeholder: "Preparing Qwen 8B…")
-            assistant.setModelStatus("Preparing Qwen 8B — best on 16GB+ Apple Silicon…")
-            llm.ensure { [weak self] ok in
-                guard let self = self else { return }
-                if ok {
-                    self.useFM = false
-                    self.prepareAIStatus()
-                    self.assistant.focusInput()
-                } else {
-                    self.assistant.setInputEnabled(false, placeholder: "Model unavailable")
-                }
-                self.assistant.setStatus(nil)
-            }
+            assistant.setInputEnabled(true, placeholder: "Ask anything (will download Qwen 8B)…")
+            assistant.setModelStatus("Breeze AI runs locally. Type a message below to start downloading Qwen 8B (~4.7 GB).")
         }
     }
 
@@ -2246,6 +2245,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    func webView(_ w: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.allow)
+            return
+        }
+        let scheme = url.scheme?.lowercased() ?? ""
+        if !scheme.isEmpty && scheme != "http" && scheme != "https" && scheme != "file" && scheme != "about" {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     // route undisplayable responses to a download
     func webView(_ w: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
@@ -2356,6 +2370,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = effectiveTheme()
         var settings = Store.shared.settings
         settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
+        settings["qwenReady"] = llm.ready
+        settings["qwenStatus"] = llm.lastStatus
         let settingsJSON = Store.json(settings)
         let onText = onAccentTextHex()
         return """
@@ -2468,6 +2484,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "aiReady":
             let ready = useFM || llm.ready
             resolve(ready ? "true" : "false")
+        case "qwenReady":
+            resolve(llm.ready ? "true" : "false")
+        case "downloadQwen":
+            useFM = false
+            llm.ensure { [weak self] _ in
+                self?.prepareAIStatus()
+            }
         case "clearBrowsingData":
             clearCache(); resolve("{}")
         case "resetBrowser":
