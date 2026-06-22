@@ -1118,9 +1118,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func navigate(_ text: String) {
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, let t = current else { return }
+        suggestionsPopover.hide()
         if q.hasPrefix("breeze://"), let page = InternalPage(rawValue: String(q.dropFirst(9))) {
             t.isChatTab = false
-            openInternal(page); return
+            openInternal(page)
+            if let activeTab = current {
+                window.makeFirstResponder(activeTab.webView)
+            }
+            return
         }
         var s = q
         let isURL = q.contains("://") || (q.contains(".") && !q.contains(" "))
@@ -1131,7 +1136,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.isChatTab = false
         showActive()
         t.webView.load(URLRequest(url: u))
-        window.makeFirstResponder(nil)
+        window.makeFirstResponder(t.webView)
     }
 
     @objc func addressSubmit() {
@@ -2730,6 +2735,18 @@ extension BrowserController: AddressSuggestionsDelegate {
         // Edit at full opacity — drop the dimmed-slug styling while typing.
         field.textColor = Theme.shared.palette.text
         field.stringValue = field.stringValue
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === address else { return }
+        suggestionsPopover.hide()
+        let urlStr: String
+        if let wv = current?.webView {
+            urlStr = (current?.isNewTab ?? false) ? "" : displayURL(wv)
+        } else {
+            urlStr = ""
+        }
+        field.attributedStringValue = styledAddress(urlStr)
     }
 
     func controlTextDidChange(_ obj: Notification) {
