@@ -1409,7 +1409,7 @@ breeze.onAIStatus((s) => {
         sendAI();
         break;
       }
-      aiStatusbar.textContent = 'Qwen2.5 · local · private';
+      aiStatusbar.textContent = 'Llama3.1 · local · private';
       break;
     case 'error':
       aiStatusbar.textContent = `Error: ${s.message}`;

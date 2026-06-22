@@ -12,12 +12,12 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
 
     private let port = 8799
     private let modelURL: URL
-    // Qwen3 8B (Q4_K_M) — best on 16GB+ Apple Silicon. Apple FM is fallback only.
+    // Llama 3.1 8B (Q4_K_M) — best on 16GB+ Apple Silicon. Apple FM is fallback only.
     // We reuse any existing 8B gguf to avoid a re-download.
-    private let remote = URL(string: "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen_Qwen3-8B-Q4_K_M.gguf")!
+    private let remote = URL(string: "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")!
     private var server: Process?
     private(set) var ready = false
-    var lastStatus = "Breeze AI runs locally. Download Qwen 8B to start."
+    var lastStatus = "Breeze AI runs locally. Download Llama 3.1 8B to start."
     private var starting = false
     private var history: [[String: String]] = []
     private var downloadDone: ((Bool) -> Void)?
@@ -31,8 +31,8 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         // Reuse any already-downloaded 8B gguf; otherwise this is the download target.
         let existing = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil))?
             .first { let n = $0.lastPathComponent.lowercased()
-                     return n.hasSuffix(".gguf") && n.contains("8b") && n.contains("qwen") }
-        modelURL = existing ?? base.appendingPathComponent("qwen3-8b-q4_k_m.gguf")
+                     return n.hasSuffix(".gguf") && n.contains("8b") && (n.contains("llama") || n.contains("qwen")) }
+        modelURL = existing ?? base.appendingPathComponent("meta-llama-3.1-8b-instruct-q4_k_m.gguf")
         super.init()
         browser = tools
         resetChat()
@@ -79,7 +79,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     }
 
     private func download(_ done: @escaping (Bool) -> Void) {
-        setStatus("Downloading Qwen 8B (~4.7 GB)… 0%")
+        setStatus("Downloading Llama 3.1 8B (~4.8 GB)… 0%")
         downloadDone = done
         let cfg = URLSessionConfiguration.default
         let session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
@@ -90,7 +90,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite total: Int64) {
         guard total > 0 else { return }
         let pct = Int(Double(totalBytesWritten) / Double(total) * 100)
-        self.setStatus("Downloading Qwen 8B (~4.7 GB)… \(pct)%")
+        self.setStatus("Downloading Llama 3.1 8B (~4.8 GB)… \(pct)%")
     }
     func urlSession(_ s: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
@@ -206,19 +206,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 120
-        // Qwen3 is a hybrid REASONING model: by default it emits a long hidden
-        // <think> block before every answer (~90 wasted tokens even for "hey").
-        // llama-server splits that into `reasoning_content`, so the reply *looks*
-        // clean but you still wait for all the thinking — this was the 10-second
-        // "hi" / slow-agent bug. Appending `/no_think` to the latest user turn
-        // (most-recent instruction wins in Qwen3) keeps it in fast non-thinking
-        // mode. Verified: "hey" drops from 113 generated tokens to 16.
-        var messages = history
-        if let i = messages.lastIndex(where: { $0["role"] == "user" }) {
-            let c = messages[i]["content"] ?? ""
-            if !c.contains("/no_think") { messages[i]["content"] = c + " /no_think" }
-        }
-        let body: [String: Any] = ["model": "qwen", "messages": messages,
+        let body: [String: Any] = ["model": "llama-3.1-8b", "messages": history,
                                    "temperature": 0.5, "stream": false,
                                    "cache_prompt": true, "n_predict": 1024]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)

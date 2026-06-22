@@ -88,7 +88,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var sidebarTopC: NSLayoutConstraint!
     var webContainerTopC: NSLayoutConstraint!
     var pinsTopC: NSLayoutConstraint!
-    lazy var llm = LocalLLM(tools: self)     // local Qwen via llama-server (preferred default)
+    lazy var llm = LocalLLM(tools: self)     // local Llama 3.1 via llama-server (preferred default)
     private var fmAny: Any?                   // FoundationAI (Apple Intelligence, fallback)
     var useFM = false
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
@@ -220,6 +220,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         // assistant panel (right side; slides in)
         root.addSubview(assistant)
+        assistant.isHidden = true
         assistantLeadingC = assistant.leadingAnchor.constraint(equalTo: root.trailingAnchor, constant: 0)
         assistantWidthC = assistant.widthAnchor.constraint(equalToConstant: ASSISTANT_W)
         assistantTopC = assistant.topAnchor.constraint(equalTo: root.topAnchor)
@@ -237,7 +238,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
         assistant.onToggleFullscreen = { [weak self] in self?.toggleAssistantFullscreen() }
         assistant.onAttach = { [weak self] in self?.aiAttachImage() }
-        // Prefer Qwen3-8B local model.
+        // Prefer Llama-3.1-8B local model.
         useFM = false
         remindersView.onCancelReminder = { [weak self] id in
             self?.deleteReminderById(id)
@@ -595,6 +596,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             topTrailC.constant = -54
             root.layoutSubtreeIfNeeded()
             
+            assistant.isHidden = false
             assistant.setFullscreen(true, clearLights: false)
             webContainer.addSubview(assistant); assistant.pin(to: webContainer)
             assistant.focusInput()
@@ -631,6 +633,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 topTrailC.constant = -54
                 root.layoutSubtreeIfNeeded()
                 scheduleReflow()
+                assistant.isHidden = true // Hide instantly!
             } else {
                 assistantLeadingC.constant = assistantOpen ? -w : 0
             }
@@ -1364,17 +1367,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistantOpen = open
         // If assistant is currently embedded in a chat tab, don't animate the sidebar panel
         if current?.isChatTab == true && !open { return }
+        
+        if open { assistant.isHidden = false }
         assistant.setFullscreen(false, clearLights: false)
         breezeCorner.isHidden = open
         let w: CGFloat = ASSISTANT_W
-        NSAnimationContext.runAnimationGroup { ctx in
+        NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
             assistantWidthC.constant = w
             assistantLeadingC.constant = open ? -w : 0
             webTrailC.constant = open ? -(w + 6) : -6
             topTrailC.constant = open ? -(w + 12) : -54
-            root.layoutSubtreeIfNeeded()
-        }
+            self.root.layoutSubtreeIfNeeded()
+        }, completionHandler: {
+            if !open { self.assistant.isHidden = true }
+        })
         if open {
             assistant.setMode(history: false)   // always a normal chat; history is a button overlay
             updateAIContextPills()
@@ -1391,10 +1398,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.setModelStatus("Apple Intelligence — on-device. Ask anything, or summarize this page.")
         } else if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("On-device model ready (Qwen 8B). Ask anything, or summarize this page.")
+            assistant.setModelStatus("On-device model ready (Llama 3.1 8B). Ask anything, or summarize this page.")
         } else {
-            assistant.setInputEnabled(true, placeholder: "Ask anything (will download Qwen 8B)…")
-            assistant.setModelStatus("Breeze AI runs locally. Type a message below to start downloading Qwen 8B (~4.7 GB).")
+            assistant.setInputEnabled(true, placeholder: "Ask anything (will download Llama 3.1 8B)…")
+            assistant.setModelStatus("Breeze AI runs locally. Type a message below to start downloading Llama 3.1 8B (~4.8 GB).")
         }
     }
 
@@ -1444,12 +1451,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func sendToAI(_ text: String) {
-        if text.contains("Download Qwen 8B") {
+        if text.contains("Download Llama 3.1 8B") {
             useFM = false
             prepareAIStatus()
             return
         }
-        ailog("sendToAI (\(useFM ? "FM" : "Qwen")): \(text)")
+        ailog("sendToAI (\(useFM ? "FM" : "Llama")): \(text)")
         assistant.addUser(text)
         let preparing = !useFM && !llm.ready
         assistant.setInputEnabled(false, placeholder: preparing ? "Preparing model…" : "Thinking…")
@@ -2193,7 +2200,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         var live: [[String: Any]] = []
         for r in rems {
             if let fireAt = r["fireAt"] as? Double, fireAt > now {
-                let secs = (fireAt - now) / 1000
+                let secs = max(1.0, (fireAt - now) / 1000)
                 let id = r["id"] as? String ?? UUID().uuidString
                 let txt = r["label"] as? String ?? "Reminder"
                 let content = UNMutableNotificationContent()
@@ -2447,8 +2454,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = effectiveTheme()
         var settings = Store.shared.settings
         settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
-        settings["qwenReady"] = llm.ready
-        settings["qwenStatus"] = llm.lastStatus
+        settings["llamaReady"] = llm.ready
+        settings["llamaStatus"] = llm.lastStatus
         let settingsJSON = Store.json(settings)
         let onText = onAccentTextHex()
         return """
@@ -2458,7 +2465,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if (window.__bzOnSettings) window.__bzOnSettings(window.__bzSettings);
         (function(){var s=document.getElementById('bz-accent-fix')||document.createElement('style');
           s.id='bz-accent-fix';
-          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#downloadQwenBtn{color:\(onText) !important;}';
+          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#downloadLlamaBtn{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
         """
     }
@@ -2564,9 +2571,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "aiReady":
             let ready = useFM || llm.ready
             resolve(ready ? "true" : "false")
-        case "qwenReady":
+        case "llamaReady":
             resolve(llm.ready ? "true" : "false")
-        case "downloadQwen":
+        case "downloadLlama":
             useFM = false
             llm.ensure { [weak self] _ in
                 self?.prepareAIStatus()

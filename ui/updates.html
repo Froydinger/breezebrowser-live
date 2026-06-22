@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.9', icon: 'zap', title: 'Llama 3.1 8B, Reminder Crash & Link Handoff Fixes', major: true, items: [
+        '<b>Local Llama 3.1 8B Upgrade</b> — Upgraded the default local AI engine to Llama 3.1 8B for faster, smarter, and fully private local assistance.',
+        '<b>Fixed Reminders Crash</b> — Prevented launch crashes caused by past/near-instant reminder schedules by enforcing safe delay boundaries.',
+        '<b>Seamless External Link Handling</b> — Links opened from external apps like iMessage, Slack, or Mail now correctly and instantly route into your Breeze browser windows.' ] },
       { v: '3.5.8', icon: 'zap', title: 'AI Sidebar Bleeding Fix & New Tab Suggestions', major: true, items: [
         '<b>Fixed AI Sidebar UI Bleeding</b> — Fixed a bug where switching away from a fullscreen Breeze Chat tab caused the assistant panel UI to temporarily slide/bleed and display incorrectly on the bottom right corner of the next tab.',
         '<b>Autocomplete on New Tab</b> — Enabled the autocomplete suggestions dropdown popover on the center search and question input field of the New Tab page.' ] },

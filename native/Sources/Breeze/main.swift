@@ -1,6 +1,7 @@
 // Breeze Native — app entry, menus, lifecycle.
 
 import Cocoa
+import Carbon
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var browsers: [BrowserController] = []
@@ -8,6 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browsers.first { $0.window.isKeyWindow } ?? browsers.first
     }
     func applicationDidFinishLaunching(_ n: Notification) {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
         NSApp.setActivationPolicy(.regular)
         AdBlocker.shared.compileIfNeeded {}
         let b = BrowserController()
@@ -28,6 +35,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             b.openTab(url: url.absoluteString)
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+    @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString) else { return }
+        DispatchQueue.main.async {
+            if let b = self.activeBrowser {
+                b.openTab(url: url.absoluteString)
+            } else {
+                let b = BrowserController()
+                self.browsers.append(b)
+                b.openTab(url: url.absoluteString)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
     @objc func windowClosed(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
