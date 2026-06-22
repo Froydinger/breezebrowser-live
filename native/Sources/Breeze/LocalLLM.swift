@@ -161,6 +161,21 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
 
     func shutdown() { server?.terminate(); server = nil; ready = false }
 
+    /// Wipe the on-disk model and fetch it again from scratch. Backs the settings
+    /// "Redownload" button — for a corrupted/half-downloaded gguf or a clean reinstall.
+    /// Stops the server first so the file isn't held open, clears all in-flight state,
+    /// then routes back through `ensure` (file now missing → fresh download → relaunch).
+    func redownload(_ done: @escaping (Bool) -> Void) {
+        shutdown()
+        try? FileManager.default.removeItem(at: modelURL)
+        ready = false
+        starting = false
+        working = false
+        pending = []
+        setStatus("Redownloading Llama 3.1 8B (~4.8 GB)… 0%")
+        ensure(done)
+    }
+
     // MARK: - Chat
 
     func send(_ text: String, history: [[String: String]], contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {

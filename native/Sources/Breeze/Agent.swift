@@ -212,7 +212,15 @@ enum Agent {
         // (e.g. it found the first result but never clicked it).
         let goal = "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
         // Tool output is trimmed so the small on-device context window doesn't overflow.
-        func cap(_ s: String, _ n: Int = 8000) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
+        // Smaller = far less prompt to re-process every step, so the local model stays
+        // snappy across a multi-step task (most pages answer fine from the first ~4k chars).
+        func cap(_ s: String, _ n: Int = 4000) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
+        // Anti-loop guard: a common small-model failure is repeating the exact same
+        // action (re-READ / re-CLICK the same thing) without making progress. We track
+        // the last action + its result and bail to a plain answer the moment one repeats
+        // with no new information, instead of burning steps until maxSteps.
+        var lastSig = ""
+        var prevResult = ""
 
         // If the model overflows its context (or errors), start a clean window
         // seeded only with the question + the most relevant info, and answer.
@@ -272,8 +280,28 @@ enum Agent {
                 lastResult = await tools.aiSetReminder(t, minutes: m)
                 prompt = "\(cap(lastResult))\n\nTell the user, briefly and warmly, that this is done."
             }
+            // If the model just repeated the same action and got back the same result,
+            // it's stuck — stop looping and answer from what we've gathered.
+            let sig = signature(of: action)
+            if sig == lastSig && lastResult == prevResult && !lastResult.isEmpty {
+                return (await recover(), chips)
+            }
+            lastSig = sig
+            prevResult = lastResult
         }
         return (lastFallback, chips)
+    }
+
+    /// Stable identity for an action, used to detect a stuck repeat-loop.
+    private static func signature(of a: AgentAction) -> String {
+        switch a {
+        case .open(let u):       return "open:\(u.lowercased())"
+        case .search(let q):     return "search:\(q.lowercased())"
+        case .read:              return "read"
+        case .remind(let m, let t): return "remind:\(m):\(t.lowercased())"
+        case .click(let t):      return "click:\(t.lowercased())"
+        case .type(let t, let v): return "type:\(t.lowercased()):\(v.lowercased())"
+        }
     }
 
     /// Strip stray action lines; fall back to a sensible line if nothing's left.

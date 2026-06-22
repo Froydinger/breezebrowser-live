@@ -99,6 +99,7 @@ let breezeBridgeJS = """
     onAIReady: function () {},
     llamaReady: function () { return call('llamaReady'); },
     downloadLlama: function () { send('downloadLlama'); },
+    redownloadLlama: function () { send('redownloadLlama'); },
     getModelInfo: function () { return Promise.resolve({}); },
     setAIModel: function (tier) { send('setAIModel', { tier: tier }); },
     onFocusInput: function () {},

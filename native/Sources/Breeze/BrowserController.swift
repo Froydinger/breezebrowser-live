@@ -2578,6 +2578,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             llm.ensure { [weak self] _ in
                 self?.prepareAIStatus()
             }
+        case "redownloadLlama":
+            let alert = NSAlert()
+            alert.messageText = "Redownload Llama 3.1 8B?"
+            alert.informativeText = "This deletes the current on-device model and downloads it again (~4.8 GB). Use it if the model seems broken or you want a clean reinstall."
+            alert.addButton(withTitle: "Redownload")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { break }
+            useFM = false
+            llm.redownload { [weak self] _ in self?.prepareAIStatus() }
+            broadcastToInternalPages()
         case "clearBrowsingData":
             clearCache(); resolve("{}")
         case "resetBrowser":

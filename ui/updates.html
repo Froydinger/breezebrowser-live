@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.6.0', icon: 'zap', title: 'Faster Local AI & Redownload Model', major: true, items: [
+        '<b>Snappier AI Assistant</b> — Tuned the on-device agent for Llama 3.1 8B so it processes far less text per step and replies noticeably faster.',
+        '<b>Smarter Agent (No More Spinning)</b> — Breeze AI now detects when it’s stuck repeating itself and answers from what it has instead of looping, so multi-step tasks finish quicker.',
+        '<b>Redownload Model Button</b> — Added a Redownload option in Settings → Breeze AI to wipe and reinstall the local Llama model with one click if it ever gets corrupted.' ] },
       { v: '3.5.9', icon: 'zap', title: 'Llama 3.1 8B, Reminder Crash & Link Handoff Fixes', major: true, items: [
         '<b>Local Llama 3.1 8B Upgrade</b> — Upgraded the default local AI engine to Llama 3.1 8B for faster, smarter, and fully private local assistance.',
         '<b>Fixed Reminders Crash</b> — Prevented launch crashes caused by past/near-instant reminder schedules by enforcing safe delay boundaries.',
