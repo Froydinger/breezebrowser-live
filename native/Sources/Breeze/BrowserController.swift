@@ -355,6 +355,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         nowPlaying.playBtn.onTap = { [weak self] in self?.toggleNowPlaying() }
         nowPlaying.pipBtn.onTap = { [weak self] in self?.nowPlayingPip() }
         nowPlaying.backBtn.onTap = { [weak self] in self?.backToNowPlaying() }
+        nowPlaying.dismissBtn.onTap = { [weak self] in self?.dismissNowPlaying() }
         let bottomStack = NSStackView(views: [nowPlaying, footer])
         bottomStack.orientation = .vertical; bottomStack.spacing = 8; bottomStack.alignment = .leading
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
@@ -567,6 +568,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildWebArea() {
         webContainer.translatesAutoresizingMaskIntoConstraints = false
         webContainer.wantsLayer = true
+        // Rounded web area lives on the container, NOT the web view's own layer —
+        // clipping the web view itself turns fullscreen video into a black screen.
+        webContainer.layer?.cornerRadius = 10
+        webContainer.layer?.masksToBounds = true
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
     }
@@ -1180,19 +1185,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
 
-        // Heuristic routing (with AI fallback): a bare, search-term-looking query just
-        // goes to Google like a normal address bar — no AI, no waiting. Questions and
-        // tasks (and anything ambiguous) go to the AI, which answers directly or runs
-        // the agent. Holding ⌘ (isCmdEnter, above) always forces a plain search.
-        if looksLikeSearchTerm(q) {
+        let fromNewTab = (current?.isNewTab == true)
+
+        // The new-tab "Ask Breeze, or type a URL" bar is a chat starter: anything
+        // that isn't a URL (handled above) opens the full-window chat, which decides
+        // whether to answer directly or act agentically — and can search the web
+        // itself. The address bar on a page keeps normal browser behavior: a bare,
+        // search-term-looking query goes straight to Google. ⌘-Enter always searches.
+        if !fromNewTab, looksLikeSearchTerm(q) {
             navigate(searchURL(for: q))
             return
         }
 
-        // Conversational / task input → AI. From the new-tab page, the Ask bar is
-        // a chat starter: turn the current tab into a full-window chat tab. From a
-        // web page's address bar, open the side assistant so the page stays visible.
-        if current?.isNewTab == true, let t = current {
+        // Conversational / task input → AI. From the new-tab page, turn the current
+        // tab into a full-window chat tab. From a web page's address bar, open the
+        // side assistant so the page stays visible.
+        if fromNewTab, let t = current {
             t.isNewTab = false
             t.isChatTab = true
             t.title = "Breeze Chat"
@@ -2181,14 +2189,28 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func updateNowPlaying() {
-        // prefer the tab we last saw play; fall back to any playing tab
-        let t = (nowPlayingTab?.isPlaying == true) ? nowPlayingTab : tabs.first(where: { $0.isPlaying })
-        guard let t else { nowPlaying.isHidden = true; nowPlayingTab = nil; return }
-        nowPlayingTab = t
+        // The card stays pinned to the tracked tab even when its media is PAUSED —
+        // it only changes when another tab starts playing (handleMedia switches it),
+        // when the user taps the dismiss X (dismissNowPlaying), or when the tab is
+        // gone. So a pause in a background tab no longer makes the card vanish.
+        guard let t = nowPlayingTab, tabs.contains(where: { $0.id == t.id }) else {
+            nowPlaying.isHidden = true; nowPlayingTab = nil; return
+        }
         nowPlaying.isHidden = false
         nowPlaying.configure(host: hostOf(t.webView.url),
                              title: t.mediaTitle.isEmpty ? t.title : t.mediaTitle,
                              playing: t.isPlaying)
+    }
+
+    /// Dismiss the now-playing card (the X). Pauses the media so we don't leave
+    /// audio playing with nothing on screen, then clears the card.
+    func dismissNowPlaying() {
+        if let t = nowPlayingTab {
+            t.webView.evaluateJavaScript("(function(){var m=document.querySelector('video,audio');if(m&&!m.paused)m.pause();})()")
+            t.isPlaying = false
+        }
+        nowPlayingTab = nil
+        updateNowPlaying()
     }
 
     func toggleNowPlaying() {

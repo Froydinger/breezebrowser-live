@@ -293,6 +293,7 @@ final class NowPlayingView: NSView {
     let playBtn = HoverButton(symbol: "pause.fill", size: 34, point: 16)
     let pipBtn = HoverButton(symbol: "pip", size: 30, point: 14)
     let backBtn = HoverButton(symbol: "arrow.uturn.left", size: 30, point: 14)
+    let dismissBtn = HoverButton(symbol: "xmark", size: 22, point: 10)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -328,13 +329,20 @@ final class NowPlayingView: NSView {
         addSubview(col)
         col.pin(to: self, insets: NSEdgeInsets(top: 11, left: 12, bottom: 11, right: 12))
 
+        // Dismiss "X" in the top-right corner (hides the card; see dismissNowPlaying).
+        addSubview(dismissBtn)
+        NSLayoutConstraint.activate([
+            dismissBtn.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            dismissBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
+        ])
+
         NSLayoutConstraint.activate([
             art.widthAnchor.constraint(equalToConstant: 34),
             art.heightAnchor.constraint(equalToConstant: 34),
-            // Both rows span the card's full inner width so text truncates and the
-            // transport controls spread evenly instead of bunching on the left.
+            // Transport row spans the full inner width so the controls spread evenly;
+            // the title row stops short of the dismiss button so text never runs under it.
             topRow.leadingAnchor.constraint(equalTo: col.leadingAnchor),
-            topRow.trailingAnchor.constraint(equalTo: col.trailingAnchor),
+            topRow.trailingAnchor.constraint(equalTo: col.trailingAnchor, constant: -20),
             controls.leadingAnchor.constraint(equalTo: col.leadingAnchor),
             controls.trailingAnchor.constraint(equalTo: col.trailingAnchor),
         ])

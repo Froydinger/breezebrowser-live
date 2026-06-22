@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.4.5', icon: 'bot', title: 'Fullscreen Fix, Smarter Ask Bar & Honest Ad-Blocking', major: true, items: [
+        '<b>Fixed black screen on fullscreen video</b> — Going fullscreen on a video (YouTube and anywhere else) could show a black screen. The rounded-corner clipping behind it is fixed — video now fills the screen properly.',
+        '<b>The Ask bar always asks Breeze</b> — Typing anything that isn’t a web address into the new-tab bar now opens a full-window chat and lets Breeze decide whether to answer or take action, instead of jumping straight to a web search. (Hold ⌘ when you press Return to force a plain search.)',
+        '<b>Now-playing that sticks around</b> — The sidebar mini-player no longer disappears when you pause — it stays put (with a dismiss ✕) until you close it or another track takes over. Works with any site that has audio or video: Spotify, SoundCloud, YouTube, and more.',
+        '<b>Better ad-blocking, and the honest truth about it</b> — Added more rules to block ad trackers and banner/feed ads (YouTube included). But some sites — YouTube especially — now stream video ads from the same place as the video, and Apple’s WebKit doesn’t allow the deep script-level blocking browser extensions use. Settings now explains why; Breeze keeps blocking everything it can.' ] },
       { v: '3.4.4', icon: 'bot', title: 'Picture-in-Picture, Instant Chat & a Polished Sidebar', major: true, items: [
         '<b>Picture-in-Picture works again</b> — Video now pops out into a floating window. And it’s automatic: switch tabs or open a new one while you’re watching and the video follows you in PiP so it never stops. Toggle it off anytime in Settings.',
         '<b>New Chat shortcut (⌘⇧T)</b> — Instantly open a fresh, blank full-window chat and start typing. Unlike the new-tab Ask bar, it goes straight to an independent chat — no guessing between search, navigation, and AI. (New Private Tab moved to ⌥⌘T.)',

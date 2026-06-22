@@ -109,8 +109,9 @@ final class Tab {
         webView.allowsMagnification = true
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.wantsLayer = true
-        webView.layer?.cornerRadius = 10
-        webView.layer?.masksToBounds = true
+        // NOTE: do NOT set masksToBounds/cornerRadius on the web view's own layer —
+        // it clips WebKit's fullscreen video presentation to a black screen. The
+        // rounded-corner look is applied to the parent webContainer instead.
     }
 }
 
