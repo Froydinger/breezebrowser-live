@@ -20,6 +20,19 @@ enum Agent {
     static func systemPrompt(extra: String = "") -> String {
         let df = DateFormatter(); df.dateStyle = .full; df.timeStyle = .short
         let custom = extra.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        var remindersList = ""
+        if let rems = Store.shared.settings["reminders"] as? [[String: Any]], !rems.isEmpty {
+            remindersList = "\nActive Reminders:\n"
+            for r in rems {
+                let label = r["label"] as? String ?? "Reminder"
+                if let fireAt = r["fireAt"] as? Double {
+                    let date = Date(timeIntervalSince1970: fireAt / 1000.0)
+                    remindersList += "- \"\(label)\" scheduled at \(df.string(from: date))\n"
+                }
+            }
+        }
+
         return """
         You are Breeze, the AI assistant built into the Breeze web browser. You run \
         privately on the user's Mac. Right now it is \(df.string(from: Date())).
@@ -82,14 +95,17 @@ enum Agent {
         • You have access to a list of Interactive Elements at the beginning of the page content. ALWAYS use the ID in brackets (e.g. CLICK: 3 or TYPE: 2 | value) to click or type into elements. This is 100% reliable. ONLY fall back to text matching or CSS selectors if you cannot find the element in the list.
         • NEVER invent map search URLs or Apple Maps URLs like maps.apple.com or maps.google.com/maps/search. If the user asks to navigate, search, or find an address, OPEN google.com first, then use the Search field to enter the address, click search, and read the results.
         • DO NOT just say "I opened it for you" or "Done." when you finish. Summarize exactly what is visible on the page (from the page text and elements), explain where you stopped, what the current state is, and how it answers the user's request.
-        • You can perform MULTIPLE steps (up to 8 actions). If a search or page does not give you enough information, do not give up — search again with a better query or use OPEN: <url> to visit a specific link from the results to get more details.
+        • You can perform MULTIPLE steps (up to 8 actions). If a search or page does not give you enough information, do not give up — search again with a better query, search alternative terms, or use OPEN: <url> to visit a specific link from the results to get more details.
         • When asked to write a post, comment, or interact with text fields, use the interactive element IDs to find the input/textarea (e.g. searching for text like "What's on your mind", "Add a comment", or CSS selectors) and enter the text. If you cannot find the element or if the page requires you to be logged in to comment/post, explain that to the user.
+        • You have access to a Plan Mode: since you run locally with no API limits, for complex tasks (e.g. "do some research, write a blog post, then create a new post on my wordpress site that is logged in"), formulate a multi-step plan, navigate, and perform sequential form fills, button clicks, and search queries across websites to complete the task.
+        • You are aware of the user's active reminders. You can read, inspect, or suggest new reminders based on this state.
         • NEVER invent facts, URLs, prices, or sources. SEARCH if truly unsure.
         • Don't describe your own model, architecture, or training.
         • Use the user's open-tab context below when it's relevant.
 
         CRITICAL: Default to answering directly. Only use SEARCH as a last resort when \
         you genuinely cannot answer without real-time data. If in doubt, answer directly.
+        \(remindersList)
         \(custom.isEmpty ? "" : "\nUser preferences: \(custom)")
         """
     }

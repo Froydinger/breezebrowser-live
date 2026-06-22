@@ -12,9 +12,9 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
 
     private let port = 8799
     private let modelURL: URL
-    // Qwen2.5 7B (Q4_K_M) — best on 16GB+ Apple Silicon. The 3B is intentionally
-    // dropped (too weak). We reuse any existing 7B gguf to avoid a re-download.
-    private let remote = URL(string: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf")!
+    // Qwen3 8B (Q4_K_M) — best on 16GB+ Apple Silicon. Apple FM is fallback only.
+    // We reuse any existing 8B gguf to avoid a re-download.
+    private let remote = URL(string: "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf")!
     private var server: Process?
     private(set) var ready = false
     private var starting = false
@@ -27,11 +27,11 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Breeze/models", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        // Reuse any already-downloaded 7B gguf; otherwise this is the download target.
+        // Reuse any already-downloaded 8B gguf; otherwise this is the download target.
         let existing = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil))?
             .first { let n = $0.lastPathComponent.lowercased()
-                     return n.hasSuffix(".gguf") && n.contains("7b") && n.contains("instruct") }
-        modelURL = existing ?? base.appendingPathComponent("qwen2.5-7b-instruct-q4_k_m.gguf")
+                     return n.hasSuffix(".gguf") && n.contains("8b") && n.contains("qwen") }
+        modelURL = existing ?? base.appendingPathComponent("qwen3-8b-q4_k_m.gguf")
         super.init()
         browser = tools
         resetChat()
@@ -68,7 +68,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     }
 
     private func download(_ done: @escaping (Bool) -> Void) {
-        onStatus?("Downloading Qwen 7B (~4.7 GB)… 0%")
+        onStatus?("Downloading Qwen 8B (~4.7 GB)… 0%")
         downloadDone = done
         let cfg = URLSessionConfiguration.default
         let session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
@@ -79,7 +79,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite total: Int64) {
         guard total > 0 else { return }
         let pct = Int(Double(totalBytesWritten) / Double(total) * 100)
-        DispatchQueue.main.async { self.onStatus?("Downloading Qwen 7B (~4.7 GB)… \(pct)%") }
+        DispatchQueue.main.async { self.onStatus?("Downloading Qwen 8B (~4.7 GB)… \(pct)%") }
     }
     func urlSession(_ s: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
@@ -128,25 +128,34 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
 
     // MARK: - Chat
 
-    func send(_ text: String, contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {
+    func send(_ text: String, history: [[String: String]], contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {
         ensure { ok in
             guard ok, let tools = self.browser else { completion(.failure(NSError(domain: "Breeze", code: 1, userInfo: [NSLocalizedDescriptionKey: "The local model isn't ready yet."]))); return }
             Task {
                 do {
+                    var turnHistory: [[String: String]] = [
+                        ["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))]
+                    ]
+                    for msg in history {
+                        let role = msg["role"] == "ai" ? "assistant" : "user"
+                        if let content = msg["text"] {
+                            turnHistory.append(["role": role, "content": content])
+                        }
+                    }
                     let (answer, chips) = try await Agent.run(
                         userText: text, contexts: contexts, tools: tools,
                         ask: { msg in
-                            self.history.append(["role": "user", "content": msg])
-                            let reply = try await self.complete()
-                            self.history.append(["role": "assistant", "content": reply])
+                            turnHistory.append(["role": "user", "content": msg])
+                            let reply = try await self.complete(history: turnHistory)
+                            turnHistory.append(["role": "assistant", "content": reply])
                             return reply
                         },
                         askFresh: { msg in
-                            // reset to just the system prompt + this self-contained turn
-                            self.resetChat()
-                            self.history.append(["role": "user", "content": msg])
-                            let reply = try await self.complete()
-                            self.history.append(["role": "assistant", "content": reply])
+                            let freshHistory: [[String: String]] = [
+                                ["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))],
+                                ["role": "user", "content": msg]
+                            ]
+                            let reply = try await self.complete(history: freshHistory)
                             return reply
                         })
                     await MainActor.run { completion(.success((answer, chips))) }
@@ -157,7 +166,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    private func complete() async throws -> String {
+    private func complete(history: [[String: String]]) async throws -> String {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

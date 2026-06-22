@@ -33,7 +33,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var historyWidthC: NSLayoutConstraint!
     // chat state
     private var chatId = Date().timeIntervalSince1970
-    private var messages: [[String: String]] = []   // {role: user|ai, text}
+    var messages: [[String: String]] = []   // {role: user|ai, text}
     private let historyView = NSView()
     private let historyList = NSStackView()
 

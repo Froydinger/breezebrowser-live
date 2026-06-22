@@ -88,11 +88,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var sidebarTopC: NSLayoutConstraint!
     var webContainerTopC: NSLayoutConstraint!
     var pinsTopC: NSLayoutConstraint!
-    lazy var llm = LocalLLM(tools: self)     // local Qwen via llama-server (fallback)
-    private var fmAny: Any?                   // FoundationAI (Apple Intelligence, preferred)
+    lazy var llm = LocalLLM(tools: self)     // local Qwen via llama-server (preferred default)
+    private var fmAny: Any?                   // FoundationAI (Apple Intelligence, fallback)
     var useFM = false
-    var openai: OpenAIAI?                     // OpenAI backend (bring-your-own-key), when selected in Settings
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
+    let remindersView = RemindersView()
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     let ASSISTANT_W: CGFloat = 360
@@ -237,11 +237,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
         assistant.onToggleFullscreen = { [weak self] in self?.toggleAssistantFullscreen() }
         assistant.onAttach = { [weak self] in self?.aiAttachImage() }
-        // Prefer Apple Foundation Models when available (on-device, no download);
-        // fall back to local Qwen otherwise. Both are agentic via the SEARCH: loop.
-        if #available(macOS 26.0, *), FoundationAI.available() {
+        // Prefer Qwen3-8B local model. If Qwen is NOT downloaded/ready, and Apple Foundation Models are available,
+        // we use Apple Intelligence as fallback until Qwen is ready.
+        if !llm.ready, #available(macOS 26.0, *), FoundationAI.available() {
             useFM = true
             fmAny = FoundationAI(tools: self)
+        } else {
+            useFM = false
+        }
+        remindersView.onCancelReminder = { [weak self] id in
+            self?.deleteReminderById(id)
         }
         llm.onStatus = { [weak self] s in
             guard let self else { return }
@@ -356,9 +361,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         nowPlaying.pipBtn.onTap = { [weak self] in self?.nowPlayingPip() }
         nowPlaying.backBtn.onTap = { [weak self] in self?.backToNowPlaying() }
         nowPlaying.dismissBtn.onTap = { [weak self] in self?.dismissNowPlaying() }
-        let bottomStack = NSStackView(views: [nowPlaying, footer])
+        let bottomStack = NSStackView(views: [remindersView, nowPlaying, footer])
         bottomStack.orientation = .vertical; bottomStack.spacing = 8; bottomStack.alignment = .leading
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        remindersView.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         nowPlaying.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         footer.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
 
@@ -396,24 +402,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildFooter() -> NSView {
         let footer = NSView(); footer.translatesAutoresizingMaskIntoConstraints = false
 
-        adblockPill.wantsLayer = true; adblockPill.layer?.cornerRadius = 12
-        adblockPill.translatesAutoresizingMaskIntoConstraints = false
-        let shield = NSImageView()
-        shield.image = NSImage(systemSymbolName: "shield", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
-        shield.translatesAutoresizingMaskIntoConstraints = false
-        adblockCount.font = .systemFont(ofSize: 11.5)
-        adblockCount.translatesAutoresizingMaskIntoConstraints = false
-        adblockPill.addSubview(shield); adblockPill.addSubview(adblockCount)
-        NSLayoutConstraint.activate([
-            adblockPill.heightAnchor.constraint(equalToConstant: 24),
-            shield.leadingAnchor.constraint(equalTo: adblockPill.leadingAnchor, constant: 10),
-            shield.centerYAnchor.constraint(equalTo: adblockPill.centerYAnchor),
-            adblockCount.leadingAnchor.constraint(equalTo: shield.trailingAnchor, constant: 6),
-            adblockCount.centerYAnchor.constraint(equalTo: adblockPill.centerYAnchor),
-            adblockCount.trailingAnchor.constraint(equalTo: adblockPill.trailingAnchor, constant: -10),
-        ])
-
         let settings = HoverButton(symbol: "gearshape")
         settings.onTap = { [weak self] in self?.openInternal(.settings) }
         let dl = HoverButton(symbol: "arrow.down.to.line")
@@ -425,26 +413,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = HoverButton(symbol: "sun.max"); theme.onTap = { [weak self] in
             self?.cycleThemeSetting(); self?.refreshThemeIcon(theme)
         }
-        
-        let rail = NSStackView(views: [dl, bookmarks, history, theme, settings])
-        rail.orientation = .vertical
-        rail.spacing = 10
-        rail.alignment = .centerX
-        rail.translatesAutoresizingMaskIntoConstraints = false
-        
-        footer.addSubview(rail)
-        footer.addSubview(adblockPill)
-        
-        NSLayoutConstraint.activate([
-            rail.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
-            rail.topAnchor.constraint(equalTo: footer.topAnchor),
-            rail.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
-            rail.widthAnchor.constraint(equalToConstant: 26),
-            
-            adblockPill.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
-            adblockPill.bottomAnchor.constraint(equalTo: footer.bottomAnchor),
-        ])
-        
+        let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [spacer, dl, bookmarks, history, theme, settings])
+        row.spacing = 8; row.alignment = .centerY
+        footer.addSubview(row)
+        row.pin(to: footer)
         refreshThemeIcon(theme)
         return footer
     }
@@ -1370,24 +1344,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     /// Set the chat input's enabled state + status based on the active backend.
     func prepareAIStatus() {
-        if useOpenAI {
-            assistant.setInputEnabled(true)
-            assistant.setModelStatus("OpenAI · \(openaiModel) — your key, your bill. Ask anything, or summarize this page.")
-            return
-        }
         if useFM {
             assistant.setInputEnabled(true)
             assistant.setModelStatus("Apple Intelligence — on-device. Ask anything, or summarize this page.")
         } else if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("On-device model ready. Ask anything, or summarize this page.")
+            assistant.setModelStatus("On-device model ready (Qwen 8B). Ask anything, or summarize this page.")
         } else {
-            assistant.setInputEnabled(false, placeholder: "Preparing Qwen 7B…")
-            assistant.setModelStatus("Preparing Qwen 7B — best on 16GB+ Apple Silicon…")
+            assistant.setInputEnabled(false, placeholder: "Preparing Qwen 8B…")
+            assistant.setModelStatus("Preparing Qwen 8B — best on 16GB+ Apple Silicon…")
             llm.ensure { [weak self] ok in
-                self?.assistant.setInputEnabled(ok, placeholder: ok ? nil : "Model unavailable")
-                self?.assistant.setStatus(nil)
-                if ok { self?.assistant.focusInput() }
+                guard let self = self else { return }
+                if ok {
+                    self.useFM = false
+                    self.prepareAIStatus()
+                    self.assistant.focusInput()
+                } else {
+                    self.assistant.setInputEnabled(false, placeholder: "Model unavailable")
+                }
+                self.assistant.setStatus(nil)
             }
         }
     }
@@ -1437,26 +1412,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         showActive(); refreshSidebar()  // chat-tab showActive() focuses the input
     }
 
-    /// OpenAI BYOK is active when selected in Settings and a key is present.
-    var useOpenAI: Bool {
-        Store.shared.string("aiBackend") == "openai" && !Keychain.get("openaiKey").isEmpty
-    }
-    var openaiModel: String {
-        let m = Store.shared.string("openaiModel"); return m.isEmpty ? "gpt-5.4-mini" : m
-    }
-    /// Reuse one OpenAIAI but refresh key/model from Settings each send.
-    private func ensureOpenAI() -> OpenAIAI {
-        let key = Keychain.get("openaiKey")
-        let o = openai ?? OpenAIAI(tools: self, apiKey: key, model: openaiModel)
-        o.apiKey = key; o.model = openaiModel
-        openai = o
-        return o
-    }
-
     func sendToAI(_ text: String) {
-        ailog("sendToAI (\(useOpenAI ? "OpenAI" : (useFM ? "FM" : "Qwen"))): \(text)")
+        if text.contains("Download Qwen 8B") {
+            useFM = false
+            prepareAIStatus()
+            return
+        }
+        ailog("sendToAI (\(useFM ? "FM" : "Qwen")): \(text)")
         assistant.addUser(text)
-        let preparing = !useOpenAI && !useFM && !llm.ready
+        let preparing = !useFM && !llm.ready
         assistant.setInputEnabled(false, placeholder: preparing ? "Preparing model…" : "Thinking…")
         assistant.setStatus(preparing ? "Preparing the model, then sending…" : "Thinking…")
         showRainbowGlow()
@@ -1465,6 +1429,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             guard let self else { return }
             let contexts = await self.gatherContexts()
             let labels = contexts.map { $0.label }
+            let history = self.assistant.messages
             let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
                 guard let self else { return }
                 self.ailog("model returned")
@@ -1480,12 +1445,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
             }
-            if self.useOpenAI {
-                self.ensureOpenAI().send(text, contexts: contexts, completion: done)
-            } else if self.useFM, #available(macOS 26.0, *), let fm = self.fmAny as? FoundationAI {
-                fm.send(text, contexts: contexts, completion: done)
+            if self.useFM, #available(macOS 26.0, *), let fm = self.fmAny as? FoundationAI {
+                fm.send(text, history: history, contexts: contexts, completion: done)
             } else {
-                self.llm.send(text, contexts: contexts, completion: done)
+                self.llm.send(text, history: history, contexts: contexts, completion: done)
             }
         }
     }
@@ -2129,6 +2092,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     Store.shared.settings["reminders"] = rems
                     Store.shared.saveSettings()
                     self.broadcastToInternalPages()
+                    self.updateRemindersSidebar()
                 }
 
                 let content = UNMutableNotificationContent()
@@ -2142,9 +2106,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    func deleteReminderById(_ id: String) {
+        var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+        rems.removeAll { ($0["id"] as? String) == id }
+        Store.shared.settings["reminders"] = rems
+        Store.shared.saveSettings()
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
+        broadcastToInternalPages()
+        updateRemindersSidebar()
+    }
+
+    func updateRemindersSidebar() {
+        let rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+        remindersView.update(rems)
+    }
+
     private func initReminders() {
         let now = Date().timeIntervalSince1970 * 1000
-        var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+        let rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
         let center = UNUserNotificationCenter.current()
         var live: [[String: Any]] = []
         for r in rems {
@@ -2164,6 +2143,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             Store.shared.settings["reminders"] = live
             Store.shared.saveSettings()
         }
+        updateRemindersSidebar()
     }
 
     func clearCache() {
@@ -2464,11 +2444,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             resolve(Store.json(rems))
         case "deleteReminder":
             if let id = args["id"] as? String {
-                var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
-                rems.removeAll { ($0["id"] as? String) == id }
-                Store.shared.settings["reminders"] = rems
-                Store.shared.saveSettings()
-                broadcastToInternalPages()
+                deleteReminderById(id)
             }
         case "vaultList":
             resolve("[]")
@@ -2490,7 +2466,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 sendToAI(text)
             }
         case "aiReady":
-            let ready = useOpenAI || useFM || llm.ready
+            let ready = useFM || llm.ready
             resolve(ready ? "true" : "false")
         case "clearBrowsingData":
             clearCache(); resolve("{}")

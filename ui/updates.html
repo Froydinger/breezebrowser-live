@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.4.7', icon: 'cpu', title: 'Qwen 8B Engine, Contextual History & Sidebar Reminders', major: true, items: [
+        '<b>Upgraded to Qwen3-8B</b> — Swapped the primary AI engine to Qwen3-8B for vastly superior reasoning, logic, and browser interaction.',
+        '<b>Persistent Context & Chat History</b> — The agent now fully retains chat history and tab contexts across turns so it never loses track of your follow-up requests.',
+        '<b>Native Sidebar Reminders</b> — Active reminders now display directly in the sidebar, letting you view and cancel them instantly.',
+        '<b>Streamlined Sidebar Footer</b> — Removed the adblock badge and aligned footer icons (Downloads, Saved, History, Theme, Settings) horizontally to make room for reminders and media players.' ] },
       { v: '3.4.6', icon: 'bot', title: 'The AI Knows When to Stop', major: true, items: [
         '<b>No more flailing</b> — When Breeze AI isn’t sure what you want, it now asks (“not sure what you mean — want me to search that?”) or just runs a quick web search, instead of clicking around the page hoping something works. Every click and keystroke has to be a deliberate step toward what you actually asked.' ] },
       { v: '3.4.5', icon: 'bot', title: 'Fullscreen Fix, Smarter Ask Bar & Honest Ad-Blocking', major: true, items: [

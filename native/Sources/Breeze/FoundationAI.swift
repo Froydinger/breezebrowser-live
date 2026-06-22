@@ -45,25 +45,44 @@ final class FoundationAI {
         session = LanguageModelSession(instructions: Agent.systemPrompt(extra: extra))
     }
 
-    func send(_ text: String, contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {
+    func send(_ text: String, history: [[String: String]], contexts: [AIContext], completion: @escaping (Result<(String, [String]), Error>) -> Void) {
         guard let tools = browser else {
             completion(.failure(NSError(domain: "Breeze", code: 1))); return
         }
-        // Apple's on-device model has a small context window, and an agentic loop
-        // feeds it large page/search text. Start each message from a fresh session
-        // so a prior turn's tool output can't overflow the transcript.
         session = LanguageModelSession(instructions: Agent.systemPrompt(extra: Store.shared.string("aiInstructions")))
+        
+        var histStr = ""
+        for msg in history {
+            let role = msg["role"] == "ai" ? "Assistant" : "User"
+            if let txt = msg["text"] {
+                histStr += "\(role): \(txt)\n"
+            }
+        }
+        let promptText = histStr.isEmpty ? text : "Prior conversation:\n\(histStr)\nUser: \(text)"
+        
         Task {
             do {
                 let (answer, chips) = try await Agent.run(
-                    userText: text, contexts: contexts, tools: tools,
+                    userText: promptText, contexts: contexts, tools: tools,
                     ask: { msg in try await self.session.respond(to: msg).content },
                     askFresh: { msg in
-                        // brand-new context window (recovers from an overflow)
                         self.session = LanguageModelSession(instructions: Agent.systemPrompt(extra: Store.shared.string("aiInstructions")))
                         return try await self.session.respond(to: msg).content
                     })
-                await MainActor.run { completion(.success((answer, chips))) }
+                
+                var finalAns = answer
+                var finalChips = chips
+                let lowerAns = answer.lowercased()
+                if lowerAns.contains("clarify") || lowerAns.contains("i can't") || lowerAns.contains("cannot") || lowerAns.contains("sorry") {
+                    finalAns = "Hmmm, can you clarify? I can search the web and perform quick tasks, but for full browser actions and deep reasoning, please download the local Qwen model."
+                    if !finalChips.contains("📥 Download Qwen 8B") {
+                        finalChips.append("📥 Download Qwen 8B")
+                    }
+                }
+                
+                let resultAns = finalAns
+                let resultChips = finalChips
+                await MainActor.run { completion(.success((resultAns, resultChips))) }
             } catch {
                 await MainActor.run { completion(.failure(error)) }
             }

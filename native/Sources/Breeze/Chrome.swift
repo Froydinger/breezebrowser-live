@@ -459,3 +459,89 @@ final class PinView: NSView {
         if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
     }
 }
+
+/// Sidebar reminders container: vertical stack of active reminders.
+final class RemindersView: NSStackView {
+    var onCancelReminder: ((String) -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        orientation = .vertical
+        spacing = 4
+        alignment = .leading
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func update(_ list: [[String: Any]]) {
+        arrangedSubviews.forEach { $0.removeFromSuperview() }
+        isHidden = list.isEmpty
+        
+        let p = Theme.shared.palette
+        let df = DateFormatter()
+        df.dateStyle = .none
+        df.timeStyle = .short
+        
+        for r in list {
+            guard let id = r["id"] as? String else { continue }
+            let label = r["label"] as? String ?? "Reminder"
+            let fireAt = r["fireAt"] as? Double ?? 0
+            let targetDate = Date(timeIntervalSince1970: fireAt / 1000.0)
+            
+            let row = NSView()
+            row.wantsLayer = true
+            row.layer?.cornerRadius = 8
+            row.layer?.backgroundColor = p.surface.cgColor
+            row.translatesAutoresizingMaskIntoConstraints = false
+            
+            let clock = NSImageView()
+            clock.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 10, weight: .regular))
+            clock.contentTintColor = p.textSoft
+            clock.translatesAutoresizingMaskIntoConstraints = false
+            
+            let lbl = NSTextField(labelWithString: label)
+            lbl.font = .systemFont(ofSize: 11)
+            lbl.textColor = p.text
+            lbl.lineBreakMode = .byTruncatingTail
+            lbl.translatesAutoresizingMaskIntoConstraints = false
+            
+            let timeLbl = NSTextField(labelWithString: df.string(from: targetDate))
+            timeLbl.font = .systemFont(ofSize: 9.5)
+            timeLbl.textColor = p.textSoft
+            timeLbl.translatesAutoresizingMaskIntoConstraints = false
+            
+            let cancelBtn = HoverButton(symbol: "xmark", size: 18, point: 8)
+            cancelBtn.onTap = { [weak self] in self?.onCancelReminder?(id) }
+            cancelBtn.translatesAutoresizingMaskIntoConstraints = false
+            
+            row.addSubview(clock)
+            row.addSubview(lbl)
+            row.addSubview(timeLbl)
+            row.addSubview(cancelBtn)
+            
+            NSLayoutConstraint.activate([
+                row.heightAnchor.constraint(equalToConstant: 26),
+                row.widthAnchor.constraint(equalTo: widthAnchor),
+                
+                clock.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 6),
+                clock.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                clock.widthAnchor.constraint(equalToConstant: 12),
+                clock.heightAnchor.constraint(equalToConstant: 12),
+                
+                lbl.leadingAnchor.constraint(equalTo: clock.trailingAnchor, constant: 4),
+                lbl.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                lbl.trailingAnchor.constraint(equalTo: timeLbl.leadingAnchor, constant: -4),
+                
+                timeLbl.trailingAnchor.constraint(equalTo: cancelBtn.leadingAnchor, constant: -4),
+                timeLbl.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+                
+                cancelBtn.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -4),
+                cancelBtn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            ])
+            
+            addArrangedSubview(row)
+        }
+    }
+}
