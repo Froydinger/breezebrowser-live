@@ -617,7 +617,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let w = ASSISTANT_W
             assistantWidthC.constant = w
             if wasInChatTab {
-                setAssistant(true)
+                // Leaving a fullscreen chat tab: COLLAPSE the docked panel instead of
+                // force-opening it as a clipped right-side strip (the bug). The chat
+                // stays in its own chat tab (still in the tab list); the user re-opens
+                // the assistant when they want it.
+                setAssistant(false)
             } else {
                 assistantLeadingC.constant = assistantOpen ? -w : 0
             }

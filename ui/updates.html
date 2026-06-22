@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.5', icon: 'bot', title: 'Agent Actually Agents + Chat-Tab Fix', major: true, items: [
+        '<b>The Agent Browses Again</b> — Asking Breeze to "go to facebook" or "remind me in 10 minutes…" now reliably opens the site and sets the reminder instead of replying "I can\'t access websites." The local model\'s hidden overthinking (fixed in 3.5.4) was causing it to bail before taking the action — verified directly against the model.',
+        '<b>Reminders Set From Chat</b> — "Remind me in 10 minutes to call mom" now consistently creates the reminder. (If nothing fires, allow notifications for Breeze in System Settings → Notifications.)',
+        '<b>Chat Tab No Longer Clips</b> — Leaving a fullscreen chat tab to click another tab no longer leaves the assistant as a clipped strip on the right edge. The chat stays in its own tab; the panel only opens when you ask for it.' ] },
       { v: '3.5.4', icon: 'zap', title: 'The Real Speed Fix — Local AI No Longer Overthinks', major: true, items: [
         '<b>Qwen Stops Overthinking Every Reply</b> — The local Qwen model is a "reasoning" model that secretly wrote a long internal monologue before <i>every</i> answer — even "hey" generated ~113 tokens, ~90 of them hidden thinking, which is why replies took ~10 seconds. Breeze now runs it in fast direct-answer mode, cutting that to ~16 tokens. Chat and agentic steps are dramatically faster.',
         '<b>Snappier Throughout</b> — Combined with capped generation length and prompt caching, every message and every browser action the AI takes now returns much sooner.' ] },
