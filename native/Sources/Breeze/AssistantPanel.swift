@@ -320,8 +320,11 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private func addMessage(_ text: String, user: Bool) {
         empty.isHidden = true
         let p = Theme.shared.palette
+        // AI replies always sit in a near-black bubble with white text, so they stay
+        // readable in light OR dark mode (avoids low-contrast text on a light panel).
+        let aiBubble = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
         let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = 13
-        card.layer?.backgroundColor = (user ? p.accent : p.surface).cgColor
+        card.layer?.backgroundColor = (user ? p.accent : aiBubble).cgColor
         card.translatesAutoresizingMaskIntoConstraints = false
         card.setContentHuggingPriority(.required, for: .horizontal)
         let label = NSTextField(wrappingLabelWithString: text)
@@ -332,7 +335,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             label.font = .systemFont(ofSize: 13)
             label.textColor = onAccentText(p.accent)
         } else {
-            label.attributedStringValue = Self.renderMarkdown(text, color: p.text)   // **bold**, lists, etc.
+            label.attributedStringValue = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
         }
         card.addSubview(label)
         label.pin(to: card, insets: NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12))

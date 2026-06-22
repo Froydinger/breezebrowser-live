@@ -98,6 +98,7 @@ let breezeBridgeJS = """
     aiReady: function () { return call('aiReady'); },
     onAIReady: function () {},
     openExternal: function (url) { send('openExternal', { url: url }); },
+    resetAIUsage: function () { send('resetAIUsage'); },
     onFocusInput: function () {},
     importSources: function () { return Promise.resolve([]); },
     importFromBrowser: function () { return Promise.resolve({ ok: false }); },

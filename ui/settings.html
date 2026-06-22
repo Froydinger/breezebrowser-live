@@ -520,6 +520,19 @@
             <div class="row-hint" style="margin:0">Don't have a key? <a href="#" id="getKeyLink" class="key-link">Create one at platform.openai.com →</a></div>
           </div>
         </div>
+        <div class="row" id="aiUsageRow">
+          <div style="flex:1;padding-right:16px">
+            <div class="row-label">Estimated usage</div>
+            <div class="row-hint" id="aiUsageHint">No usage yet. Estimated from tokens Breeze uses on this Mac at GPT-5.4-mini pricing — see your OpenAI dashboard for exact charges.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+            <div id="aiUsageCost" style="font-size:16px;font-weight:600;color:var(--text)">~$0.00</div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <a href="#" id="aiUsageDashboard" class="key-link" style="font-size:11.5px">OpenAI usage →</a>
+              <button id="aiUsageReset" style="font-family:inherit;font-size:11.5px;color:var(--text-soft);background:var(--surface-active);border:none;border-radius:8px;padding:5px 10px;cursor:pointer;font-weight:500">Reset</button>
+            </div>
+          </div>
+        </div>
         <div class="row">
           <div>
             <div class="row-label">Web search &amp; browsing</div>
@@ -731,7 +744,48 @@
 
       renderPerms();
       renderReminders();
+      renderAIUsage();
     }
+
+    // ---- AI usage estimate ------------------------------------------------
+    // GPT-5.4-mini pricing (USD per 1M tokens). Local estimate only.
+    const AI_PRICE_IN = 0.75, AI_PRICE_OUT = 4.50;
+    function fmtTokens(n) {
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      return String(n || 0);
+    }
+    function renderAIUsage() {
+      const inTok = settings.aiUsageInput || 0;
+      const outTok = settings.aiUsageOutput || 0;
+      const cost = (inTok / 1e6) * AI_PRICE_IN + (outTok / 1e6) * AI_PRICE_OUT;
+      const costEl = document.getElementById('aiUsageCost');
+      const hintEl = document.getElementById('aiUsageHint');
+      if (!costEl || !hintEl) return;
+      costEl.textContent = '~$' + cost.toFixed(cost >= 1 ? 2 : 4);
+      if (!inTok && !outTok) {
+        hintEl.textContent = 'No usage yet. Estimated from tokens Breeze uses on this Mac at GPT-5.4-mini pricing — see your OpenAI dashboard for exact charges.';
+      } else {
+        let since = '';
+        if (settings.aiUsageSince) {
+          try { since = ' · since ' + new Date(settings.aiUsageSince).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch {}
+        }
+        hintEl.textContent = `${fmtTokens(inTok)} in · ${fmtTokens(outTok)} out${since}. Estimated at GPT-5.4-mini pricing — see your OpenAI dashboard for exact charges.`;
+      }
+    }
+    (function () {
+      const reset = document.getElementById('aiUsageReset');
+      const dash = document.getElementById('aiUsageDashboard');
+      if (reset) reset.addEventListener('click', () => {
+        settings.aiUsageInput = 0; settings.aiUsageOutput = 0; settings.aiUsageSince = Date.now();
+        if (typeof breezeInternal.resetAIUsage === 'function') breezeInternal.resetAIUsage();
+        renderAIUsage();
+      });
+      if (dash) dash.addEventListener('click', (e) => {
+        e.preventDefault();
+        breezeInternal.openExternal('https://platform.openai.com/usage');
+      });
+    })();
 
     // ---- OpenAI API key (BYOK) -------------------------------------------
     // The keychain is only touched when the user explicitly opens this panel,

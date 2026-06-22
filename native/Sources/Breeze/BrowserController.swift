@@ -1480,6 +1480,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     let chips = labels + toolChips
                     let textAns = answer.isEmpty ? "…" : answer
                     self.assistant.addAI(textAns, chips: chips)
+                    self.broadcastToInternalPages()   // refresh the usage/cost readout on any open Settings page
                     self.saveAgentSnapshotAndWalkthrough(query: text, answer: textAns)
                 case .failure(let e):
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
@@ -2464,7 +2465,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if (window.__bzOnSettings) window.__bzOnSettings(window.__bzSettings);
         (function(){var s=document.getElementById('bz-accent-fix')||document.createElement('style');
           s.id='bz-accent-fix';
-          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#openaiSaveBtn{color:\(onText) !important;}';
+          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#openaiSaveBtn,#aiKeyToggle{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
         """
     }
@@ -2537,6 +2538,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                url.scheme == "https" || url.scheme == "http" {
                 NSWorkspace.shared.open(url)
             }
+        case "resetAIUsage":
+            Store.shared.resetAIUsage()
+            broadcastToInternalPages()
         case "getHistory":
             resolve(Store.json(Store.shared.history))
         case "clearHistory":

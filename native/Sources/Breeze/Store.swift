@@ -42,6 +42,10 @@ final class Store {
         // Non-secret mirror of "is an OpenAI key in the keychain". Lets the UI show
         // readiness without reading the keychain (which would prompt for a password).
         "aiKeyConnected": false,
+        // Cumulative OpenAI token usage (this Mac), for an estimated-cost readout.
+        "aiUsageInput": 0,
+        "aiUsageOutput": 0,
+        "aiUsageSince": 0,
         "lastSeenVersion": "",
         "permissions": [String: Any](),
         "reminders": [Any]()
@@ -168,4 +172,23 @@ final class Store {
 
     func string(_ key: String) -> String { settings[key] as? String ?? "" }
     func bool(_ key: String) -> Bool { settings[key] as? Bool ?? false }
+    func int(_ key: String) -> Int { settings[key] as? Int ?? 0 }
+
+    // MARK: - AI usage accounting (local estimate; exact billing lives on OpenAI)
+
+    /// Add a request's token counts to the running totals (call on the main thread).
+    func addAIUsage(input: Int, output: Int) {
+        settings["aiUsageInput"] = int("aiUsageInput") + input
+        settings["aiUsageOutput"] = int("aiUsageOutput") + output
+        if int("aiUsageSince") == 0 { settings["aiUsageSince"] = Date().timeIntervalSince1970 * 1000 }
+        saveSettings()
+    }
+
+    /// Zero the usage counters and restart the "since" date.
+    func resetAIUsage() {
+        settings["aiUsageInput"] = 0
+        settings["aiUsageOutput"] = 0
+        settings["aiUsageSince"] = Date().timeIntervalSince1970 * 1000
+        saveSettings()
+    }
 }

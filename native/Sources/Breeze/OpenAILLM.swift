@@ -122,6 +122,15 @@ final class OpenAILLM: NSObject {
               let content = msg["content"] as? String else {
             throw Self.error("Unexpected response from OpenAI.")
         }
+        // Record exact token usage so Settings can show an estimated cost. Every
+        // agentic step counts (each is a real billed request).
+        if let usage = json["usage"] as? [String: Any] {
+            let inTok = usage["prompt_tokens"] as? Int ?? 0
+            let outTok = usage["completion_tokens"] as? Int ?? 0
+            if inTok > 0 || outTok > 0 {
+                await MainActor.run { Store.shared.addAIUsage(input: inTok, output: outTok) }
+            }
+        }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

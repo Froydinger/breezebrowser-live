@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.7.1', icon: 'zap', title: 'Usage Estimates & Readable Chat', major: true, items: [
+        '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost at GPT-5.4-mini pricing, with a link to your OpenAI dashboard for exact charges. Reset the counter anytime.',
+        '<b>Readable AI Replies in Light Mode</b> — Assistant responses now sit in a clean dark bubble with white text, so they\'re easy to read in light mode (and dark).',
+        '<b>Clearer Key Button</b> — Fixed the "Manage key" button being hard to see on light accents in dark mode.' ] },
       { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by GPT-5.4-mini (BYOK)', major: true, items: [
         '<b>Bring Your Own Key</b> — Breeze AI now runs on OpenAI\'s GPT-5.4-mini using your own API key. Add it in Settings → Breeze AI; there\'s a link to create one in seconds at platform.openai.com.',
         '<b>No More Local Model</b> — The on-device Llama engine and its multi-gigabyte download are gone. Breeze installs smaller and the assistant is far smarter and faster.',
