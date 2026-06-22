@@ -22,6 +22,13 @@ final class OpenAILLM: NSObject {
 
     private(set) var lastStatus = "Add your OpenAI API key in Settings → Breeze AI to start."
 
+    // In-memory copy of the key for this launch. The macOS Keychain may prompt the
+    // first time a (re-signed) build reads an item, so we read it at most ONCE per
+    // launch and reuse it — instead of re-reading (and risking a prompt) on every
+    // message. Seeded directly when the user saves a key, so the first chat right
+    // after saving doesn't touch the keychain at all.
+    private var cachedKey: String?
+
     /// "Ready" means a key has been connected. We read the cached, non-secret flag
     /// instead of the keychain so opening Settings never triggers a password prompt.
     var ready: Bool { Store.shared.bool("aiKeyConnected") }
@@ -29,6 +36,12 @@ final class OpenAILLM: NSObject {
     init(tools: any BrowserAITools) {
         super.init()
         browser = tools
+    }
+
+    /// Seed/clear the in-memory key (called when the user saves or removes it in
+    /// Settings) so we avoid an extra keychain read — and prompt — afterward.
+    func cacheKey(_ key: String) {
+        cachedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // Kept for interface parity with the old local backend. Nothing to reset
@@ -46,7 +59,13 @@ final class OpenAILLM: NSObject {
 
     func send(_ text: String, history: [[String: String]], contexts: [AIContext],
               completion: @escaping (Result<(String, [String]), Error>) -> Void) {
-        let key = Keychain.get(keychainAccount)
+        let key: String
+        if let cachedKey {
+            key = cachedKey
+        } else {
+            key = Keychain.get(keychainAccount)
+            cachedKey = key
+        }
         guard !key.isEmpty else {
             completion(.failure(Self.error("Breeze AI needs your OpenAI API key. Add it in Settings → Breeze AI — there's a link there to create one.")))
             return

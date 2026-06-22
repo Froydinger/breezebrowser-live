@@ -9,6 +9,10 @@ import CoreImage
 
 let SIDEBAR_W: CGFloat = 216
 
+enum BrowserInitialContent {
+    case restoredSession, newTab, empty
+}
+
 final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, BrowserAITools {
     static let didUpdateState = Notification.Name("BrowserControllerDidUpdateState")
     static var sharedTabs: [Tab] = []
@@ -46,6 +50,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var pinSize: PinSize = .large      // Settings: small / medium / large
     lazy var placeholderView = TabPlaceholderView()
     var downloads: [DownloadItem] = []
+    var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
+    var contextLinkURL: URL?
     var downloadList: [[String: Any]] { downloads.map { $0.dict } }
     var blockedPopups: Set<UUID> = []  // tabs with "Allow Popups" turned off
     var titleObs: [UUID: NSKeyValueObservation] = [:]
@@ -119,7 +125,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     var isPrivateWindow = false
 
-    init(isPrivateWindow: Bool = false) {
+    init(isPrivateWindow: Bool = false, initialContent: BrowserInitialContent = .restoredSession) {
         self.isPrivateWindow = isPrivateWindow
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 832),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -254,14 +260,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pins = Store.shared.pins
         pinSize = PinSize(rawValue: Store.shared.string("pinSize")) ?? .large
         applyThemeFromSettings()
-        sharedConfig.userContentController.add(self, name: "breezeMsg")
-        sharedConfig.userContentController.add(self, name: "breezeMedia")
-        sharedConfig.userContentController.add(self, name: "breezeFullscreen")
-
         renderPins()
         
-        if isPrivateWindow {
+        if initialContent == .empty {
+            refreshSidebar()
+        } else if isPrivateWindow {
             openNewTab(isPrivate: true)
+        } else if initialContent == .newTab {
+            openNewTab()
         } else if BrowserController.sharedTabs.isEmpty {
             let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
             if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
@@ -2149,31 +2155,29 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @MainActor func aiSetReminder(_ text: String, minutes: Int) async -> String {
         let center = UNUserNotificationCenter.current()
         let secs = max(1, Double(minutes) * 60)
-        return await withCheckedContinuation { cont in
-            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-                guard granted else { cont.resume(returning: "I couldn't set the reminder — notifications are off for Breeze."); return }
-                
-                let id = UUID().uuidString
-                let fireAt = Date().timeIntervalSince1970 * 1000 + (secs * 1000)
-                let rem: [String: Any] = ["id": id, "label": text, "fireAt": fireAt]
-                
-                DispatchQueue.main.async {
-                    var rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
-                    rems.append(rem)
-                    Store.shared.settings["reminders"] = rems
-                    Store.shared.saveSettings()
-                    self.broadcastToInternalPages()
-                    self.updateRemindersSidebar()
-                }
-
-                let content = UNMutableNotificationContent()
-                content.title = "Breeze reminder"; content.body = text
-                if Store.shared.settings["notificationSounds"] as? Bool != false { content.sound = .default }
-                let trig = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
-                center.add(UNNotificationRequest(identifier: id, content: content, trigger: trig)) { _ in
-                    cont.resume(returning: "Reminder set: \"\(text)\" in \(minutes) minute\(minutes == 1 ? "" : "s").")
-                }
+        do {
+            guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+                return "I couldn't set the reminder — notifications are off for Breeze."
             }
+
+            let id = UUID().uuidString
+            let fireAt = Date().timeIntervalSince1970 * 1000 + (secs * 1000)
+            let content = UNMutableNotificationContent()
+            content.title = "Breeze reminder"
+            content.body = text
+            if Store.shared.settings["notificationSounds"] as? Bool != false { content.sound = .default }
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
+            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+
+            var reminders = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
+            reminders.append(["id": id, "label": text, "fireAt": fireAt])
+            Store.shared.settings["reminders"] = reminders
+            Store.shared.saveSettings()
+            broadcastToInternalPages()
+            updateRemindersSidebar()
+            return "Reminder set: \"\(text)\" in \(minutes) minute\(minutes == 1 ? "" : "s")."
+        } catch {
+            return "I couldn't set the reminder: \(error.localizedDescription)"
         }
     }
 
@@ -2349,9 +2353,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
     }
     func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        activeDownloads[ObjectIdentifier(download)] = download
         download.delegate = self
     }
     func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        activeDownloads[ObjectIdentifier(download)] = download
         download.delegate = self
     }
 
@@ -2380,11 +2386,60 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
     func downloadDidFinish(_ download: WKDownload) {
         if let it = item(for: download) { it.state = .completed; it.received = it.total }
+        activeDownloads[ObjectIdentifier(download)] = nil
         broadcastDownloads()
     }
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         if let it = item(for: download) { it.state = .failed }
+        activeDownloads[ObjectIdentifier(download)] = nil
+        print("Breeze download failed: \(error.localizedDescription) [\(download.originalRequest?.url?.absoluteString ?? "unknown URL")] ")
+        NSSound.beep()
         broadcastDownloads()
+    }
+
+    func showLinkMenu(url: URL) {
+        contextLinkURL = url
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Open Link", action: #selector(openContextLink), keyEquivalent: "")
+        menu.addItem(withTitle: "Open Link in New Tab", action: #selector(openContextLinkInNewTab), keyEquivalent: "")
+        menu.addItem(withTitle: "Open Link in New Window", action: #selector(openContextLinkInNewWindow), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Download Linked File", action: #selector(downloadContextLink), keyEquivalent: "")
+        menu.addItem(withTitle: "Copy Link", action: #selector(copyContextLink), keyEquivalent: "")
+        for item in menu.items { item.target = self }
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    @objc func openContextLink() {
+        guard let url = contextLinkURL else { return }
+        navigate(url.absoluteString)
+    }
+
+    @objc func openContextLinkInNewTab() {
+        guard let url = contextLinkURL else { return }
+        openTab(url: url.absoluteString)
+    }
+
+    @objc func openContextLinkInNewWindow() {
+        guard let url = contextLinkURL else { return }
+        let browser = BrowserController(isPrivateWindow: current?.isPrivate ?? false, initialContent: .empty)
+        (NSApp.delegate as? AppDelegate)?.browsers.append(browser)
+        browser.openTab(url: url.absoluteString)
+    }
+
+    @objc func downloadContextLink() {
+        guard let url = contextLinkURL, let webView = current?.webView else { return }
+        webView.startDownload(using: URLRequest(url: url)) { [weak self] download in
+            guard let self else { return }
+            self.activeDownloads[ObjectIdentifier(download)] = download
+            download.delegate = self
+        }
+    }
+
+    @objc func copyContextLink() {
+        guard let value = contextLinkURL?.absoluteString else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 
     // MARK: - Internal pages ------------------------------------------------
@@ -2482,6 +2537,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Bridge message handler ---------------------------------------
 
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "breezeLinkMenu",
+           let body = message.body as? [String: Any],
+           let value = body["url"] as? String, let url = URL(string: value) {
+            showLinkMenu(url: url); return
+        }
         if message.name == "breezeMedia" {
             handleMedia(message); return
         }
@@ -2509,6 +2569,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 // Mirror key presence in a non-secret flag so status/readiness can be
                 // shown without ever reading the keychain (avoids password prompts).
                 if key == "openaiKey" {
+                    llm.cacheKey(val)
                     Store.shared.settings["aiKeyConnected"] = !val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     Store.shared.saveSettings()
                     prepareAIStatus()
@@ -2527,6 +2588,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if let key = args["key"] as? String {
                 Keychain.delete(key)
                 if key == "openaiKey" {
+                    llm.cacheKey("")
                     Store.shared.settings["aiKeyConnected"] = false
                     Store.shared.saveSettings()
                     prepareAIStatus()

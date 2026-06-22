@@ -14,7 +14,9 @@ final class DownloadItem {
     var total: Int64 = 0
     var state: DLState = .progressing
     let ts = Date().timeIntervalSince1970 * 1000
-    weak var wk: WKDownload?
+    // WKDownload's delegate is weak. Keep the download alive until WebKit calls
+    // finish/fail; otherwise some JS and context-menu downloads vanish silently.
+    var wk: WKDownload?
     var obs: NSKeyValueObservation?
 
     init(filename: String, url: String) { self.filename = filename; self.url = url }

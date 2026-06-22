@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     @objc func newWindow() {
-        let b = BrowserController()
+        let b = BrowserController(initialContent: .newTab)
         browsers.append(b)
     }
     @objc func newPrivateWindow() {

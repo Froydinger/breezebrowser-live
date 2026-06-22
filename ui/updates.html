@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.7.2', icon: 'zap', title: 'Reliable Downloads, Tabs & Windows', major: true, items: [
+        '<b>Downloads Finish Reliably</b> — Breeze now keeps every download alive from the moment a site starts it until the file finishes, fixing silent failures on JavaScript-heavy sites and right-click downloads.',
+        '<b>Links Open Where You Asked</b> — Command-click and “Open Link in New Tab” open tabs, while “Open Link in New Window” now creates a real window.',
+        '<b>New Windows Are Ready Immediately</b> — File → New Window now opens with a complete new-tab page, including your pins and search, instead of going blank or crashing.',
+        '<b>Chat Reminders No Longer Crash</b> — Reminders scheduled by Breeze AI now appear safely in the sidebar and persist across relaunches while the macOS notification remains scheduled.' ] },
       { v: '3.7.1', icon: 'zap', title: 'Usage Estimates & Readable Chat', major: true, items: [
         '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost at GPT-5.4-mini pricing, with a link to your OpenAI dashboard for exact charges. Reset the counter anytime.',
         '<b>Readable AI Replies in Light Mode</b> — Assistant responses now sit in a clean dark bubble with white text, so they\'re easy to read in light mode (and dark).',

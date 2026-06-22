@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Breeze download and link fixture</title>
+<style>
+  body { font: 18px sans-serif; margin: 40px; display: grid; gap: 18px; max-width: 680px; }
+  a, button { font: inherit; padding: 12px; }
+</style>
+<h1>Breeze download and link fixture</h1>
+<a id="data-download" download="breeze-data.txt" href="data:text/plain,Breeze%20data%20download">Download data URL</a>
+<button id="blob-download">Download generated blob</button>
+<a id="new-target" target="_blank" href="https://example.com/">Open example target</a>
+<a id="context-target" href="https://example.org/">Right-click or Command-click example link</a>
+<script>
+  document.querySelector('#blob-download').onclick = () => {
+    const url = URL.createObjectURL(new Blob(['Breeze blob download'], { type: 'text/plain' }));
+    const link = Object.assign(document.createElement('a'), { href: url, download: 'breeze-blob.txt' });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  };
+</script>

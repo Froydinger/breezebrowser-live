@@ -25,8 +25,24 @@ let sharedConfig: WKWebViewConfiguration = {
     // while a video is fullscreen (rounded corners kill the HW video overlay → black).
     c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMsg")
+    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
+    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeFullscreen")
+    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
     return c
 }()
+
+final class BreezeScriptMessageRouter: NSObject, WKScriptMessageHandler {
+    static let shared = BreezeScriptMessageRouter()
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard let handler = message.webView?.navigationDelegate as? WKScriptMessageHandler else { return }
+        handler.userContentController(userContentController, didReceive: message)
+    }
+}
 
 extension WKWebViewConfiguration {
     /// Enable the JS Picture-in-Picture API. In a WKWebView it's OFF by default
@@ -59,6 +75,23 @@ let breezeMediaJS = """
   document.addEventListener('playing', function () { report(true); }, true);
   document.addEventListener('pause', function () { report(false); }, true);
   document.addEventListener('ended', function () { report(false); }, true);
+})();
+"""
+
+let breezeLinkMenuJS = """
+(function () {
+  document.addEventListener('contextmenu', function (event) {
+    var node = event.target;
+    var link = node && node.closest ? node.closest('a[href]') : null;
+    if (!link) return;
+    event.preventDefault();
+    try {
+      window.webkit.messageHandlers.breezeLinkMenu.postMessage({
+        url: link.href,
+        filename: link.getAttribute('download') || ''
+      });
+    } catch (e) {}
+  }, true);
 })();
 """
 

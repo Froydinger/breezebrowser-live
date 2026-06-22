@@ -520,6 +520,10 @@ final class RemindersView: NSStackView {
             row.addSubview(lbl)
             row.addSubview(timeLbl)
             row.addSubview(cancelBtn)
+
+            // The row and reminders stack must share a view hierarchy before
+            // activating the width constraint between them.
+            addArrangedSubview(row)
             
             NSLayoutConstraint.activate([
                 row.heightAnchor.constraint(equalToConstant: 26),
@@ -541,7 +545,6 @@ final class RemindersView: NSStackView {
                 cancelBtn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             ])
             
-            addArrangedSubview(row)
         }
     }
 }
