@@ -1,7 +1,7 @@
 // Apple Foundation Models assistant — fully on-device (no third-party cloud).
 // Agentic via the shared text protocol in Agent.swift (OPEN/SEARCH/READ/REMIND):
 // the @Generable tool-calling macro ships only with Xcode, so we drive the loop
-// ourselves — the effect matches the Electron Qwen function-calling build.
+// ourselves — the effect matches the Electron function-calling build.
 // Requires macOS 26 + Apple Intelligence.
 
 import Foundation
@@ -78,9 +78,9 @@ final class FoundationAI {
                 var finalChips = chips
                 let lowerAns = answer.lowercased()
                 if lowerAns.contains("clarify") || lowerAns.contains("i can't") || lowerAns.contains("cannot") || lowerAns.contains("sorry") {
-                    finalAns = "Hmmm, can you clarify? I can search the web and perform quick tasks, but for full browser actions and deep reasoning, please download the local Qwen model."
-                    if !finalChips.contains("📥 Download Qwen 8B") {
-                        finalChips.append("📥 Download Qwen 8B")
+                    finalAns = "Hmmm, can you clarify? I can search the web and perform quick tasks, but for full browser actions and deep reasoning, please download the local Llama model."
+                    if !finalChips.contains("📥 Download Llama 3.1 8B") {
+                        finalChips.append("📥 Download Llama 3.1 8B")
                     }
                 }
                 

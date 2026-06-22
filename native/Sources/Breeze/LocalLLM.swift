@@ -1,8 +1,8 @@
-// Local Qwen backend. Runs llama-server (Homebrew) as a subprocess with the
-// Qwen2.5 GGUF and talks to its OpenAI-compatible API on localhost. Fully local;
+// Local Llama backend. Runs llama-server (Homebrew) as a subprocess with the
+// Llama GGUF and talks to its OpenAI-compatible API on localhost. Fully local;
 // the model is downloaded once to Application Support. Agentic: the model can
 // request a web search (SEARCH: protocol) which we run and feed back — same
-// effect as the Electron Qwen function-calling build.
+// effect as the Electron function-calling build.
 
 import Foundation
 
@@ -13,7 +13,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     private let port = 8799
     private let modelURL: URL
     // Llama 3.1 8B (Q4_K_M) — best on 16GB+ Apple Silicon. Apple FM is fallback only.
-    // We reuse any existing 8B gguf to avoid a re-download.
+    // Reuse an existing Llama 8B gguf if the user already has one.
     private let remote = URL(string: "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf")!
     private var server: Process?
     private(set) var ready = false
@@ -28,10 +28,10 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Breeze/models", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        // Reuse any already-downloaded 8B gguf; otherwise this is the download target.
+        // Reuse any already-downloaded Llama 8B gguf; otherwise this is the download target.
         let existing = (try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil))?
             .first { let n = $0.lastPathComponent.lowercased()
-                     return n.hasSuffix(".gguf") && n.contains("8b") && (n.contains("llama") || n.contains("qwen")) }
+                     return n.hasSuffix(".gguf") && n.contains("8b") && n.contains("llama") }
         modelURL = existing ?? base.appendingPathComponent("meta-llama-3.1-8b-instruct-q4_k_m.gguf")
         super.init()
         browser = tools

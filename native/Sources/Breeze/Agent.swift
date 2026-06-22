@@ -1,8 +1,8 @@
-// Shared agentic loop for both AI backends (Apple Foundation Models + Qwen).
+// Shared agentic loop for both AI backends (Apple Foundation Models + Llama).
 // The model drives the browser through a tiny text protocol: it replies with a
 // single ACTION line (OPEN/SEARCH/READ/REMIND), we run it against BrowserAITools,
 // feed the result back, and loop until the model gives a plain-language answer.
-// This is the native equivalent of the Electron Qwen function-calling build.
+// This is the native equivalent of the Electron function-calling build.
 
 import Foundation
 

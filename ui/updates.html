@@ -148,6 +148,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.6.1', icon: 'bot', title: 'Llama-Only Local AI Selection', major: true, items: [
+        '<b>Stopped Reusing Old Qwen Files</b> — Breeze now only reuses Llama model files from Application Support, so an old Qwen gguf can no longer get picked up by accident.',
+        '<b>Consistent Llama Copy</b> — The assistant and settings now consistently refer to the local Llama 3.1 8B model, which matches what Breeze actually runs.' ] },
       { v: '3.6.0', icon: 'zap', title: 'Faster Local AI & Redownload Model', major: true, items: [
         '<b>Snappier AI Assistant</b> — Tuned the on-device agent for Llama 3.1 8B so it processes far less text per step and replies noticeably faster.',
         '<b>Smarter Agent (No More Spinning)</b> — Breeze AI now detects when it’s stuck repeating itself and answers from what it has instead of looping, so multi-step tasks finish quicker.',
