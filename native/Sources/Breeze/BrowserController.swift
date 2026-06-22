@@ -1678,11 +1678,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @MainActor func gatherContexts() async -> [AIContext] {
         var out: [AIContext] = []
         if let t = current, !t.isNewTab, !t.isChatTab {
-            out.append(AIContext(label: ctxLabel(t), text: await readText(of: t), isCurrent: true))
+            out.append(AIContext(label: ctxLabel(t), text: await readPageText(of: t), isCurrent: true))
         }
         for e in aiExtras {
             if let t = e.tab, tabs.contains(where: { $0.id == t.id }), t.id != current?.id {
-                out.append(AIContext(label: e.label, text: await readText(of: t)))
+                out.append(AIContext(label: e.label, text: await readPageText(of: t)))
             } else if let txt = e.imageText {
                 out.append(AIContext(label: e.label, text: txt))
             }
@@ -1762,6 +1762,40 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     // MARK: - AI tool callbacks (BrowserAITools) ----------------------------
+
+    /// Lightweight page read for the passive per-message AI context: just the
+    /// title, URL, and a short innerText snippet. Unlike `readText`, it does NOT
+    /// walk every DOM node (getBoundingClientRect/getComputedStyle on thousands of
+    /// elements forces synchronous layout+style recalc — seconds on a heavy page
+    /// like YouTube) and does NOT mutate the DOM. This is what made every chat
+    /// message, even "hi", take ~10s with a page open. The full `readText` scrape
+    /// is reserved for the agentic tools (READ / CLICK / TYPE) that actually need
+    /// the interactive-element map.
+    func readPageText(of t: Tab, limit: Int = 4000) async -> String {
+        await withCheckedContinuation { cont in
+            let js = """
+            (function(){
+              var title = document.title || '';
+              var text = (document.body ? document.body.innerText : '') || '';
+              text = text.trim().replace(/\\s+/g, ' ');
+              if (text.length > \(limit)) text = text.substring(0, \(limit)) + '…';
+              return JSON.stringify({ title: title, url: location.href, text: text });
+            })()
+            """
+            t.webView.evaluateJavaScript(js) { result, _ in
+                guard let s = result as? String,
+                      let d = s.data(using: .utf8),
+                      let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else {
+                    cont.resume(returning: "")
+                    return
+                }
+                let title = o["title"] as? String ?? ""
+                let url = o["url"] as? String ?? ""
+                let text = o["text"] as? String ?? ""
+                cont.resume(returning: "URL: \(url)\nPage Title: \(title)\n\nPage text:\n\(text)")
+            }
+        }
+    }
 
     func readText(of t: Tab) async -> String {
         await withCheckedContinuation { cont in

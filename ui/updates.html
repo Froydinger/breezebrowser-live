@@ -148,6 +148,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.3', icon: 'zap', title: 'Instant AI Replies (No More 10-Second "Hi")', major: true, items: [
+        '<b>Way Faster AI With a Page Open</b> — Every message used to deep-scan the entire page (every button, link, and element) before the AI could respond, so even saying "hi" took ~10 seconds on a heavy page like YouTube. Breeze now grabs just the page title and text for context, and only does the full scan when the AI actually needs to click or type. Quick replies are quick again.' ] },
       { v: '3.5.2', icon: 'bot', title: 'Breeze AI Reads the Page You\'re On', major: true, items: [
         '<b>"What is this about?" Just Works</b> — Ask Breeze AI about the page, video, or article you\'re viewing and it answers from that page instead of asking which one you mean. The page you\'re actively looking at is now handed to the model as <i>the</i> current page, separate from your other tabs and history.',
         '<b>No More Blank Answers on Apple Intelligence</b> — On the small on-device model, a long page could overflow the context window and make the AI reply with nothing useful. We now trim page text to fit and seed the answer with the current page, so it stays on-topic.' ] },
