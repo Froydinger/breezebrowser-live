@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.1', icon: 'zap', title: 'File Picker, Blob Downloads & Snappy Local AI', major: true, items: [
+        '<b>Native File & Media Picker</b> — Implemented the WebKit open panel delegate so that file upload buttons and media attach menus on websites work correctly.',
+        '<b>Blob & Data URL Downloads</b> — Whitelisted blob and data schemes, preventing macOS warnings and allowing you to save generated files (like mockups from shots.so) directly to your Downloads folder.',
+        '<b>Fast & Stable Local AI</b> — Fixed a critical context size bug by disabling the buggy llama-server Jinja template wrapper. Prompt evaluation is now snappy and reliable.',
+        '<b>Smarter Context Window</b> — Expanded the context size to 8192 tokens and increased the page text limit, allowing the local model to read long transcript pages and detailed articles without losing context.' ] },
       { v: '3.5.0', icon: 'zap', title: 'Qwen 8B Priority, Live Progress & Link Fixes', major: true, items: [
         '<b>Local Download Progress Bar</b> — Added a visual progress bar inside Settings showing the local Qwen 8B model download percentage.',
         '<b>Dark Mode Button Fix</b> — Restyled the Qwen download button to make sure it is fully visible and high-contrasted in Dark mode.',

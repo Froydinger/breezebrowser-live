@@ -1847,8 +1847,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 
                 var title = document.title || 'No Title';
                 var pageText = (document.body ? document.body.innerText : '').trim().replace(/\s+/g, ' ');
-                if (pageText.length > 2000) {
-                    pageText = pageText.substring(0, 2000) + '...';
+                if (pageText.length > 12000) {
+                    pageText = pageText.substring(0, 12000) + '...';
                 }
                 
                 return JSON.stringify({
@@ -1925,7 +1925,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let text = await readText(of: t)
         syncChrome(); refreshSidebar()
         assistant.setStatus("Thinking…")
-        return "Opened \(u.absoluteString) in the browser. Title: \(t.webView.title ?? "")\n\nPage text:\n" + String(text.prefix(2500))
+        return "Opened \(u.absoluteString) in the browser. Title: \(t.webView.title ?? "")\n\nPage text:\n" + String(text.prefix(8000))
     }
 
     @MainActor func aiSearchWeb(_ query: String) async -> String {
@@ -2254,7 +2254,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         let scheme = url.scheme?.lowercased() ?? ""
         print("Breeze decidePolicyFor: \(url.absoluteString) (scheme: \(scheme))")
-        if !scheme.isEmpty && scheme != "http" && scheme != "https" && scheme != "file" && scheme != "about" {
+        let whitelist = ["http", "https", "file", "about", "blob", "data"]
+        if !scheme.isEmpty && !whitelist.contains(scheme) {
             print("Breeze: Opening custom scheme natively: \(url.absoluteString)")
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
@@ -2617,6 +2618,30 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         
         return t.webView
+    }
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        let openPanel = NSOpenPanel()
+        openPanel.canChooseFiles = true
+        openPanel.canChooseDirectories = parameters.allowsDirectories
+        openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        
+        if let window = NSApp.keyWindow {
+            openPanel.beginSheetModal(for: window) { response in
+                if response == .OK {
+                    completionHandler(openPanel.urls)
+                } else {
+                    completionHandler(nil)
+                }
+            }
+        } else {
+            openPanel.begin { response in
+                if response == .OK {
+                    completionHandler(openPanel.urls)
+                } else {
+                    completionHandler(nil)
+                }
+            }
+        }
     }
     func webViewDidClose(_ webView: WKWebView) {
         if let t = tabs.first(where: { $0.webView === webView }) {

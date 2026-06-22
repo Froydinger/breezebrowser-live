@@ -124,7 +124,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         p.arguments = ["-m", modelURL.path, "--host", "127.0.0.1", "--port", "\(port)",
-                       "-c", "4096", "-ngl", "99", "--jinja"]
+                       "-c", "8192", "-ngl", "99"]
         p.standardOutput = nil; p.standardError = nil
         do {
             try p.run()

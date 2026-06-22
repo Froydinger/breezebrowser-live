@@ -179,7 +179,7 @@ enum Agent {
                     ask: (String) async throws -> String,
                     askFresh: (String) async throws -> String) async throws -> (answer: String, chips: [String]) {
         var ctx = ""
-        for c in contexts { ctx += "[\(c.label)]\n\(String(c.text.prefix(1200)))\n\n" }
+        for c in contexts { ctx += "[\(c.label)]\n\(String(c.text.prefix(8000)))\n\n" }
         var prompt = (ctx.isEmpty ? "" : "(Reference only — do NOT mention or act on these unless the user's message is about them.)\nOpen tabs:\n\(ctx)\n") + "User: \(userText)"
         var chips: [String] = []
         var lastFallback = "Done."
@@ -190,14 +190,14 @@ enum Agent {
         // (e.g. it found the first result but never clicked it).
         let goal = "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
         // Tool output is trimmed so the small on-device context window doesn't overflow.
-        func cap(_ s: String, _ n: Int = 1500) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
+        func cap(_ s: String, _ n: Int = 8000) -> String { s.count > n ? String(s.prefix(n)) + "…" : s }
 
         // If the model overflows its context (or errors), start a clean window
         // seeded only with the question + the most relevant info, and answer.
         func recover() async -> String {
             let seed = """
             The user asked: \(userText)
-            \(lastResult.isEmpty ? "" : "\nThe most relevant information gathered so far:\n\(cap(lastResult, 1200))\n")
+            \(lastResult.isEmpty ? "" : "\nThe most relevant information gathered so far:\n\(cap(lastResult, 6000))\n")
             Now give the user a complete, helpful answer in plain language. Do not use any action keywords.
             """
             if let r = try? await askFresh(seed) {
