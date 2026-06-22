@@ -148,6 +148,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.6', icon: 'zap', title: 'Autocomplete Dropdown & Address Bar Focus Fixes', major: true, items: [
+        '<b>Instant Suggestions Hide</b> — Autocomplete suggestions dropdown popover now hides immediately as soon as you hit return or click away from the address bar.',
+        '<b>Seamless Navigation Focus</b> — Pressing enter in the address bar now deactivates it and correctly focuses the page\'s webview (or internal settings page), allowing you to immediately start scrolling or typing on the site.' ] },
       { v: '3.5.5', icon: 'bot', title: 'Agent Actually Agents + Chat-Tab Fix', major: true, items: [
         '<b>The Agent Browses Again</b> — Asking Breeze to "go to facebook" or "remind me in 10 minutes…" now reliably opens the site and sets the reminder instead of replying "I can\'t access websites." The local model\'s hidden overthinking (fixed in 3.5.4) was causing it to bail before taking the action — verified directly against the model.',
         '<b>Reminders Set From Chat</b> — "Remind me in 10 minutes to call mom" now consistently creates the reminder. (If nothing fires, allow notifications for Breeze in System Settings → Notifications.)',
