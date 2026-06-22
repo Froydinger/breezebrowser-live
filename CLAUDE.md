@@ -6,9 +6,9 @@ only. As of **3.0**, the Electron/Chromium build is retired — the native app i
 things Electron can't: FairPlay DRM video (Netflix), real system passkeys/
 WebAuthn, lower RAM, and better battery.
 
-The old Electron app (2.x) still exists in git history and current installs;
-its build/release notes are in the **Legacy Electron** section at the bottom.
-Everything above that is the native app.
+The old Electron app (2.x) is **fully dead**: its source was deleted from the tree
+(it survives in git history only) and there are no 2.x users left to support, so
+native releases are now just normal GitHub "latest". Everything here is native.
 
 ## Native app layout (`native/`)
 
@@ -84,8 +84,9 @@ Everything above that is the native app.
 
 ## Releasing a new native version (do it in this order)
 
-The native app has its OWN auto-update channel, **separate from the Electron 2.x
-"latest"**, so existing Electron users are never pushed a native build.
+The native updater finds releases by scanning for the newest **`v3.x`** tag with a
+`.zip` asset (see `Updater.swift`) — it does NOT read GitHub's "latest" flag, so the
+release can (and now should) be marked latest normally.
 
 1. Bump the version in **`native/build.sh`** (`CFBundleShortVersionString` +
    `CFBundleVersion`, e.g. 3.0.1 → 3.0.2).
@@ -107,15 +108,14 @@ The native app has its OWN auto-update channel, **separate from the Electron 2.x
    ```
    The **ZIP is what the auto-updater downloads** (the DMG is for manual install).
    Both must be in the release.
-4. Publish the release, tagged `vX.Y.Z`, **NOT marked latest**:
+4. Publish the release, tagged `vX.Y.Z`, **as GitHub latest**:
    ```
    gh release create vX.Y.Z --repo Froydinger/breezebrowser-live \
-     --target native-swift-browser --title "Breeze X.Y.Z — …" --latest=false \
+     --target native-swift-browser --title "Breeze X.Y.Z — …" --latest \
      --notes "…" dist/Breeze-X.Y.Z-arm64.dmg dist/Breeze-X.Y.Z-arm64.zip
    ```
-   `--latest=false` keeps the Electron 2.10.0 release as GitHub "latest" so the
-   old electron-updater (which reads `releases/latest` for `latest-mac.yml`) keeps
-   working for 2.x users. See [[breeze-native-3.0-release.md]] in memory.
+   Electron 2.x is dead, so there's nothing to protect by pinning an old "latest" —
+   native is the only product. See [[breeze-native-3.0-release.md]] in memory.
 5. Update the **lander** (`Froydinger/breezebrowser` repo, `index.html`): point
    the 3 download links + schema `downloadUrl` at
    `releases/download/vX.Y.Z/Breeze-X.Y.Z-arm64.dmg` and bump `softwareVersion`.
@@ -135,7 +135,7 @@ contain this updater (3.0.1+) before it can self-update.
 ```
 gh release view vX.Y.Z --repo Froydinger/breezebrowser-live \
   --json isDraft,assets --jq '{draft:.isDraft, files:[.assets[].name]}'
-gh api repos/Froydinger/breezebrowser-live/releases/latest --jq '.tag_name'  # must stay v2.10.0
+gh api repos/Froydinger/breezebrowser-live/releases/latest --jq '.tag_name'  # should be vX.Y.Z
 ```
 The release must include BOTH `Breeze-X.Y.Z-arm64.dmg` and `-arm64.zip`.
 
@@ -175,22 +175,6 @@ The `.tiff`/`.png`/binary are gitignored; only `makebg.swift` is tracked.
   reminders do.
 
 ---
-
-## Legacy Electron app (2.x — superseded by native 3.0)
-
-The Electron build (Chromium 136 / Electron 36) is no longer the product but
-still runs on existing installs. Key facts if you ever touch it:
-- `main.js` (main process), `preload.js`/`page-preload.js`/`internal-preload.js`/
-  `overlay-preload.js`, `ui/` (chrome UI). Build via electron-builder.
-- AI was Qwen2.5 3B via node-llama-cpp with function-calling
-  (`web_search`/`read_current_page`/`set_reminder`); notification overlay was a
-  transparent `WebContentsView`.
-- Release was `npx electron-builder --mac --publish always` → un-draft with
-  `gh release edit vX.Y.Z --draft=false --latest`. Its updates use the `-mac.zip`
-  + `latest-mac.yml`, read from `releases/latest`. **Leave v2.10.0 as GitHub
-  "latest"** so these installs keep updating within 2.x; the native channel is
-  v3.x and deliberately not-latest.
-- Windows was removed in v2.10.1; macОS-only since.
 
 ## Quick commands
 - Native: `cd native && ./build.sh && open dist/Breeze.app`
