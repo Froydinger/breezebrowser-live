@@ -288,6 +288,8 @@
     .dz-btn.danger { background: #e5484d; color: #fff; }
     .dz-btn.danger:hover { background: #c93b40; }
     .dz-done { font-size: 12.5px; color: #30a46c; font-weight: 600; }
+    button, input:not([type="checkbox"]), select { border-radius: 999px !important; }
+    textarea { border-radius: 18px !important; }
   </style>
 </head>
 <body>
@@ -502,13 +504,11 @@
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:16px">
             <div style="flex:1">
               <div class="row-label">OpenAI API key</div>
-              <div class="row-hint">Breeze AI is powered by OpenAI's <b>GPT-5.4-mini</b> using your own API key (BYOK). Your key is stored in the macOS Keychain and is only ever sent to OpenAI.</div>
+              <div class="row-hint">Breeze AI is powered by OpenAI's <b>GPT-5.4-mini</b> using your own API key (BYOK). Your key stays in an owner-only file on this Mac and is only ever sent to OpenAI — no system password prompts.</div>
             </div>
             <button id="aiKeyToggle" style="flex-shrink:0;font-family:inherit;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:500">Manage key</button>
           </div>
-          <!-- Hidden until the user explicitly opens it. The keychain (hasSecret) is
-               only read on first open, so merely viewing Settings never prompts for
-               the macOS keychain password. -->
+          <!-- Hidden until the user explicitly opens it. -->
           <div id="aiKeyPanel" hidden style="display:flex;flex-direction:column;gap:10px;background:var(--surface-active);border-radius:10px;padding:14px">
             <div id="aiKeyStatus" class="row-hint" style="margin:0">Checking…</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -679,7 +679,7 @@
         </details>
         <details>
           <summary>Privacy &amp; your data</summary>
-          <p>History and saved passwords are encrypted on this device with your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Your OpenAI API key is stored in the system keychain and is only ever sent to OpenAI when you use the assistant. Nothing else syncs anywhere.</p>
+          <p>History and saved passwords are encrypted on this device with your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Your OpenAI API key is kept in Breeze's owner-only local storage and is only ever sent to OpenAI when you use the assistant. Nothing else syncs anywhere.</p>
         </details>
       </div>
     </section>
@@ -788,9 +788,7 @@
     })();
 
     // ---- OpenAI API key (BYOK) -------------------------------------------
-    // The keychain is only touched when the user explicitly opens this panel,
-    // saves, or removes a key — never on page load — so opening Settings can't
-    // trigger the macOS keychain password prompt.
+    // Prompt-free local API-key management.
     (function () {
       const toggle = document.getElementById('aiKeyToggle');
       const panel = document.getElementById('aiKeyPanel');
@@ -814,7 +812,7 @@
         const opening = panel.hidden;
         panel.hidden = !opening;
         toggle.textContent = opening ? 'Hide' : 'Manage key';
-        if (opening) refreshStatus();   // the one allowed keychain read
+        if (opening) refreshStatus();
       });
       saveBtn.addEventListener('click', () => {
         const v = (input.value || '').trim();

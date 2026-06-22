@@ -21,7 +21,7 @@ final class TabRowView: NSView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
-        layer?.cornerRadius = 10
+        layer?.cornerRadius = 19
 
         faviconView.translatesAutoresizingMaskIntoConstraints = false
         faviconView.imageScaling = .scaleProportionallyDown
@@ -163,7 +163,7 @@ final class SplitPane: NSView {
         sidebarToggle.isHidden = true
         sidebarToggle.onTap = { [weak self] in self?.onSidebarToggle?() }
 
-        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 9
+        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 15
         addressWrap.translatesAutoresizingMaskIntoConstraints = false
         address.placeholderString = "Search or enter URL"
         address.font = .systemFont(ofSize: 12.5)
@@ -491,7 +491,7 @@ final class RemindersView: NSStackView {
             
             let row = NSView()
             row.wantsLayer = true
-            row.layer?.cornerRadius = 8
+            row.layer?.cornerRadius = 13
             row.layer?.backgroundColor = p.surface.cgColor
             row.translatesAutoresizingMaskIntoConstraints = false
             

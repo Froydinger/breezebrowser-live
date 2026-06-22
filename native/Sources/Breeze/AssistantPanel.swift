@@ -102,7 +102,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         ])
 
         // input row
-        let inputWrap = NSView(); inputWrap.wantsLayer = true; inputWrap.layer?.cornerRadius = 14
+        let inputWrap = NSView(); inputWrap.wantsLayer = true; inputWrap.layer?.cornerRadius = 26
         inputWrap.translatesAutoresizingMaskIntoConstraints = false
         input.placeholderString = "Ask anything…"
         input.font = .systemFont(ofSize: 13.5)
@@ -438,7 +438,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         for c in chats {
             guard let id = c["id"] as? Double else { continue }
             let title = (c["title"] as? String) ?? "Chat"
-            let row = NSView(); row.wantsLayer = true; row.layer?.cornerRadius = 8
+            let row = NSView(); row.wantsLayer = true; row.layer?.cornerRadius = 16
             row.layer?.backgroundColor = p.surface.cgColor
             row.translatesAutoresizingMaskIntoConstraints = false
             let l = NSTextField(labelWithString: title); l.font = .systemFont(ofSize: 12.5)
@@ -476,7 +476,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         contextRow.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let p = Theme.shared.palette
         func pill(_ text: String, removeIndex: Int?) -> NSView {
-            let v = NSView(); v.wantsLayer = true; v.layer?.cornerRadius = 9
+            let v = NSView(); v.wantsLayer = true; v.layer?.cornerRadius = 15
             v.layer?.backgroundColor = (removeIndex == nil ? p.surfaceActive : p.surface).cgColor
             v.translatesAutoresizingMaskIntoConstraints = false
             let l = NSTextField(labelWithString: text); l.font = .systemFont(ofSize: 11); l.textColor = p.text

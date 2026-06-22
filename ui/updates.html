@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.7.3', icon: 'key-round', title: 'No Prompts, Just Breeze', major: true, items: [
+        '<b>No More OpenAI Key Prompts</b> — Your API key now lives in Breeze\'s owner-only local storage, so using the assistant never triggers a macOS password, Touch ID, or Keychain authorization interruption.',
+        '<b>Rounder Everywhere</b> — Inputs, URL bars, buttons, sidebar tabs, settings controls, assistant controls, and suggestion hovers now share a softer pill-shaped design.',
+        '<b>Suggestions Land in the Right Place</b> — New-tab suggestions open beneath the Ask bar, URL suggestions stay attached to the toolbar, and each menu shrinks to exactly the number of results it contains.',
+        '<b>Still Secure on This Mac</b> — Breeze stores the key in a file readable only by your macOS user account and sends it only to OpenAI when you use Breeze AI.' ] },
       { v: '3.7.2', icon: 'zap', title: 'Reliable Downloads, Tabs & Windows', major: true, items: [
         '<b>Downloads Finish Reliably</b> — Breeze now keeps every download alive from the moment a site starts it until the file finishes, fixing silent failures on JavaScript-heavy sites and right-click downloads.',
         '<b>Links Open Where You Asked</b> — Command-click and “Open Link in New Tab” open tabs, while “Open Link in New Window” now creates a real window.',

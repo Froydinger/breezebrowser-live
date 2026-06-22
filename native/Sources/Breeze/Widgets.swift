@@ -52,7 +52,6 @@ func tintedSymbol(_ name: String, point: CGFloat, weight: NSFont.Weight, color: 
 /// A 30×30 (configurable) icon button with hover background — the `.nav-btn` look.
 final class HoverButton: NSButton {
     var diameter: CGFloat = 30
-    var radius: CGFloat = 8
     var symbol: String = "" { didSet { applyTheme() } }
     var symbolWeight: NSFont.Weight = .regular
     var pointSize: CGFloat = 15
@@ -66,7 +65,7 @@ final class HoverButton: NSButton {
         isBordered = false
         bezelStyle = .regularSquare
         wantsLayer = true
-        layer?.cornerRadius = radius
+        layer?.cornerRadius = size / 2
         imagePosition = .imageOnly
         target = self; action = #selector(tapped)
         self.symbol = symbol
@@ -77,6 +76,11 @@ final class HoverButton: NSButton {
                                                name: Theme.didChange, object: nil)
     }
     required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = bounds.height / 2
+    }
 
     override var isEnabled: Bool { didSet { alphaValue = isEnabled ? 1 : 0.3 } }
 
@@ -112,12 +116,17 @@ final class HoverTextButton: NSButton {
         translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = 12
         target = self; action = #selector(tapped)
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme), name: Theme.didChange, object: nil)
     }
     required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = bounds.height / 2
+    }
 
     @objc func applyTheme() {
         let p = Theme.shared.palette

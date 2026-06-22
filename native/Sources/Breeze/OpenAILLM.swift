@@ -1,13 +1,11 @@
 // OpenAI BYOK backend. Breeze AI is powered by OpenAI's gpt-5.4-mini through the
-// user's OWN API key (stored in the macOS Keychain). There is no local model and
+// user's OWN API key (stored in an owner-only local file). There is no local model and
 // no bundled runtime. Agentic: the model drives the browser via the tiny text
 // protocol in Agent.swift (OPEN/SEARCH/READ/CLICK/TYPE/REMIND) — we run each
 // action and feed the result back until it returns a plain-language answer.
 //
-// Keychain hygiene: this backend NEVER reads the keychain just to report status.
-// `ready` reflects the non-secret `aiKeyConnected` flag in settings; the actual
-// key is only read from the keychain when the user actually sends a message. That
-// keeps the macOS keychain password prompt from firing when Settings merely opens.
+// Key storage is deliberately prompt-free. Existing Keychain values are imported
+// only when macOS can return them without showing authentication UI.
 
 import Foundation
 
@@ -18,19 +16,14 @@ final class OpenAILLM: NSObject {
     // The single, gated model. Breeze AI is BYOK-only and locked to gpt-5.4-mini.
     private let model = "gpt-5.4-mini"
     private let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
-    private let keychainAccount = "openaiKey"
+    private let keyAccount = "openaiKey"
 
     private(set) var lastStatus = "Add your OpenAI API key in Settings → Breeze AI to start."
 
-    // In-memory copy of the key for this launch. The macOS Keychain may prompt the
-    // first time a (re-signed) build reads an item, so we read it at most ONCE per
-    // launch and reuse it — instead of re-reading (and risking a prompt) on every
-    // message. Seeded directly when the user saves a key, so the first chat right
-    // after saving doesn't touch the keychain at all.
+    // In-memory copy avoids touching disk on every message.
     private var cachedKey: String?
 
-    /// "Ready" means a key has been connected. We read the cached, non-secret flag
-    /// instead of the keychain so opening Settings never triggers a password prompt.
+    /// "Ready" means a key has been connected.
     var ready: Bool { Store.shared.bool("aiKeyConnected") }
 
     init(tools: any BrowserAITools) {
@@ -38,8 +31,7 @@ final class OpenAILLM: NSObject {
         browser = tools
     }
 
-    /// Seed/clear the in-memory key (called when the user saves or removes it in
-    /// Settings) so we avoid an extra keychain read — and prompt — afterward.
+    /// Seed/clear the in-memory key when the user saves or removes it in Settings.
     func cacheKey(_ key: String) {
         cachedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -63,10 +55,15 @@ final class OpenAILLM: NSObject {
         if let cachedKey {
             key = cachedKey
         } else {
-            key = Keychain.get(keychainAccount)
+            let local = LocalSecrets.get(keyAccount)
+            key = local.isEmpty ? LocalSecrets.migrateLegacyWithoutPrompt(keyAccount) : local
             cachedKey = key
         }
         guard !key.isEmpty else {
+            if Store.shared.bool("aiKeyConnected") {
+                Store.shared.settings["aiKeyConnected"] = false
+                Store.shared.saveSettings()
+            }
             completion(.failure(Self.error("Breeze AI needs your OpenAI API key. Add it in Settings → Breeze AI — there's a link there to create one.")))
             return
         }

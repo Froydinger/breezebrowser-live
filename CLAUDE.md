@@ -30,7 +30,7 @@ native releases are now just normal GitHub "latest". Everything here is native.
     `#assistant`). Markdown rendering, context pills, @-mention, attach.
   - `Agent.swift` — backend-agnostic agentic loop (see AI below).
   - `OpenAILLM.swift` — the only AI backend: OpenAI **gpt-5.4-mini** via the
-    user's own API key (BYOK), stored in the macOS Keychain. No local model.
+    user's own API key (BYOK), stored in an owner-only local file. No local model.
   - `Updater.swift` — native auto-updater (see Releasing below).
   - `Models.swift` — Tab, Pin, sharedConfig (WKWebView config + Safari UA + the
     `breezeMedia`/bridge user scripts), Favicons.
@@ -47,15 +47,15 @@ native releases are now just normal GitHub "latest". Everything here is native.
 
 - **One backend, BYOK only:** OpenAI **`gpt-5.4-mini`** (`OpenAILLM`) over the
   Chat Completions API, authenticated with the user's OWN API key. The key lives
-  in the macOS Keychain (`Keychain.swift`, account `openaiKey`). Do NOT add a
+  in prompt-free local storage (`Keychain.swift`, account `openaiKey`). Do NOT add a
   local model (Llama/llama-server/GGUF), Apple Foundation Models, a model picker,
   or a second model — Breeze AI is gated to gpt-5.4-mini only.
-- **Keychain hygiene (hard rule):** never read the keychain just to show status.
-  A non-secret `aiKeyConnected` flag in settings mirrors "is a key saved", so
-  `llm.ready`, `bridgeStateJS`, and the assistant/settings UI show readiness
-  WITHOUT a keychain read. The keychain is read only (a) on an actual AI send and
-  (b) when the user explicitly opens the OpenAI key panel in Settings (the one
-  `hasSecret` call). This keeps the macOS password prompt from firing on open.
+- **Prompt-free key storage (hard rule):** store the API key in Breeze's owner-only
+  local secret file (directory `0700`, file `0600`). A non-secret
+  `aiKeyConnected` flag mirrors whether a key is saved so ordinary UI rendering
+  never reads the secret. Pre-3.7.3 Keychain migration is allowed only with
+  authentication UI explicitly disabled; Breeze must never trigger a password,
+  Touch ID, or passkey-style prompt for the OpenAI key.
 - **No key → warn, don't fail:** using an AI feature with no key shows a friendly
   "add your OpenAI key in Settings" message (with a platform.openai.com link via
   the `openExternal` bridge), not a dead request.

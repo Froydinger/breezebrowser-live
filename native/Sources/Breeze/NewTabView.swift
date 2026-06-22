@@ -51,7 +51,7 @@ final class NewTabView: NSView {
 
         let fieldWrap = NSView()
         fieldWrap.wantsLayer = true
-        fieldWrap.layer?.cornerRadius = 16
+        fieldWrap.layer?.cornerRadius = 27
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
 

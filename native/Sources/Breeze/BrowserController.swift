@@ -484,7 +484,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         forward.onTap = { [weak self] in self?.current?.webView.goForward() }
         reload.onTap = { [weak self] in self?.current?.webView.reload() }
 
-        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 10
+        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 19
         addressWrap.translatesAutoresizingMaskIntoConstraints = false
         let copylink = HoverButton(symbol: "link", size: 22, point: 12)
         copylink.onTap = { [weak self] in if let t = self?.current { self?.copyLink(t) } }
@@ -1400,8 +1400,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     /// Set the chat input's enabled state + status based on whether a key is set.
-    /// Uses the cached `aiKeyConnected` flag — never the keychain — so opening the
-    /// assistant doesn't trigger a macOS keychain password prompt.
+    /// Uses the cached `aiKeyConnected` flag so opening the assistant never reads secrets.
     func prepareAIStatus() {
         if llm.ready {
             assistant.setInputEnabled(true)
@@ -1458,7 +1457,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func sendToAI(_ text: String) {
         // No key yet → warn the user and point them to Settings instead of firing a
-        // doomed request. Uses the cached flag, so this never reads the keychain.
+        // doomed request. Uses the cached flag, so this never reads secret storage.
         if !llm.ready {
             assistant.addUser(text)
             assistant.addAI("Breeze AI runs on your own OpenAI key. Add your API key in **Settings → Breeze AI** to start — there's a link there to create one at platform.openai.com.", chips: [])
@@ -2508,9 +2507,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = effectiveTheme()
         var settings = Store.shared.settings
         settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
-        // Note: deliberately NOT reading the keychain here. Whether a key exists is
-        // mirrored in the non-secret `aiKeyConnected` flag (already in settings), so
-        // injecting bridge state never triggers a keychain password prompt.
+        // Secret presence is mirrored in `aiKeyConnected`; bridge state never reads the key.
         let settingsJSON = Store.json(settings)
         let onText = onAccentTextHex()
         return """
@@ -2565,9 +2562,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             applySettingsChange()
         case "setSecret":
             if let key = args["key"] as? String, let val = args["value"] as? String {
-                Keychain.set(key, val)
-                // Mirror key presence in a non-secret flag so status/readiness can be
-                // shown without ever reading the keychain (avoids password prompts).
+                LocalSecrets.set(key, val)
                 if key == "openaiKey" {
                     llm.cacheKey(val)
                     Store.shared.settings["aiKeyConnected"] = !val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -2577,16 +2572,19 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 applySettingsChange()
             }
         case "hasSecret":
-            // The ONLY keychain read on the settings path. Settings.js calls this
-            // only when the user explicitly opens the OpenAI key section, so the
-            // macOS password prompt can't fire just from opening Settings.
             if let key = args["key"] as? String {
-                let has = !Keychain.get(key).isEmpty
+                let local = LocalSecrets.get(key)
+                let has = !(local.isEmpty ? LocalSecrets.migrateLegacyWithoutPrompt(key) : local).isEmpty
+                if key == "openaiKey", !has {
+                    Store.shared.settings["aiKeyConnected"] = false
+                    Store.shared.saveSettings()
+                    prepareAIStatus()
+                }
                 resolve(has ? "true" : "false")
             }
         case "deleteSecret":
             if let key = args["key"] as? String {
-                Keychain.delete(key)
+                LocalSecrets.delete(key)
                 if key == "openaiKey" {
                     llm.cacheKey("")
                     Store.shared.settings["aiKeyConnected"] = false
@@ -2654,7 +2652,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 sendToAI(text)
             }
         case "aiReady":
-            // Reflects the cached flag, not the keychain — no password prompt.
+            // Reflects the cached flag, not secret storage, so this never prompts.
             resolve(llm.ready ? "true" : "false")
         case "clearBrowsingData":
             clearCache(); resolve("{}")
@@ -2868,7 +2866,8 @@ extension BrowserController: AddressSuggestionsDelegate {
         if items.isEmpty {
             suggestionsPopover.hide()
         } else {
-            suggestionsPopover.show(relativeTo: field, items: items)
+            let edge: NSRectEdge = field === newTab.field ? .maxY : .minY
+            suggestionsPopover.show(relativeTo: field, items: items, preferredEdge: edge)
         }
     }
     

@@ -39,8 +39,8 @@ final class Store {
         "webNotifications": true,
         "tabSleepHours": 1,
         "aiInstructions": "",
-        // Non-secret mirror of "is an OpenAI key in the keychain". Lets the UI show
-        // readiness without reading the keychain (which would prompt for a password).
+        // Non-secret mirror of "is an OpenAI key saved". Lets the UI show readiness
+        // without reading secret storage during ordinary rendering.
         "aiKeyConnected": false,
         // Cumulative OpenAI token usage (this Mac), for an estimated-cost readout.
         "aiUsageInput": 0,
@@ -90,11 +90,11 @@ final class Store {
         openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
 
-        // migration: if settings JSON has openaiKey, move it to Keychain and delete it from JSON
+        // Migrate any very old plaintext setting into the owner-only key file.
         if let key = settings["openaiKey"] as? String, !key.isEmpty {
-            Keychain.set("openaiKey", key)
+            LocalSecrets.set("openaiKey", key)
             settings.removeValue(forKey: "openaiKey")
-            settings["aiKeyConnected"] = true   // we already hold the key here — set the flag without a keychain read
+            settings["aiKeyConnected"] = true
             saveSettings()
         }
     }

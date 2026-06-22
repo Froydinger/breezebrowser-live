@@ -54,12 +54,12 @@ Skip any step only if the user explicitly says so.
 ## AI architecture
 
 - One backend only: OpenAI `gpt-5.4-mini` via the user's OWN API key (BYOK),
-  stored in the macOS Keychain (`Keychain.swift`, account `openaiKey`). No local
+  stored in an owner-only local file (`Keychain.swift`, account `openaiKey`). No local
   model, no bundled runtime, no model picker, no fallbacks. Gated to gpt-5.4-mini.
-- Keychain hygiene: never read the keychain to show status. The non-secret
-  `aiKeyConnected` flag mirrors key presence; the keychain is read only on an
-  actual send and when the user explicitly opens the key panel in Settings. This
-  prevents a macOS password prompt when Settings merely opens.
+- Key storage never presents macOS authorization UI. The non-secret
+  `aiKeyConnected` flag mirrors key presence; pre-3.7.3 Keychain values are
+  migrated only when macOS can return them silently, otherwise the user re-enters
+  the key once in Settings.
 - No key → friendly "add your key in Settings" warning (with a platform.openai.com
   link via the `openExternal` bridge), never a silent failure.
 - Text protocol: OPEN/SEARCH/READ/CLICK/TYPE/REMIND actions. Up to 8 chained steps.

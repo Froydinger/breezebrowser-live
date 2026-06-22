@@ -17,7 +17,47 @@ protocol AddressSuggestionsDelegate: AnyObject {
     func textChanged(to text: String)
 }
 
+private final class RoundedSuggestionRowView: NSTableRowView {
+    private var hovering = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        needsDisplay = true
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard hovering || isSelected else { return }
+        let color = isSelected
+            ? Theme.shared.palette.accent.withAlphaComponent(0.22)
+            : Theme.shared.palette.surfaceHover
+        color.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 2), xRadius: 14, yRadius: 14).fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        drawBackground(in: dirtyRect)
+    }
+}
+
 final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    private let rowHeight: CGFloat = 32
+    private let maxVisibleRows = 8
     private let popover = NSPopover()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
@@ -39,7 +79,7 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
         tableView.dataSource = self
         tableView.delegate = self
         tableView.headerView = nil
-        tableView.rowHeight = 32
+        tableView.rowHeight = rowHeight
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
         tableView.backgroundColor = .clear
         tableView.style = .plain
@@ -68,7 +108,8 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
         popover.animates = false
     }
     
-    func show(relativeTo textField: NSTextField, items: [SuggestionItem]) {
+    func show(relativeTo textField: NSTextField, items: [SuggestionItem], preferredEdge: NSRectEdge = .minY) {
+        let previousField = targetField
         self.targetField = textField
         self.suggestions = items
         tableView.reloadData()
@@ -77,9 +118,18 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
             popover.close()
             return
         }
+
+        let visibleRows = min(items.count, maxVisibleRows)
+        let height = CGFloat(visibleRows) * rowHeight
+        let size = NSSize(width: 450, height: height)
+        viewCtrl.view.frame.size = size
+        popover.contentSize = size
+        scrollView.hasVerticalScroller = items.count > maxVisibleRows
         
+        let needsNewAnchor = popover.isShown && previousField !== textField
+        if needsNewAnchor { popover.close() }
         if !popover.isShown {
-            popover.show(relativeTo: textField.bounds, of: textField, preferredEdge: .minY)
+            popover.show(relativeTo: textField.bounds, of: textField, preferredEdge: preferredEdge)
             if let window = textField.window {
                 DispatchQueue.main.async {
                     window.makeKeyAndOrderFront(nil)
@@ -228,9 +278,9 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
     
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         let id = NSUserInterfaceItemIdentifier("SuggestionRowView")
-        var rowView = tableView.makeView(withIdentifier: id, owner: self) as? NSTableRowView
+        var rowView = tableView.makeView(withIdentifier: id, owner: self) as? RoundedSuggestionRowView
         if rowView == nil {
-            rowView = NSTableRowView()
+            rowView = RoundedSuggestionRowView()
             rowView?.identifier = id
         }
         return rowView
