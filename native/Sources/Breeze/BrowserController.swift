@@ -2381,7 +2381,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if (window.__bzOnSettings) window.__bzOnSettings(window.__bzSettings);
         (function(){var s=document.getElementById('bz-accent-fix')||document.createElement('style');
           s.id='bz-accent-fix';
-          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge{color:\(onText) !important;}';
+          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#downloadQwenBtn{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
         """
     }
