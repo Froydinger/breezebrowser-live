@@ -544,6 +544,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layer?.masksToBounds = true
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
+        newTab.field.delegate = self
     }
 
     // Rounded corners on the web area clip WebKit's hardware video overlay to a
@@ -621,7 +622,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 // force-opening it as a clipped right-side strip (the bug). The chat
                 // stays in its own chat tab (still in the tab list); the user re-opens
                 // the assistant when they want it.
-                setAssistant(false)
+                // Collapse instantly without animation to prevent UI bleeding/clipping
+                assistantOpen = false
+                assistant.setFullscreen(false, clearLights: false)
+                breezeCorner.isHidden = false
+                assistantLeadingC.constant = 0
+                webTrailC.constant = -6
+                topTrailC.constant = -54
+                root.layoutSubtreeIfNeeded()
+                scheduleReflow()
             } else {
                 assistantLeadingC.constant = assistantOpen ? -w : 0
             }
@@ -2738,7 +2747,7 @@ extension BrowserController: AddressSuggestionsDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, field === address else { return }
+        guard let field = obj.object as? NSTextField, (field === address || field === newTab.field) else { return }
         if suggestionsPopover.isInternalUpdate { return }
         
         let q = field.stringValue.lowercased()
@@ -2779,7 +2788,7 @@ extension BrowserController: AddressSuggestionsDelegate {
     }
     
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        if control === address {
+        if control === address || control === newTab.field {
             if suggestionsPopover.isShown {
                 if commandSelector == #selector(NSResponder.moveUp(_:)) {
                     suggestionsPopover.moveSelectionUp()

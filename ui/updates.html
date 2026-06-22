@@ -148,6 +148,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.5.8', icon: 'zap', title: 'AI Sidebar Bleeding Fix & New Tab Suggestions', major: true, items: [
+        '<b>Fixed AI Sidebar UI Bleeding</b> — Fixed a bug where switching away from a fullscreen Breeze Chat tab caused the assistant panel UI to temporarily slide/bleed and display incorrectly on the bottom right corner of the next tab.',
+        '<b>Autocomplete on New Tab</b> — Enabled the autocomplete suggestions dropdown popover on the center search and question input field of the New Tab page.' ] },
       { v: '3.5.7', icon: 'zap', title: 'Address Input & Autocomplete Hiding Fixes', major: true, items: [
         '<b>Fixed Address Bar Keyboard Focus</b> — Fixed a bug where Cocoa focus-shifting blocked typing in the address bar on new chat and web pages.',
         '<b>Instant Suggestions Hide</b> — Autocomplete suggestions dropdown popover now hides immediately as soon as you hit return or click away from the address bar.',
