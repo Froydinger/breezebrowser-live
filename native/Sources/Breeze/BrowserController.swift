@@ -246,6 +246,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             guard let self else { return }
             self.assistant.setModelStatus(s)                 // empty-state line
             self.assistant.setStatus(self.llm.ready ? nil : s)   // also show progress during a chat
+            self.broadcastToInternalPages()
         }
 
         window.contentView = root
@@ -2252,7 +2253,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
         let scheme = url.scheme?.lowercased() ?? ""
+        print("Breeze decidePolicyFor: \(url.absoluteString) (scheme: \(scheme))")
         if !scheme.isEmpty && scheme != "http" && scheme != "https" && scheme != "file" && scheme != "about" {
+            print("Breeze: Opening custom scheme natively: \(url.absoluteString)")
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
             return
@@ -2578,12 +2581,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
+        print("Breeze Navigation didFailProvisionalNavigation: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
         }
     }
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError error: Error) {
+        print("Breeze Navigation didFail: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()

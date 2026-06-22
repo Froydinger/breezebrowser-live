@@ -14,7 +14,7 @@ final class LocalLLM: NSObject, URLSessionDownloadDelegate {
     private let modelURL: URL
     // Qwen3 8B (Q4_K_M) — best on 16GB+ Apple Silicon. Apple FM is fallback only.
     // We reuse any existing 8B gguf to avoid a re-download.
-    private let remote = URL(string: "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf")!
+    private let remote = URL(string: "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen_Qwen3-8B-Q4_K_M.gguf")!
     private var server: Process?
     private(set) var ready = false
     var lastStatus = "Breeze AI runs locally. Download Qwen 8B to start."

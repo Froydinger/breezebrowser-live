@@ -104,6 +104,9 @@ final class Tab {
             config = sharedConfig
         }
         webView = WKWebView(frame: .zero, configuration: config)
+        if #available(macOS 13.3, iOS 16.4, *) {
+            webView.isInspectable = true
+        }
         webView.customUserAgent = SafariUA
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
