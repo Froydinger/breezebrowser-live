@@ -332,7 +332,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
-            self?.navLeadingC?.constant = 82   // restore the traffic-light gap when windowed
+            self?.navLeadingC?.constant = 92   // restore the traffic-light gap when windowed
             self?.window.titlebarAppearsTransparent = true
             self?.window.backgroundColor = .windowBackgroundColor
         }
@@ -536,7 +536,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let nav = NSStackView(views: [topSidebarBtn, back, forward, reload]); nav.spacing = 2
         nav.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(nav); topBar.addSubview(addressWrap)
-        navLeadingC = nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 82)
+        navLeadingC = nav.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 92)
         NSLayoutConstraint.activate([
             navLeadingC,
             nav.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
