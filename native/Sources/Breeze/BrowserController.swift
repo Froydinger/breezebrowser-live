@@ -52,6 +52,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var downloads: [DownloadItem] = []
     var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
     var contextLinkURL: URL?
+    var contextImageURL: URL?
+    var contextPageURL: URL?
+    var contextPageTitle = ""
+    var contextSelectedText = ""
+    var contextEditable = false
     var downloadList: [[String: Any]] { downloads.map { $0.dict } }
     var blockedPopups: Set<UUID> = []  // tabs with "Allow Popups" turned off
     var titleObs: [UUID: NSKeyValueObservation] = [:]
@@ -548,18 +553,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         findBar.translatesAutoresizingMaskIntoConstraints = false
         findBar.wantsLayer = true
         findBar.layer?.cornerRadius = 21
-        findBar.layer?.masksToBounds = true
-        findBar.layer?.backgroundColor = Theme.shared.palette.surface.cgColor
+        findBar.layer?.masksToBounds = false
+        findBar.layer?.backgroundColor = findBarBackgroundColor().cgColor
+        findBar.layer?.shadowColor = NSColor.black.cgColor
+        findBar.layer?.shadowOpacity = 0.18
+        findBar.layer?.shadowRadius = 18
+        findBar.layer?.shadowOffset = NSSize(width: 0, height: -8)
         findBar.layer?.borderWidth = 1
         findBar.layer?.borderColor = Theme.shared.palette.textSoft.withAlphaComponent(0.18).cgColor
+        findBar.layer?.zPosition = 1000
         findBar.isHidden = true
 
         findField.translatesAutoresizingMaskIntoConstraints = false
         findField.placeholderString = "Find in page"
         findField.font = .systemFont(ofSize: 13)
         findField.isBordered = false
-        findField.drawsBackground = false
+        findField.drawsBackground = true
+        findField.backgroundColor = .clear
         findField.focusRingType = .none
+        findField.textColor = Theme.shared.palette.text
         findField.delegate = self
         findField.target = self
         findField.action = #selector(findFieldSubmit)
@@ -601,8 +613,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc func openFindBar() {
         guard current?.isNewTab == false, current?.isChatTab == false else { return }
         findBar.isHidden = false
-        findBar.layer?.backgroundColor = Theme.shared.palette.surface.cgColor
-        findBar.layer?.borderColor = Theme.shared.palette.textSoft.withAlphaComponent(0.18).cgColor
+        updateFindBarAppearance()
+        root.addSubview(findBar, positioned: .above, relativeTo: nil)
         if findField.stringValue.isEmpty {
             current?.webView.evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
                 guard let self else { return }
@@ -2659,14 +2671,62 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func showLinkMenu(url: URL) {
         contextLinkURL = url
+        showPageMenu(link: url, image: nil, pageURL: current?.webView.url, pageTitle: current?.title ?? "", selection: "", editable: false)
+    }
+
+    func showPageMenu(link: URL?, image: URL?, pageURL: URL?, pageTitle: String, selection: String, editable: Bool) {
+        contextLinkURL = link
+        contextImageURL = image
+        contextPageURL = pageURL
+        contextPageTitle = pageTitle
+        contextSelectedText = selection
+        contextEditable = editable
+
         let menu = NSMenu()
-        menu.addItem(withTitle: "Open Link", action: #selector(openContextLink), keyEquivalent: "")
-        menu.addItem(withTitle: "Open Link in New Tab", action: #selector(openContextLinkInNewTab), keyEquivalent: "")
-        menu.addItem(withTitle: "Open Link in New Window", action: #selector(openContextLinkInNewWindow), keyEquivalent: "")
+        menu.autoenablesItems = false
+
+        if link != nil {
+            menu.addTargetedItem("Open Link", #selector(openContextLink), self)
+            menu.addTargetedItem("Open Link in New Tab", #selector(openContextLinkInNewTab), self)
+            menu.addTargetedItem("Open Link in New Window", #selector(openContextLinkInNewWindow), self)
+            menu.addItem(.separator())
+            menu.addTargetedItem("Download Linked File", #selector(downloadContextLink), self)
+            menu.addTargetedItem("Copy Link", #selector(copyContextLink), self)
+            menu.addItem(.separator())
+        }
+
+        if image != nil {
+            menu.addTargetedItem("Open Image in New Tab", #selector(openContextImageInNewTab), self)
+            menu.addTargetedItem("Download Image", #selector(downloadContextImage), self)
+            menu.addTargetedItem("Copy Image Address", #selector(copyContextImageAddress), self)
+            menu.addItem(.separator())
+        }
+
+        if !selection.isEmpty {
+            menu.addTargetedItem("Copy", #selector(copyContextSelection), self)
+            let short = selection.count > 32 ? String(selection.prefix(32)) + "..." : selection
+            menu.addTargetedItem("Search for \"\(short)\"", #selector(searchContextSelection), self)
+            menu.addTargetedItem("Ask Nav About Selection", #selector(askNavAboutContextSelection), self)
+            menu.addItem(.separator())
+        } else if editable {
+            menu.addTargetedItem("Cut", #selector(cutContextEditable), self)
+            menu.addTargetedItem("Copy", #selector(copyContextEditable), self)
+            menu.addTargetedItem("Paste", #selector(pasteContextEditable), self)
+            menu.addTargetedItem("Select All", #selector(selectAllContextEditable), self)
+            menu.addItem(.separator())
+        }
+
+        let back = menu.addTargetedItem("Back", #selector(contextBack), self)
+        back.isEnabled = current?.webView.canGoBack ?? false
+        let forward = menu.addTargetedItem("Forward", #selector(contextForward), self)
+        forward.isEnabled = current?.webView.canGoForward ?? false
+        menu.addTargetedItem("Reload", #selector(contextReload), self)
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Download Linked File", action: #selector(downloadContextLink), keyEquivalent: "")
-        menu.addItem(withTitle: "Copy Link", action: #selector(copyContextLink), keyEquivalent: "")
-        for item in menu.items { item.target = self }
+        menu.addTargetedItem("Bookmark This Page", #selector(bookmarkContextPage), self)
+        menu.addTargetedItem("Copy Page URL", #selector(copyContextPageURL), self)
+        menu.addTargetedItem("Share Page...", #selector(shareContextPage), self)
+        menu.addTargetedItem("Find in Page...", #selector(contextFindInPage), self)
+        menu.addTargetedItem("Print Page...", #selector(printContextPage), self)
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
@@ -2700,6 +2760,94 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard let value = contextLinkURL?.absoluteString else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    @objc func openContextImageInNewTab() {
+        guard let url = contextImageURL else { return }
+        openTab(url: url.absoluteString)
+    }
+
+    @objc func downloadContextImage() {
+        guard let url = contextImageURL, let webView = current?.webView else { return }
+        webView.startDownload(using: URLRequest(url: url)) { [weak self] download in
+            guard let self else { return }
+            self.activeDownloads[ObjectIdentifier(download)] = download
+            download.delegate = self
+        }
+    }
+
+    @objc func copyContextImageAddress() {
+        guard let value = contextImageURL?.absoluteString else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    @objc func copyContextSelection() {
+        guard !contextSelectedText.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(contextSelectedText, forType: .string)
+    }
+
+    @objc func searchContextSelection() {
+        guard !contextSelectedText.isEmpty else { return }
+        openTab(url: searchURL(for: contextSelectedText))
+    }
+
+    @objc func askNavAboutContextSelection() {
+        guard !contextSelectedText.isEmpty else { return }
+        setAssistant(true)
+        sendToAI("Explain this selection:\n\n\(contextSelectedText)")
+    }
+
+    @objc func cutContextEditable() { current?.webView.evaluateJavaScript("document.execCommand('cut')") }
+    @objc func copyContextEditable() { current?.webView.evaluateJavaScript("document.execCommand('copy')") }
+    @objc func selectAllContextEditable() { current?.webView.evaluateJavaScript("document.execCommand('selectAll')") }
+    @objc func pasteContextEditable() {
+        let text = NSPasteboard.general.string(forType: .string) ?? ""
+        guard let data = try? JSONSerialization.data(withJSONObject: text),
+              let json = String(data: data, encoding: .utf8) else { return }
+        current?.webView.evaluateJavaScript("""
+        (function(text){
+          var el = document.activeElement;
+          if (!el) return;
+          if (el.isContentEditable) { document.execCommand('insertText', false, text); return; }
+          var tag = (el.tagName || '').toLowerCase();
+          if (tag === 'textarea' || tag === 'input') {
+            var start = el.selectionStart || 0, end = el.selectionEnd || start;
+            var value = el.value || '';
+            el.value = value.slice(0, start) + text + value.slice(end);
+            var pos = start + text.length;
+            el.setSelectionRange(pos, pos);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        })(\(json));
+        """)
+    }
+
+    @objc func contextBack() { current?.webView.goBack() }
+    @objc func contextForward() { current?.webView.goForward() }
+    @objc func contextReload() { current?.webView.reload() }
+    @objc func contextFindInPage() { openFindBar() }
+    @objc func bookmarkContextPage() {
+        guard let url = contextPageURL ?? current?.webView.url else { return }
+        let title = contextPageTitle.isEmpty ? (current?.title ?? url.absoluteString) : contextPageTitle
+        Store.shared.toggleBookmark(url: url.absoluteString, title: title)
+        syncChrome()
+    }
+    @objc func copyContextPageURL() {
+        guard let value = (contextPageURL ?? current?.webView.url)?.absoluteString else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+    @objc func shareContextPage() {
+        guard let url = contextPageURL ?? current?.webView.url else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        picker.show(relativeTo: webContainer.bounds, of: webContainer, preferredEdge: .maxY)
+    }
+    @objc func printContextPage() {
+        guard let webView = current?.webView else { return }
+        webView.printOperation(with: NSPrintInfo.shared).run()
     }
 
     // MARK: - Internal pages ------------------------------------------------
@@ -2819,9 +2967,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "breezeLinkMenu",
-           let body = message.body as? [String: Any],
-           let value = body["url"] as? String, let url = URL(string: value) {
-            showLinkMenu(url: url); return
+           let body = message.body as? [String: Any] {
+            let link = (body["url"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            let image = (body["image"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            let page = (body["pageURL"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            let title = body["pageTitle"] as? String ?? ""
+            let selection = body["selection"] as? String ?? ""
+            let editable = body["editable"] as? Bool ?? false
+            showPageMenu(link: link, image: image, pageURL: page, pageTitle: title, selection: selection, editable: editable)
+            return
         }
         if message.name == "breezeMedia" {
             handleMedia(message); return
@@ -2976,14 +3130,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Theme ---------------------------------------------------------
 
+    func findBarBackgroundColor() -> NSColor {
+        let p = Theme.shared.palette
+        return p.isDark ? p.surface.withAlphaComponent(0.96) : NSColor.white.withAlphaComponent(0.98)
+    }
+
+    func updateFindBarAppearance() {
+        let p = Theme.shared.palette
+        findBar.layer?.backgroundColor = findBarBackgroundColor().cgColor
+        findBar.layer?.borderColor = p.textSoft.withAlphaComponent(p.isDark ? 0.28 : 0.22).cgColor
+        findBar.layer?.shadowOpacity = p.isDark ? 0.34 : 0.18
+        findField.textColor = p.text
+        findField.backgroundColor = .clear
+        findStatus.textColor = p.textSoft
+    }
+
     func applyChromeTheme() {
         let p = Theme.shared.palette
         addressWrap.layer?.backgroundColor = p.surface.cgColor
         address.textColor = p.text
-        findBar.layer?.backgroundColor = p.surface.cgColor
-        findBar.layer?.borderColor = p.textSoft.withAlphaComponent(0.18).cgColor
-        findField.textColor = p.text
-        findStatus.textColor = p.textSoft
+        updateFindBarAppearance()
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
         breezeCorner.image = navLogo()

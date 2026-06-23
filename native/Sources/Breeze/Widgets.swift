@@ -215,6 +215,15 @@ func buildMenu(_ entries: [MenuEntry]) -> NSMenu {
     return menu
 }
 
+extension NSMenu {
+    @discardableResult
+    func addTargetedItem(_ title: String, _ action: Selector, _ target: AnyObject) -> NSMenuItem {
+        let item = addItem(withTitle: title, action: action, keyEquivalent: "")
+        item.target = target
+        return item
+    }
+}
+
 /// Build and pop up a context menu at the event location.
 func popupMenu(_ entries: [MenuEntry], for view: NSView, with event: NSEvent) {
     NSMenu.popUpContextMenu(buildMenu(entries), with: event, for: view)

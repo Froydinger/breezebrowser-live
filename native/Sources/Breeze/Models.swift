@@ -76,15 +76,44 @@ let breezeMediaJS = """
 
 let breezeLinkMenuJS = """
 (function () {
+  if (location.protocol === 'file:') return;
+  function closestEditable(node) {
+    while (node && node !== document.documentElement) {
+      if (node.isContentEditable) return node;
+      var tag = (node.tagName || '').toLowerCase();
+      if (tag === 'textarea') return node;
+      if (tag === 'input') {
+        var type = (node.getAttribute('type') || 'text').toLowerCase();
+        if (!/^(button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/i.test(type)) return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function closestImage(node) {
+    while (node && node !== document.documentElement) {
+      if ((node.tagName || '').toLowerCase() === 'img' && node.currentSrc) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
   document.addEventListener('contextmenu', function (event) {
     var node = event.target;
     var link = node && node.closest ? node.closest('a[href]') : null;
-    if (!link) return;
+    var image = closestImage(node);
+    var editable = closestEditable(node);
+    var selection = '';
+    try { selection = String(window.getSelection ? window.getSelection().toString() : '').trim(); } catch (e) {}
     event.preventDefault();
     try {
       window.webkit.messageHandlers.breezeLinkMenu.postMessage({
-        url: link.href,
-        filename: link.getAttribute('download') || ''
+        url: link ? link.href : '',
+        image: image ? image.currentSrc : '',
+        filename: link ? (link.getAttribute('download') || '') : '',
+        selection: selection,
+        editable: !!editable,
+        pageURL: location.href,
+        pageTitle: document.title || location.href
       });
     } catch (e) {}
   }, true);
@@ -152,6 +181,9 @@ final class Tab {
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
             config = c
         } else {
             config = sharedConfig

@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.8.1', icon: 'search-check', title: 'Cleaner Find & Better Page Menus', major: true, items: [
+        '<b>Find Stays Visible</b> — Command-F now opens as a raised overlay with a stronger background, border, and shadow so it does not disappear over bright pages.',
+        '<b>Richer Right-Click Menus</b> — Page menus now include link actions, image actions, selected-text search, Ask Nav about selection, editable-field actions, bookmark, share, find, print, and normal navigation.',
+        '<b>Private Tabs Included</b> — The richer page menu is wired into private tabs too.',
+        '<b>Update Persistence Clarified</b> — Breeze still uses WebKit&rsquo;s persistent default website data store, so normal app updates do not clear cookies, cache, or logins.' ] },
       { v: '3.8.0', icon: 'bot', title: 'Meet Nav, Breeze Cloud & Images', major: true, items: [
         '<b>Nav Replaces Breeze AI</b> — The assistant is now Nav, with a dedicated compass-style corner icon while new chat pages keep the Breeze mark.',
         '<b>Breeze Cloud Included</b> — Nav now works out of the box through the Breeze Cloud Worker using GPT-5.4-mini. No BYOK setup, no OpenAI key stored in the app, and daily fair-use limits protect the shared cloud key.',
