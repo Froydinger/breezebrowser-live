@@ -427,9 +427,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let theme = HoverButton(symbol: "sun.max"); theme.onTap = { [weak self] in
             self?.cycleThemeSetting(); self?.refreshThemeIcon(theme)
         }
-        let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: [spacer, dl, bookmarks, history, theme, settings])
+        let row = NSStackView(views: [settings, theme, history, bookmarks, dl])
         row.spacing = 8; row.alignment = .centerY
         footer.addSubview(row)
         row.pin(to: footer)
