@@ -18,14 +18,11 @@ final class GradientBackgroundView: NSView {
         layer.sublayers?.removeAll(where: { $0.name == "bgGrad" || $0.name == "accentWash" })
         g.name = "bgGrad"
         layer.insertSublayer(g, at: 0)
-        // non-default accent washes the whole chrome (~12%); default blue = none.
-        if let accent = Theme.shared.customAccent {
-            let wash = CALayer()
-            wash.frame = bounds
-            wash.backgroundColor = accent.withAlphaComponent(0.12).cgColor
-            wash.name = "accentWash"
-            layer.insertSublayer(wash, above: g)
-        }
+        let wash = CALayer()
+        wash.frame = bounds
+        wash.backgroundColor = p.accent.withAlphaComponent(0.12).cgColor
+        wash.name = "accentWash"
+        layer.insertSublayer(wash, above: g)
     }
     override func layout() {
         super.layout()

@@ -3,14 +3,31 @@
 // static. A 1s clock timer is fine (not a busy loop) and pauses when hidden.
 
 import Cocoa
+import CoreImage
 
-func breezeLogo() -> NSImage? {
+func breezeBaseLogo() -> NSImage? {
     if let img = Bundle.main.image(forResource: "icon") { return img }
     // dev fallback when run via `swift run` (no app bundle): repo icon.png
     for p in ["../icon.png", "icon.png", "../ui/icon.png"] {
         if let img = NSImage(contentsOfFile: p) { return img }
     }
     return nil
+}
+
+func breezeLogo() -> NSImage? {
+    guard let base = breezeBaseLogo() else { return nil }
+    guard let data = base.tiffRepresentation,
+          let input = CIImage(data: data),
+          let filter = CIFilter(name: "CIColorMonochrome") else { return base }
+    filter.setValue(input, forKey: kCIInputImageKey)
+    filter.setValue(CIColor(color: Theme.shared.palette.accent), forKey: kCIInputColorKey)
+    filter.setValue(1.0, forKey: kCIInputIntensityKey)
+    guard let output = filter.outputImage else { return base }
+    let rep = NSCIImageRep(ciImage: output)
+    let tinted = NSImage(size: rep.size)
+    tinted.addRepresentation(rep)
+    tinted.isTemplate = false
+    return tinted
 }
 
 final class NewTabView: NSView {
@@ -124,6 +141,7 @@ final class NewTabView: NSView {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
+        logo.image = breezeLogo()
         clock.textColor = p.text
         greeting.textColor = p.textSoft
         field.textColor = p.text

@@ -24,7 +24,7 @@ final class Store {
 
     static let defaults: [String: Any] = [
         "theme": "system",
-        "accent": "#5b7cfa",
+        "accent": "#3aa6b9",
         "pinSize": "large",
         "searchEngine": "google",
         "clock24": false,

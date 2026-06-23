@@ -31,6 +31,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var statusWidthC: NSLayoutConstraint!
     private var contextWidthC: NSLayoutConstraint!
     private var historyWidthC: NSLayoutConstraint!
+    private let headerLogo = NSImageView()
+    private let emptyLogo = NSImageView()
     // chat state
     private var chatId = Date().timeIntervalSince1970
     var messages: [[String: String]] = []   // {role: user|ai, text}
@@ -43,9 +45,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         wantsLayer = true
 
         // header
-        let logo = NSImageView(); logo.image = breezeLogo()
-        logo.imageScaling = .scaleProportionallyDown
-        logo.translatesAutoresizingMaskIntoConstraints = false
+        headerLogo.image = breezeLogo()
+        headerLogo.imageScaling = .scaleProportionallyDown
+        headerLogo.translatesAutoresizingMaskIntoConstraints = false
         let title = NSTextField(labelWithString: "Assistant")
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         // Chat history lives on the History page now (breeze://history → Chats),
@@ -57,7 +59,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let close = HoverButton(symbol: "xmark", size: 28, point: 13)
         close.onTap = { [weak self] in self?.onClose?() }
         let hspacer = NSView(); hspacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let header = NSStackView(views: [logo, title, hspacer, fs, newChat, close])
+        let header = NSStackView(views: [headerLogo, title, hspacer, fs, newChat, close])
         header.spacing = 8; header.alignment = .centerY
         header.translatesAutoresizingMaskIntoConstraints = false
         self.headerView = header
@@ -153,7 +155,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             header.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             headerLeadingC,
             header.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            logo.widthAnchor.constraint(equalToConstant: 20), logo.heightAnchor.constraint(equalToConstant: 20),
+            headerLogo.widthAnchor.constraint(equalToConstant: 20), headerLogo.heightAnchor.constraint(equalToConstant: 20),
 
             scrollTopToHeaderC,
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
@@ -191,9 +193,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     private func buildEmptyState() {
         empty.translatesAutoresizingMaskIntoConstraints = false
-        let logo = NSImageView(); logo.image = breezeLogo()
-        logo.imageScaling = .scaleProportionallyDown
-        logo.translatesAutoresizingMaskIntoConstraints = false
+        emptyLogo.image = breezeLogo()
+        emptyLogo.imageScaling = .scaleProportionallyDown
+        emptyLogo.translatesAutoresizingMaskIntoConstraints = false
         let h = NSTextField(labelWithString: "Breeze AI")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
         h.translatesAutoresizingMaskIntoConstraints = false
@@ -208,13 +210,13 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         chips.orientation = .vertical; chips.spacing = 6; chips.alignment = .centerX
         chips.translatesAutoresizingMaskIntoConstraints = false
         
-        let s = NSStackView(views: [logo, h, p, chips]); s.orientation = .vertical; s.spacing = 10; s.alignment = .centerX
+        let s = NSStackView(views: [emptyLogo, h, p, chips]); s.orientation = .vertical; s.spacing = 10; s.alignment = .centerX
         s.translatesAutoresizingMaskIntoConstraints = false
         empty.addSubview(s); s.pin(to: empty)
         
         NSLayoutConstraint.activate([
-            logo.widthAnchor.constraint(equalToConstant: 44),
-            logo.heightAnchor.constraint(equalToConstant: 44),
+            emptyLogo.widthAnchor.constraint(equalToConstant: 44),
+            emptyLogo.heightAnchor.constraint(equalToConstant: 44),
             h.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16),
             p.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16),
             chips.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16)
@@ -562,6 +564,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         inputWrap.layer?.backgroundColor = p.surface.cgColor
         input.textColor = p.text
         status.textColor = p.textSoft
+        headerLogo.image = breezeLogo()
+        emptyLogo.image = breezeLogo()
         emptyTitle?.textColor = p.text
         emptySub?.textColor = p.textSoft
     }

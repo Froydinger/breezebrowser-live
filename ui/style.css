@@ -6,7 +6,7 @@
   --surface: rgba(255, 255, 255, 0.55);
   --surface-hover: rgba(255, 255, 255, 0.8);
   --surface-active: rgba(255, 255, 255, 0.95);
-  --accent: #5b7cfa;
+  --accent: #3aa6b9;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 6px 18px rgba(0, 0, 0, 0.05);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -19,7 +19,7 @@ html.dark {
   --surface: rgba(255, 255, 255, 0.06);
   --surface-hover: rgba(255, 255, 255, 0.1);
   --surface-active: rgba(255, 255, 255, 0.14);
-  --accent: #7b95ff;
+  --accent: #3aa6b9;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.25);
 }
 

@@ -14,7 +14,7 @@
   <style>
     :root {
       --bg: #f2f0ed; --card: rgba(255,255,255,0.7); --text: #23232a;
-      --soft: rgba(35,35,42,0.55); --accent: #5b7cfa; --line: rgba(0,0,0,0.08);
+      --soft: rgba(35,35,42,0.55); --accent: #3aa6b9; --line: rgba(0,0,0,0.08);
       --ease: cubic-bezier(0.22,1,0.36,1);
     }
     html.dark {
@@ -57,7 +57,7 @@
       position: relative; overflow: hidden;
       border-radius: 22px; padding: 30px 30px 26px; margin-bottom: 44px;
       color: #fff;
-      background: linear-gradient(120deg, #5b7cfa, #7c5bfa, #b65bfa, #5b9dfa, #5b7cfa);
+      background: linear-gradient(120deg, #3aa6b9, #7c5bfa, #b65bfa, #5b9dfa, #3aa6b9);
       background-size: 300% 300%;
       box-shadow: 0 24px 60px -18px color-mix(in srgb, var(--accent) 70%, transparent);
       animation: hero-pop 0.6s var(--ease), hero-flow 14s ease-in-out infinite;
@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.7.6', icon: 'search-check', title: 'Find, Pin Menus & Teal Chrome', major: true, items: [
+        '<b>Find in Page</b> — Command-F opens a native find bar, with Command-G and Shift-Command-G for next and previous matches.',
+        '<b>Full Menus for Pinned Apps</b> — Right-click an open pinned app to get the same tab actions as regular tabs, including Split View, Performance Mode, popups, duplicate, and close.',
+        '<b>Teal by Default</b> — Breeze now defaults to a teal accent that tints the rail, sidebar, bezel, controls, and Breeze logos throughout the app.',
+        '<b>Mono Still Exists</b> — The black/white theme accent is back as its own Settings swatch.' ] },
       { v: '3.7.5', icon: 'zap', title: 'Safer Cache Clear & Tab Robustness', major: true, items: [
         '<b>Current-Site Cache Clear</b> — The toolbar trash button now clears cache only for the site you are viewing instead of nuking cookies and signing you out everywhere. Tiny button, no longer a tiny apocalypse.',
         '<b>More Reliable New-Tab Submits</b> — Pressing Return in the new-chat/new-tab bar now submits decisively, so typed URLs and prompts do not get stranded in a blank tab state.',

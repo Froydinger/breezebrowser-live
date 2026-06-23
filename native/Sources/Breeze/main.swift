@@ -5,6 +5,7 @@ import Carbon
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var browsers: [BrowserController] = []
+    var keyMonitor: Any?
     var activeBrowser: BrowserController? {
         browsers.first { $0.window.isKeyWindow } ?? browsers.first
     }
@@ -24,6 +25,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.start()
         
         NotificationCenter.default.addObserver(self, selector: #selector(windowClosed(_:)), name: NSWindow.willCloseNotification, object: nil)
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard flags.contains(.command), let browser = self.activeBrowser, event.window === browser.window else { return event }
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "f":
+                browser.openFindBar()
+                return nil
+            case "g":
+                flags.contains(.shift) ? browser.findPrevious() : browser.findNextMatch()
+                return nil
+            default:
+                return event
+            }
+        }
     }
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
@@ -57,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ n: Notification) {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         if let b = activeBrowser {
             Store.shared.openTabs = b.tabs.compactMap { $0.webView.url?.absoluteString }
             Store.shared.saveOpenTabs()
@@ -82,6 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func reload() { activeBrowser?.current?.webView.reload() }
     @objc func goBack() { activeBrowser?.current?.webView.goBack() }
     @objc func goForward() { activeBrowser?.current?.webView.goForward() }
+    @objc func findInPage() { activeBrowser?.openFindBar() }
+    @objc func findNext() { activeBrowser?.findNextMatch() }
+    @objc func findPrevious() { activeBrowser?.findPrevious() }
     @objc func toggleSidebar() { activeBrowser?.toggleSidebar() }
     @objc func toggleAssistant() { activeBrowser?.toggleAssistant() }
     @objc func cycleTheme() { activeBrowser?.cycleThemeSetting() }
@@ -154,6 +174,10 @@ editMenu.addItem(mi("Cut", #selector(NSText.cut(_:)), "x"))
 editMenu.addItem(mi("Copy", #selector(NSText.copy(_:)), "c"))
 editMenu.addItem(mi("Paste", #selector(NSText.paste(_:)), "v"))
 editMenu.addItem(mi("Select All", #selector(NSText.selectAll(_:)), "a"))
+editMenu.addItem(.separator())
+editMenu.addItem(mi("Find in Page…", #selector(AppDelegate.findInPage), "f"))
+editMenu.addItem(mi("Find Next", #selector(AppDelegate.findNext), "g"))
+editMenu.addItem(mi("Find Previous", #selector(AppDelegate.findPrevious), "G", [.command, .shift]))
 editItem.submenu = editMenu
 
 // View

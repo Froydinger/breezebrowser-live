@@ -36,7 +36,7 @@ struct Palette {
         surface: NSColor(white: 1, alpha: 0.55),
         surfaceHover: NSColor(white: 1, alpha: 0.8),
         surfaceActive: NSColor(white: 1, alpha: 0.95),
-        accent: srgb(28, 28, 32),          // default is mono (near-black); custom accents override
+        accent: srgb(58, 166, 185),        // default teal, close to the Breeze mark
         isDark: false
     )
 
@@ -49,7 +49,7 @@ struct Palette {
         surface: NSColor(white: 1, alpha: 0.06),
         surfaceHover: NSColor(white: 1, alpha: 0.10),
         surfaceActive: NSColor(white: 1, alpha: 0.14),
-        accent: srgb(245, 245, 247),       // default is mono (near-white); custom accents override
+        accent: srgb(58, 166, 185),        // default teal, close to the Breeze mark
         isDark: true
     )
 }
@@ -60,7 +60,8 @@ final class Theme {
 
     private(set) var mode: ThemeMode = .system
 
-    static let defaultAccent = "#5b7cfa"
+    static let defaultAccent = "#3aa6b9"
+    static let monoAccent = "mono"
 
     static func hex(_ s: String) -> NSColor? {
         var h = s.trimmingCharacters(in: .whitespaces)
@@ -69,12 +70,16 @@ final class Theme {
         return srgb((v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
     }
 
-    /// True when the user picked a non-default accent (default blue carries no tint).
+    /// True when the user picked a non-default accent.
     var isCustomAccent: Bool {
         let a = Store.shared.string("accent").lowercased()
-        return !a.isEmpty && a != Theme.defaultAccent
+        return !a.isEmpty && a != Theme.defaultAccent && a != Theme.monoAccent
     }
-    var customAccent: NSColor? { isCustomAccent ? Theme.hex(Store.shared.string("accent")) : nil }
+    var customAccent: NSColor? {
+        let a = Store.shared.string("accent").lowercased()
+        if a == Theme.monoAccent { return basePalette.isDark ? srgb(245, 245, 247) : srgb(28, 28, 32) }
+        return isCustomAccent ? Theme.hex(Store.shared.string("accent")) : nil
+    }
 
     private var basePalette: Palette {
         switch mode {

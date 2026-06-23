@@ -13,7 +13,7 @@ enum BrowserInitialContent {
     case restoredSession, newTab, empty
 }
 
-final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, BrowserAITools {
+final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSSearchFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, BrowserAITools {
     static let didUpdateState = Notification.Name("BrowserControllerDidUpdateState")
     static var sharedTabs: [Tab] = []
     static var sharedPins: [Pin] = []
@@ -118,6 +118,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let suggestionsPopover = AddressSuggestionsPopover()
     let bookmarkBtn = HoverButton(symbol: "bookmark", size: 22, point: 12)
     let breezeCorner = NSButton()
+    let findBar = NSView()
+    let findField = NSSearchField()
+    let findStatus = NSTextField(labelWithString: "")
+    let findPrev = HoverButton(symbol: "chevron.up", size: 24, point: 11)
+    let findNext = HoverButton(symbol: "chevron.down", size: 24, point: 11)
+    let findClose = HoverButton(symbol: "xmark", size: 24, point: 10)
 
     // footer
     let adblockPill = NSView()
@@ -147,6 +153,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         root.addSubview(webContainer)
         root.addSubview(sidebar)
         root.addSubview(topBar)
+        buildFindBar()
 
         if let w = Store.shared.settings["sidebarWidth"] as? Double, w >= 200, w <= 460 { sidebarWidth = w }
         sidebarLeft = sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 0)
@@ -534,6 +541,109 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         breezeCorner.image = breezeLogo()
         breezeCorner.imageScaling = .scaleProportionallyDown
         breezeCorner.target = self; breezeCorner.action = #selector(openAssistant)
+    }
+
+    func buildFindBar() {
+        findBar.translatesAutoresizingMaskIntoConstraints = false
+        findBar.wantsLayer = true
+        findBar.layer?.cornerRadius = 21
+        findBar.layer?.masksToBounds = true
+        findBar.layer?.backgroundColor = Theme.shared.palette.surface.cgColor
+        findBar.layer?.borderWidth = 1
+        findBar.layer?.borderColor = Theme.shared.palette.textSoft.withAlphaComponent(0.18).cgColor
+        findBar.isHidden = true
+
+        findField.translatesAutoresizingMaskIntoConstraints = false
+        findField.placeholderString = "Find in page"
+        findField.font = .systemFont(ofSize: 13)
+        findField.isBordered = false
+        findField.drawsBackground = false
+        findField.focusRingType = .none
+        findField.delegate = self
+        findField.target = self
+        findField.action = #selector(findFieldSubmit)
+
+        findStatus.translatesAutoresizingMaskIntoConstraints = false
+        findStatus.font = .systemFont(ofSize: 11)
+        findStatus.textColor = Theme.shared.palette.textSoft
+        findStatus.alignment = .right
+
+        findPrev.onTap = { [weak self] in self?.findPrevious() }
+        findNext.onTap = { [weak self] in self?.findNextMatch() }
+        findClose.onTap = { [weak self] in self?.closeFindBar() }
+
+        let controls = NSStackView(views: [findStatus, findPrev, findNext, findClose])
+        controls.translatesAutoresizingMaskIntoConstraints = false
+        controls.orientation = .horizontal
+        controls.alignment = .centerY
+        controls.spacing = 2
+
+        findBar.addSubview(findField)
+        findBar.addSubview(controls)
+        root.addSubview(findBar)
+        NSLayoutConstraint.activate([
+            findBar.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 8),
+            findBar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -18),
+            findBar.widthAnchor.constraint(equalToConstant: 360),
+            findBar.heightAnchor.constraint(equalToConstant: 42),
+
+            findField.leadingAnchor.constraint(equalTo: findBar.leadingAnchor, constant: 14),
+            findField.centerYAnchor.constraint(equalTo: findBar.centerYAnchor),
+            findField.trailingAnchor.constraint(equalTo: controls.leadingAnchor, constant: -8),
+
+            controls.trailingAnchor.constraint(equalTo: findBar.trailingAnchor, constant: -8),
+            controls.centerYAnchor.constraint(equalTo: findBar.centerYAnchor),
+            findStatus.widthAnchor.constraint(equalToConstant: 62),
+        ])
+    }
+
+    @objc func openFindBar() {
+        guard current?.isNewTab == false, current?.isChatTab == false else { return }
+        findBar.isHidden = false
+        findBar.layer?.backgroundColor = Theme.shared.palette.surface.cgColor
+        findBar.layer?.borderColor = Theme.shared.palette.textSoft.withAlphaComponent(0.18).cgColor
+        if findField.stringValue.isEmpty {
+            current?.webView.evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
+                guard let self else { return }
+                if let s = result as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.findField.stringValue = s
+                }
+                self.window.makeFirstResponder(self.findField)
+                self.findField.currentEditor()?.selectAll(nil)
+            }
+        } else {
+            window.makeFirstResponder(findField)
+            findField.currentEditor()?.selectAll(nil)
+        }
+    }
+
+    @objc func closeFindBar() {
+        findBar.isHidden = true
+        findStatus.stringValue = ""
+        if current?.isNewTab == false, let webView = current?.webView {
+            window.makeFirstResponder(webView)
+        }
+    }
+
+    @objc func findFieldSubmit() { findNextMatch() }
+    @objc func findNextMatch() { performFind(backwards: false) }
+    @objc func findPrevious() { performFind(backwards: true) }
+
+    func performFind(backwards: Bool) {
+        guard current?.isNewTab == false, current?.isChatTab == false, let webView = current?.webView else { return }
+        let term = findField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else {
+            findStatus.stringValue = ""
+            return
+        }
+        let config = WKFindConfiguration()
+        config.backwards = backwards
+        config.wraps = true
+        webView.find(term, configuration: config) { [weak self] result in
+            DispatchQueue.main.async {
+                self?.findStatus.stringValue = result.matchFound ? "" : "No match"
+            }
+        }
     }
 
     // MARK: - Web area ------------------------------------------------------
@@ -941,10 +1051,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Tab groups ----------------------------------------------------
 
     func pinMenu(_ url: String) -> [MenuEntry] {
-        let open = pinnedTab(url) != nil
+        if let tab = pinnedTab(url) {
+            var entries: [MenuEntry] = [
+                .item(tab.id == current?.id ? "Open" : "Switch to Pin", { [weak self] in self?.openPin(url) }),
+                .separator,
+            ]
+            entries.append(contentsOf: tabMenu(for: tab))
+            return entries
+        }
         return [
             .item("Open", { [weak self] in self?.openPin(url) }),
-            open ? .item("Close", { [weak self] in self?.closePin(url) }) : .disabled("Close"),
+            .disabled("Close Tab"),
             .separator,
             .item("Unpin", { [weak self] in self?.unpin(url) }),
         ]
@@ -2532,15 +2649,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
-    /// The accent the HTML pages should use: the custom hex, or the mono default
-    /// (near-black in light, near-white in dark) so pages match the chrome.
+    /// The accent the HTML pages should use. Default is teal; custom settings
+    /// override it.
     func effectiveAccentHex() -> String {
-        if isCustomAccentSetting() { return Store.shared.string("accent") }
-        return effectiveTheme() == "dark" ? "#f5f5f7" : "#1c1c20"
+        let accent = Store.shared.string("accent").lowercased()
+        if accent == Theme.monoAccent { return effectiveTheme() == "dark" ? "#f5f5f7" : "#1c1c20" }
+        return accent.isEmpty ? Theme.defaultAccent : accent
     }
     func isCustomAccentSetting() -> Bool {
         let a = Store.shared.string("accent").lowercased()
-        return !a.isEmpty && a != Theme.defaultAccent
+        return !a.isEmpty && a != Theme.defaultAccent && a != Theme.monoAccent
     }
     func onAccentTextHex() -> String {
         guard let color = Theme.hex(effectiveAccentHex()) else { return "#ffffff" }
@@ -2553,6 +2671,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private func bridgeStateJS() -> String {
         let theme = effectiveTheme()
         var settings = Store.shared.settings
+        settings["rawAccent"] = Store.shared.string("accent")
         settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
         // Secret presence is mirrored in `aiKeyConnected`; bridge state never reads the key.
         let settingsJSON = Store.json(settings)
@@ -2566,6 +2685,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
           s.id='bz-accent-fix';
           s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#openaiSaveBtn,#aiKeyToggle{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
+        (function(){
+          var accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'\(effectiveAccentHex())';
+          function rgb(hex){hex=hex.replace('#','');if(hex.length!==6)return null;var n=parseInt(hex,16);return [(n>>16)&255,(n>>8)&255,n&255];}
+          var c=rgb(accent); if(!c)return;
+          document.querySelectorAll('img[src$="icon.png"],img[data-breeze-logo-src]').forEach(function(img){
+            var original=img.getAttribute('data-breeze-logo-src')||img.getAttribute('src');
+            img.setAttribute('data-breeze-logo-src',original);
+            var source=new Image();
+            source.onload=function(){
+              try{
+                var canvas=document.createElement('canvas'); canvas.width=source.naturalWidth||source.width; canvas.height=source.naturalHeight||source.height;
+                var ctx=canvas.getContext('2d'); ctx.drawImage(source,0,0,canvas.width,canvas.height);
+                var d=ctx.getImageData(0,0,canvas.width,canvas.height), p=d.data;
+                for(var i=0;i<p.length;i+=4){var lum=(0.299*p[i]+0.587*p[i+1]+0.114*p[i+2])/255;p[i]=c[0]*lum;p[i+1]=c[1]*lum;p[i+2]=c[2]*lum;}
+                ctx.putImageData(d,0,0); img.src=canvas.toDataURL('image/png');
+              }catch(e){}
+            };
+            source.src=original;
+          });
+        })();
         """
     }
 
@@ -2765,8 +2904,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let p = Theme.shared.palette
         addressWrap.layer?.backgroundColor = p.surface.cgColor
         address.textColor = p.text
+        findBar.layer?.backgroundColor = p.surface.cgColor
+        findBar.layer?.borderColor = p.textSoft.withAlphaComponent(0.18).cgColor
+        findField.textColor = p.text
+        findStatus.textColor = p.textSoft
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
+        breezeCorner.image = breezeLogo()
         window.backgroundColor = p.bg
         root.needsDisplay = true
     }
@@ -2920,6 +3064,15 @@ extension BrowserController: AddressSuggestionsDelegate {
     }
     
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if control === findField {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                findNextMatch()
+                return true
+            } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                closeFindBar()
+                return true
+            }
+        }
         if control === address || control === newTab.field {
             if suggestionsPopover.isShown {
                 if commandSelector == #selector(NSResponder.moveUp(_:)) {
