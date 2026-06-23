@@ -1,6 +1,6 @@
 # Breeze
 
-Breeze is a native macOS browser for Apple Silicon Macs. It is built on Swift and includes Nav, a built-in local AI assistant, native ad and tracker blocking, split screen browsing, encrypted local data, and zero tracking.
+Breeze is a native macOS browser for Apple Silicon Macs. It is built on Swift and includes Nav, a built-in Cloud AI assistant, native ad and tracker blocking, split screen browsing, encrypted local data, and zero tracking.
 
 The current shipped app is macOS only. Windows support was removed in v2.10.1.
 
