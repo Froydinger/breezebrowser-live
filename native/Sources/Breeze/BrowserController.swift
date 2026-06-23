@@ -497,7 +497,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         address.delegate = self
         address.target = self; address.action = #selector(addressSubmit)
         let clearc = HoverButton(symbol: "trash", size: 22, point: 11)
-        clearc.onTap = { [weak self] in self?.clearCache() }
+        clearc.onTap = { [weak self] in self?.clearCurrentSiteCache() }
         bookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
         let share = HoverButton(symbol: "square.and.arrow.up", size: 22, point: 12)
         share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
@@ -1093,11 +1093,29 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Click a pin → focus its open tab, or open it in a new tab.
     func openPin(_ url: String) {
         if let t = pinnedTab(url), let i = tabs.firstIndex(where: { $0.id == t.id }) {
-            t.pinUrl = url; select(i); return
+            t.pinUrl = url
+            select(i)
+            reloadPinnedTabIfBlank(t, url: url)
+            return
         }
         openTab(url: url)
         current?.pinUrl = url
+        if let t = current { reloadPinnedTabIfBlank(t, url: url) }
         refreshSidebar()
+    }
+
+    /// Pinned tabs should never strand the user on a blank WKWebView. If WebKit
+    /// dropped the provisional load or the tab was resurrected in a URL-less state,
+    /// kick the saved pin URL again instead of just focusing an empty shell.
+    func reloadPinnedTabIfBlank(_ t: Tab, url: String) {
+        guard !t.sleeping else { return }
+        let currentURL = t.webView.url?.absoluteString
+        guard currentURL == nil || currentURL == "about:blank" else { return }
+        if let u = URL(string: url) {
+            t.isNewTab = false
+            t.isChatTab = false
+            t.webView.load(URLRequest(url: u))
+        }
     }
 
     /// Pin "Close" — closes the tab but keeps the pin.
@@ -2220,7 +2238,36 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         updateRemindersSidebar()
     }
 
-    func clearCache() {
+    func clearCurrentSiteCache() {
+        guard let url = current?.webView.url,
+              !url.isFileURL,
+              let host = url.host?.lowercased() else { return }
+        let store = WKWebsiteDataStore.default()
+        let cacheTypes: Set<String> = [
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache
+        ]
+        store.fetchDataRecords(ofTypes: cacheTypes) { [weak self] records in
+            let matching = records.filter { self?.record($0, matchesHost: host) == true }
+            guard !matching.isEmpty else {
+                DispatchQueue.main.async { self?.current?.webView.reload() }
+                return
+            }
+            store.removeData(ofTypes: cacheTypes, for: matching) {
+                DispatchQueue.main.async { self?.current?.webView.reload() }
+            }
+        }
+    }
+
+    private func record(_ record: WKWebsiteDataRecord, matchesHost host: String) -> Bool {
+        let site = record.displayName.lowercased()
+        let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let bareSite = site.hasPrefix("www.") ? String(site.dropFirst(4)) : site
+        return bareHost == bareSite || bareHost.hasSuffix("." + bareSite) || bareSite.hasSuffix("." + bareHost)
+    }
+
+    func clearAllBrowsingData() {
         let store = WKWebsiteDataStore.default()
         store.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { [weak self] records in
             store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records) {
@@ -2655,7 +2702,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             // Reflects the cached flag, not secret storage, so this never prompts.
             resolve(llm.ready ? "true" : "false")
         case "clearBrowsingData":
-            clearCache(); resolve("{}")
+            clearAllBrowsingData(); resolve("{}")
         case "resetBrowser":
             Store.shared.settings = Store.defaults; Store.shared.pins = []
             Store.shared.history = []; Store.shared.bookmarks = []
@@ -2885,12 +2932,29 @@ extension BrowserController: AddressSuggestionsDelegate {
                     if suggestionsPopover.triggerSelected() {
                         return true
                     }
+                    submitField(control, textView: textView)
+                    return true
                 } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
                     suggestionsPopover.hide()
                     return true
                 }
+            } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                submitField(control, textView: textView)
+                return true
             }
         }
         return false
+    }
+
+    private func submitField(_ control: NSControl, textView: NSTextView) {
+        guard let field = control as? NSTextField else { return }
+        let text = textView.string
+        let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        suggestionsPopover.hide()
+        if field === newTab.field {
+            field.stringValue = ""
+            newTab.updateFieldHeight()
+        }
+        submitQuery(text, isCmdEnter: isCmd)
     }
 }

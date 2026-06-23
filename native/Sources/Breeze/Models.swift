@@ -3,10 +3,6 @@
 import Cocoa
 import WebKit
 
-let SafariUA =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
-    "(KHTML, like Gecko) Version/18.5 Safari/605.1.15"
-
 let sharedConfig: WKWebViewConfiguration = {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .default()
@@ -164,7 +160,6 @@ final class Tab {
         if #available(macOS 13.3, iOS 16.4, *) {
             webView.isInspectable = true
         }
-        webView.customUserAgent = SafariUA
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         webView.translatesAutoresizingMaskIntoConstraints = false

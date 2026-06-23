@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.7.5', icon: 'zap', title: 'Safer Cache Clear & Tab Robustness', major: true, items: [
+        '<b>Current-Site Cache Clear</b> — The toolbar trash button now clears cache only for the site you are viewing instead of nuking cookies and signing you out everywhere. Tiny button, no longer a tiny apocalypse.',
+        '<b>More Reliable New-Tab Submits</b> — Pressing Return in the new-chat/new-tab bar now submits decisively, so typed URLs and prompts do not get stranded in a blank tab state.',
+        '<b>Pinned Tabs Recover Better</b> — If a pinned tab ever focuses into a blank WebKit shell, Breeze kicks the saved pin URL again instead of leaving you staring at browser drywall.',
+        '<b>Less Brittle YouTube Handling</b> — Removed Breeze’s custom YouTube adblock layer and stale hardcoded Safari user agent so WebKit can use the current system identity.' ] },
       { v: '3.7.4', icon: 'bot', title: 'A More Human Breeze', major: true, items: [
         '<b>More Human Assistant Voice</b> — Breeze AI now defaults to a sharper, warmer, more conversational style: useful first, dry and witty when it fits, absolutely less “support bot in beige pants.”',
         '<b>New Chat Input Grows</b> — The center Ask bar now expands up to four wrapped lines before scrolling, so longer prompts stay readable instead of clipping awkwardly.',
