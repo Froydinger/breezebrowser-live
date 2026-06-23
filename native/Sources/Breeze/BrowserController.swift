@@ -2831,6 +2831,7 @@ extension BrowserController: AddressSuggestionsDelegate {
 
     func controlTextDidChange(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, (field === address || field === newTab.field) else { return }
+        if field === newTab.field { newTab.updateFieldHeight() }
         if suggestionsPopover.isInternalUpdate { return }
         
         let q = field.stringValue.lowercased()

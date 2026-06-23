@@ -14,6 +14,8 @@ func breezeLogo() -> NSImage? {
 }
 
 final class NewTabView: NSView {
+    private let baseFieldHeight: CGFloat = 54
+    private let maxFieldLines = 4
     private let logo = NSImageView()
     private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
@@ -46,8 +48,11 @@ final class NewTabView: NSView {
         field.translatesAutoresizingMaskIntoConstraints = false
         field.target = self
         field.action = #selector(submit)
-        // pad the text inside the rounded pill
-        (field.cell as? NSTextFieldCell)?.usesSingleLineMode = true
+        if let cell = field.cell as? NSTextFieldCell {
+            cell.usesSingleLineMode = false
+            cell.wraps = true
+            cell.lineBreakMode = .byWordWrapping
+        }
 
         let fieldWrap = NSView()
         fieldWrap.wantsLayer = true
@@ -61,6 +66,7 @@ final class NewTabView: NSView {
         let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
         maxC.priority = .required
 
+        fieldHeightConstraint = fieldWrap.heightAnchor.constraint(equalToConstant: baseFieldHeight)
         NSLayoutConstraint.activate([
             logo.widthAnchor.constraint(equalToConstant: 64),
             logo.heightAnchor.constraint(equalToConstant: 64),
@@ -77,11 +83,12 @@ final class NewTabView: NSView {
             fieldWrap.topAnchor.constraint(equalTo: greeting.bottomAnchor, constant: 26),
             widthC,
             maxC,
-            fieldWrap.heightAnchor.constraint(equalToConstant: 54),
+            fieldHeightConstraint,
 
             field.leadingAnchor.constraint(equalTo: fieldWrap.leadingAnchor, constant: 22),
             field.trailingAnchor.constraint(equalTo: fieldWrap.trailingAnchor, constant: -22),
-            field.centerYAnchor.constraint(equalTo: fieldWrap.centerYAnchor),
+            field.topAnchor.constraint(equalTo: fieldWrap.topAnchor, constant: 16),
+            field.bottomAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: -16),
         ])
         self.fieldWrap = fieldWrap
         applyTheme(); tick()
@@ -90,6 +97,30 @@ final class NewTabView: NSView {
     }
     required init?(coder: NSCoder) { nil }
     private var fieldWrap: NSView!
+    private var fieldHeightConstraint: NSLayoutConstraint!
+
+    override func layout() {
+        super.layout()
+        updateFieldHeight()
+    }
+
+    func updateFieldHeight() {
+        guard fieldHeightConstraint != nil else { return }
+        let text = field.stringValue.isEmpty ? " " : field.stringValue
+        let font = field.font ?? .systemFont(ofSize: 16)
+        let availableWidth = max(field.bounds.width, fieldWrap.bounds.width - 44, 1)
+        let measured = (text as NSString).boundingRect(
+            with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let lines = min(max(Int(ceil(measured.height / lineHeight)), 1), maxFieldLines)
+        let desiredHeight = baseFieldHeight + CGFloat(lines - 1) * lineHeight
+        if abs(fieldHeightConstraint.constant - desiredHeight) > 0.5 {
+            fieldHeightConstraint.constant = desiredHeight
+        }
+    }
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
@@ -123,6 +154,7 @@ final class NewTabView: NSView {
         let t = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         field.stringValue = ""
+        updateFieldHeight()
         let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
         // Defer out of the field editor's textDidEndEditing/_giveUpFirstResponder
         // teardown. Submitting routes to navigate()/the chat path, which calls
