@@ -1,12 +1,12 @@
 # Breeze
 
-Breeze is a native macOS browser for Apple Silicon Macs. It is built on Electron and Chromium with Nav, a built-in local AI assistant, native ad and tracker blocking, split screen browsing, encrypted local data, and zero tracking.
+Breeze is a native macOS browser for Apple Silicon Macs. It is built on Swift and includes Nav, a built-in local AI assistant, native ad and tracker blocking, split screen browsing, encrypted local data, and zero tracking.
 
 The current shipped app is macOS only. Windows support was removed in v2.10.1.
 
 ## What ships today
 
-- **Nav, built in** - a private browser assistant powered by Qwen2.5 3B through `node-llama-cpp`. It can answer questions, read the current page, search the web through the browser, and set reminders.
+- **Nav, built in** - powered by Breeze Cloud, we dont collect data or chats.
 - **Native ad and tracker blocking** - Ghostery's adblocker engine with EasyList and tracking filters runs in the network layer of every tab.
 - **Zero telemetry** - Breeze does not collect browsing history, usage profiles, or analytics.
 - **Encrypted local data** - history and saved passwords stay on device and are protected through the system keychain.
