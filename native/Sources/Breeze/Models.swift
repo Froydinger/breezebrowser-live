@@ -183,7 +183,26 @@ struct AIContext { let label: String; let text: String; var isCurrent: Bool = fa
 
 /// An extra context the user added: another open tab, or an attached image
 /// (already described on-device by Vision).
-struct AIExtra { let label: String; var tab: Tab?; var imageText: String? }
+struct AIExtra {
+    let label: String
+    var tab: Tab?
+    var imageText: String?
+    var imageData: Data?
+    var imageFilename: String?
+
+    init(label: String, tab: Tab? = nil, imageText: String? = nil, imageData: Data? = nil, imageFilename: String? = nil) {
+        self.label = label
+        self.tab = tab
+        self.imageText = imageText
+        self.imageData = imageData
+        self.imageFilename = imageFilename
+    }
+}
+
+struct AIImageAttachment {
+    let data: Data
+    let filename: String
+}
 
 /// Pin squircle sizing — matches the Electron --pin-min values (Settings).
 enum PinSize: String {

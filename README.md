@@ -1,12 +1,13 @@
 # Breeze
 
-Breeze is a fast, Chromium-based browser with local AI, native ad blocking, and zero tracking. Your data stays yours. Forever.
+Breeze is a fast native macOS browser built with Swift, AppKit, and WKWebView. Nav, its built-in assistant, talks to Breeze Cloud for GPT-5.4-mini chat plus gpt-image-2 image generation/editing without exposing an API key in the app.
 
 ## Run it
 
 ```bash
-npm install
-npm start
+cd native
+./build.sh
+open dist/Breeze.app
 ```
 
 ## Shortcuts
@@ -24,21 +25,16 @@ npm start
 | Toggle dark mode | `⇧⌘D` |
 | Zoom | `⌘+` / `⌘-` / `⌘0` |
 | DevTools (for current page) | `⌥⌘I` |
+| Toggle Nav | `⌘E` |
 
 ## Features
 
-- **Ad & tracker blocking** — Ghostery's adblocker engine (EasyList + tracking lists) runs in the network layer of every tab. Blocked count shows in the sidebar pill. Filter lists are cached and refreshed automatically.
+- **Nav** — GPT-5.4-mini chat, browser actions, reminders, image generation, and image edits through the Breeze Cloud Worker.
+- **Ad & tracker blocking** — EasyList content rules run in the network layer of every tab.
 - **Auto-update** — packaged builds check GitHub Releases on launch and every 4 hours, download silently, and show a "Restart" toast. No-op in dev mode.
 - **Themes** — light by default, dark via the sidebar toggle or `⇧⌘D`. Persisted across launches, and the new-tab page follows the system theme.
 - **Sidebar** — Arc-style vertical tabs with favicons, loading spinners, and middle-click to close. Hide it with `⌘S` for a zen full-bleed view.
 
 ## Shipping updates
 
-Auto-update is wired to GitHub Releases via `electron-builder` (see the `publish` block in `package.json` — point `owner`/`repo` at your repo). To cut a release:
-
-```bash
-npm version patch
-GH_TOKEN=<token> npm run release
-```
-
-Installed copies pick it up on next launch.
+Auto-update is wired to GitHub Releases. See `AGENTS.md` for the native release pipeline.

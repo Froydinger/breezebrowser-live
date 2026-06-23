@@ -1378,7 +1378,7 @@ breeze.onAIStatus((s) => {
         sendAI();
         break;
       }
-      aiStatusbar.textContent = 'Breeze AI · GPT-5.4-mini';
+      aiStatusbar.textContent = 'Nav · GPT-5.4-mini';
       break;
     case 'error':
       aiStatusbar.textContent = `Error: ${s.message}`;

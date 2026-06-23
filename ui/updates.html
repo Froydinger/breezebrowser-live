@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.8.0', icon: 'bot', title: 'Meet Nav, Breeze Cloud & Images', major: true, items: [
+        '<b>Nav Replaces Breeze AI</b> — The assistant is now Nav, with a dedicated compass-style corner icon while new chat pages keep the Breeze mark.',
+        '<b>Breeze Cloud Included</b> — Nav now works out of the box through the Breeze Cloud Worker using GPT-5.4-mini. No BYOK setup, no OpenAI key stored in the app, and daily fair-use limits protect the shared cloud key.',
+        '<b>Image Generation &amp; Edits</b> — Use the paintbrush button to make images with gpt-image-2 at low quality, or attach images and ask Nav to edit them with page/tab context.',
+        '<b>Images in History</b> — Generated images now appear under History → Images, and every image bubble has a download button.',
+        '<b>Softer Image Loading</b> — The image placeholder is now a quieter blurred glow instead of a full-volume rainbow square.' ] },
       { v: '3.7.6', icon: 'search-check', title: 'Find, Pin Menus & Teal Chrome', major: true, items: [
         '<b>Find in Page</b> — Command-F opens a native find bar, with Command-G and Shift-Command-G for next and previous matches.',
         '<b>Full Menus for Pinned Apps</b> — Right-click an open pinned app to get the same tab actions as regular tabs, including Split View, Performance Mode, popups, duplicate, and close.',

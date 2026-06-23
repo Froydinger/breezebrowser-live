@@ -10,6 +10,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     let input = NSTextField()
     private let sendBtn = HoverButton(symbol: "arrow.up.circle.fill", size: 30, point: 20)
     private let attachBtn = HoverButton(symbol: "paperclip", size: 28, point: 15)
+    private let imageBtn = HoverButton(symbol: "paintbrush", size: 28, point: 15)
     var onAttach: (() -> Void)?
     var onSend: ((String) -> Void)?
     var onClose: (() -> Void)?
@@ -17,6 +18,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     var onAtMention: (() -> Void)?
     var onRemoveContext: ((Int) -> Void)?
     var onToggleFullscreen: (() -> Void)?
+    var onDownloadImagePath: ((String) -> Void)?
     private let contextRow = NSStackView()
 
     private var headerView: NSStackView!
@@ -33,9 +35,11 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var historyWidthC: NSLayoutConstraint!
     private let headerLogo = NSImageView()
     private let emptyLogo = NSImageView()
+    private var imageMode = false
     // chat state
     private var chatId = Date().timeIntervalSince1970
-    var messages: [[String: String]] = []   // {role: user|ai, text}
+    var messages: [[String: String]] = []   // {role: user|ai|image, text, path?}
+    var wantsImageMode: Bool { imageMode }
     private let historyView = NSView()
     private let historyList = NSStackView()
 
@@ -45,10 +49,10 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         wantsLayer = true
 
         // header
-        headerLogo.image = breezeLogo()
+        headerLogo.image = navLogo()
         headerLogo.imageScaling = .scaleProportionallyDown
         headerLogo.translatesAutoresizingMaskIntoConstraints = false
-        let title = NSTextField(labelWithString: "Assistant")
+        let title = NSTextField(labelWithString: "Nav")
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         // Chat history lives on the History page now (breeze://history → Chats),
         // not as an in-panel overlay.
@@ -117,7 +121,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         contextRow.isHidden = true
         sendBtn.onTap = { [weak self] in self?.send() }
         attachBtn.onTap = { [weak self] in self?.onAttach?() }
-        inputWrap.addSubview(attachBtn); inputWrap.addSubview(input); inputWrap.addSubview(sendBtn)
+        imageBtn.toolTip = "Generate or edit an image"
+        imageBtn.onTap = { [weak self] in self?.setImageMode(!(self?.imageMode ?? false)) }
+        inputWrap.addSubview(attachBtn); inputWrap.addSubview(imageBtn); inputWrap.addSubview(input); inputWrap.addSubview(sendBtn)
 
         status.font = .systemFont(ofSize: 11.5)
         status.translatesAutoresizingMaskIntoConstraints = false
@@ -178,7 +184,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             inputWrap.heightAnchor.constraint(equalToConstant: 52),
             attachBtn.leadingAnchor.constraint(equalTo: inputWrap.leadingAnchor, constant: 6),
             attachBtn.centerYAnchor.constraint(equalTo: inputWrap.centerYAnchor),
-            input.leadingAnchor.constraint(equalTo: attachBtn.trailingAnchor, constant: 4),
+            imageBtn.leadingAnchor.constraint(equalTo: attachBtn.trailingAnchor, constant: 2),
+            imageBtn.centerYAnchor.constraint(equalTo: inputWrap.centerYAnchor),
+            input.leadingAnchor.constraint(equalTo: imageBtn.trailingAnchor, constant: 4),
             input.centerYAnchor.constraint(equalTo: inputWrap.centerYAnchor),
             input.trailingAnchor.constraint(equalTo: sendBtn.leadingAnchor, constant: -6),
             sendBtn.trailingAnchor.constraint(equalTo: inputWrap.trailingAnchor, constant: -8),
@@ -193,13 +201,13 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     private func buildEmptyState() {
         empty.translatesAutoresizingMaskIntoConstraints = false
-        emptyLogo.image = breezeLogo()
+        emptyLogo.image = navLogo()
         emptyLogo.imageScaling = .scaleProportionallyDown
         emptyLogo.translatesAutoresizingMaskIntoConstraints = false
-        let h = NSTextField(labelWithString: "Breeze AI")
+        let h = NSTextField(labelWithString: "Nav")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
         h.translatesAutoresizingMaskIntoConstraints = false
-        let p = NSTextField(labelWithString: "Powered by GPT-5.4-mini.\nReads pages, searches the web, and acts for you.")
+        let p = NSTextField(labelWithString: "Powered by GPT-5.4-mini.\nReads pages, searches the web, makes images, and acts for you.")
         p.font = .systemFont(ofSize: 12.5); p.alignment = .center; p.maximumNumberOfLines = 3
         p.textColor = Theme.shared.palette.textSoft
         p.translatesAutoresizingMaskIntoConstraints = false
@@ -263,6 +271,36 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         if !chips.isEmpty { addChipsRow(chips) }
         addMessage(text, user: false)
     }
+    func addImageLoading() -> GeneratedImageBubble {
+        empty.isHidden = true
+        let bubble = GeneratedImageBubble()
+        let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [bubble, spacer])
+        row.orientation = .horizontal; row.spacing = 0
+        row.translatesAutoresizingMaskIntoConstraints = false
+        messagesStack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor).isActive = true
+        bubble.widthAnchor.constraint(equalToConstant: 236).isActive = true
+        bubble.heightAnchor.constraint(equalToConstant: 236).isActive = true
+        scrollToBottom()
+        return bubble
+    }
+    func finishImage(_ bubble: GeneratedImageBubble, image: NSImage, prompt: String, path: String?) {
+        if let path {
+            bubble.onDownload = { [weak self] in self?.onDownloadImagePath?(path) }
+        }
+        bubble.finish(image)
+        var msg = ["role": "image", "text": prompt]
+        if let path { msg["path"] = path }
+        messages.append(msg)
+        persist()
+        scrollToBottom()
+    }
+    func failImage(_ bubble: GeneratedImageBubble, message: String) {
+        bubble.fail(message)
+        scrollToBottom()
+    }
     private func persist() {
         guard let first = messages.first(where: { $0["role"] == "user" })?["text"] else { return }
         Store.shared.upsertChat(id: chatId, title: String(first.prefix(48)), messages: messages)
@@ -280,7 +318,15 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         messages = Store.shared.chatMessages(id: id)
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         empty.isHidden = !messages.isEmpty
-        for m in messages { addMessage(m["text"] ?? "", user: m["role"] == "user") }
+        for m in messages {
+            if m["role"] == "image", let path = m["path"], let img = NSImage(contentsOfFile: path) {
+                let bubble = addImageLoading()
+                bubble.onDownload = { [weak self] in self?.onDownloadImagePath?(path) }
+                bubble.finish(img, animated: false)
+            } else {
+                addMessage(m["text"] ?? "", user: m["role"] == "user")
+            }
+        }
         setMode(history: false)
     }
     /// Open a saved chat in the panel (called when a chat is tapped on the
@@ -367,7 +413,14 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     /// Lock the input while the model downloads / prepares.
     func setInputEnabled(_ on: Bool, placeholder: String? = nil) {
         input.isEnabled = on
-        input.placeholderString = placeholder ?? "Ask anything…  (@ to add a tab)"
+        input.placeholderString = placeholder ?? (imageMode ? "Describe the image to create or edit…" : "Ask anything…  (@ to add a tab)")
+    }
+
+    func setImageMode(_ on: Bool) {
+        imageMode = on
+        imageBtn.isOn = on
+        imageBtn.toolTip = on ? "Image mode on" : "Generate or edit an image"
+        input.placeholderString = on ? "Describe the image to create or edit…" : "Ask anything…  (@ to add a tab)"
     }
 
     // typing "@" opens the tab picker
@@ -564,9 +617,128 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         inputWrap.layer?.backgroundColor = p.surface.cgColor
         input.textColor = p.text
         status.textColor = p.textSoft
-        headerLogo.image = breezeLogo()
-        emptyLogo.image = breezeLogo()
+        headerLogo.image = navLogo()
+        emptyLogo.image = navLogo()
         emptyTitle?.textColor = p.text
         emptySub?.textColor = p.textSoft
+        imageBtn.isOn = imageMode
+    }
+}
+
+final class GeneratedImageBubble: NSView {
+    private let imageView = NSImageView()
+    private let shimmer = CALayer()
+    private let gradient = CAGradientLayer()
+    private let label = NSTextField(labelWithString: "")
+    private let downloadBtn = HoverButton(symbol: "arrow.down.circle.fill", size: 30, point: 16)
+    var onDownload: (() -> Void)? {
+        didSet { downloadBtn.isHidden = onDownload == nil || imageView.image == nil }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 18
+        layer?.masksToBounds = true
+        layer?.backgroundColor = NSColor(white: 0.10, alpha: 1).cgColor
+
+        gradient.type = .conic
+        gradient.colors = [
+            NSColor(srgbRed: 0.58, green: 0.45, blue: 0.82, alpha: 0.48).cgColor,
+            NSColor(srgbRed: 0.25, green: 0.58, blue: 0.78, alpha: 0.42).cgColor,
+            NSColor(srgbRed: 0.28, green: 0.68, blue: 0.58, alpha: 0.42).cgColor,
+            NSColor(srgbRed: 0.86, green: 0.70, blue: 0.35, alpha: 0.38).cgColor,
+            NSColor(srgbRed: 0.82, green: 0.38, blue: 0.46, alpha: 0.42).cgColor,
+            NSColor(srgbRed: 0.58, green: 0.45, blue: 0.82, alpha: 0.48).cgColor,
+        ]
+        gradient.startPoint = CGPoint(x: 0.5, y: 0.5)
+        gradient.endPoint = CGPoint(x: 0.5, y: 0)
+        gradient.opacity = 0.55
+        shimmer.addSublayer(gradient)
+        if let blur = CIFilter(name: "CIGaussianBlur") {
+            blur.setValue(26.0, forKey: "inputRadius")
+            shimmer.filters = [blur]
+        }
+        layer?.addSublayer(shimmer)
+
+        for i in 0..<10 {
+            let dot = CALayer()
+            dot.backgroundColor = NSColor.white.withAlphaComponent(i % 3 == 0 ? 0.45 : 0.26).cgColor
+            dot.cornerRadius = 2
+            dot.bounds = CGRect(x: 0, y: 0, width: i % 4 == 0 ? 4 : 2.5, height: i % 4 == 0 ? 4 : 2.5)
+            dot.name = "sparkle"
+            layer?.addSublayer(dot)
+        }
+
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.alphaValue = 0
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 18
+        imageView.layer?.masksToBounds = true
+        addSubview(imageView)
+        imageView.pin(to: self)
+
+        label.font = .systemFont(ofSize: 12, weight: .semibold)
+        label.textColor = NSColor.white.withAlphaComponent(0.82)
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.stringValue = "Making image…"
+        addSubview(label)
+        downloadBtn.toolTip = "Download image"
+        downloadBtn.isHidden = true
+        downloadBtn.onTap = { [weak self] in self?.onDownload?() }
+        addSubview(downloadBtn)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -28),
+            downloadBtn.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            downloadBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+        ])
+
+        let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+        spin.fromValue = 0
+        spin.toValue = CGFloat.pi * 2
+        spin.duration = 3.0
+        spin.repeatCount = .infinity
+        gradient.add(spin, forKey: "imageGradientSpin")
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        shimmer.frame = bounds.insetBy(dx: -30, dy: -30)
+        gradient.frame = shimmer.bounds
+        let dots = layer?.sublayers?.filter { $0.name == "sparkle" } ?? []
+        for (i, dot) in dots.enumerated() {
+            let x = bounds.width * CGFloat((i * 37) % 100) / 100
+            let y = bounds.height * CGFloat((i * 61) % 100) / 100
+            dot.position = CGPoint(x: x, y: y)
+        }
+    }
+
+    func finish(_ image: NSImage, animated: Bool = true) {
+        label.isHidden = true
+        shimmer.removeAllAnimations()
+        shimmer.opacity = 0
+        imageView.image = image
+        imageView.alphaValue = animated ? 0 : 1
+        downloadBtn.isHidden = onDownload == nil
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.45
+                imageView.animator().alphaValue = 1
+            }
+        }
+    }
+
+    func fail(_ message: String) {
+        shimmer.removeAllAnimations()
+        gradient.opacity = 0.25
+        label.stringValue = message
+        downloadBtn.isHidden = true
     }
 }

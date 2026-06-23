@@ -156,6 +156,72 @@
     .entry:hover .del { opacity: 1; }
     .entry .del:hover { color: #e5604c; }
 
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+    }
+
+    .image-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .image-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      background: rgba(0,0,0,0.08);
+    }
+
+    .image-meta {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .image-prompt {
+      font-size: 12.5px;
+      line-height: 1.35;
+      color: var(--text);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .image-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .image-date {
+      color: var(--text-soft);
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+
+    .download {
+      border: none;
+      background: var(--surface-hover);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .download:hover { background: var(--accent); color: #fff; }
+
     #empty {
       text-align: center;
       color: var(--text-soft);
@@ -198,7 +264,8 @@
     </header>
     <div class="seg" id="seg">
       <button data-mode="pages" class="on">Pages</button>
-      <button data-mode="chats">Breeze AI chats</button>
+      <button data-mode="chats">Nav chats</button>
+      <button data-mode="images">Images</button>
     </div>
     <input id="search" type="text" placeholder="Search history…" autofocus />
     <div id="list"></div>
@@ -208,6 +275,7 @@
   <script>
     let all = [];
     let chats = [];
+    let images = [];
     let mode = 'pages';
     const listEl = document.getElementById('list');
     const emptyEl = document.getElementById('empty');
@@ -226,6 +294,7 @@
 
     function render() {
       if (mode === 'chats') { renderChats(); return; }
+      if (mode === 'images') { renderImages(); return; }
       const q = searchEl.value.trim().toLowerCase();
       const items = q
         ? all.filter((h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q))
@@ -285,7 +354,7 @@
       const items = q ? chats.filter((c) => (c.title || '').toLowerCase().includes(q)) : chats;
       listEl.textContent = '';
       emptyEl.style.display = items.length ? 'none' : '';
-      emptyEl.textContent = 'No Breeze AI chats yet.';
+      emptyEl.textContent = 'No Nav chats yet.';
       for (const c of items) {
         const el = document.createElement('div');
         el.className = 'entry';
@@ -313,12 +382,55 @@
       }
     }
 
+    function renderImages() {
+      const q = searchEl.value.trim().toLowerCase();
+      const items = q ? images.filter((img) => (img.prompt || '').toLowerCase().includes(q)) : images;
+      listEl.textContent = '';
+      emptyEl.style.display = items.length ? 'none' : '';
+      emptyEl.textContent = 'No generated images yet.';
+
+      const grid = document.createElement('div');
+      grid.className = 'image-grid';
+      for (const item of items) {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+
+        const img = document.createElement('img');
+        img.alt = item.prompt || 'Generated image';
+        img.src = item.url || '';
+
+        const meta = document.createElement('div');
+        meta.className = 'image-meta';
+        const prompt = document.createElement('div');
+        prompt.className = 'image-prompt';
+        prompt.textContent = item.prompt || 'Generated image';
+
+        const actions = document.createElement('div');
+        actions.className = 'image-actions';
+        const date = document.createElement('span');
+        date.className = 'image-date';
+        date.textContent = item.ts ? new Date(item.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+        const dl = document.createElement('button');
+        dl.className = 'download';
+        dl.textContent = 'Download';
+        dl.addEventListener('click', () => {
+          if (item.path && breezeInternal.downloadAIImage) breezeInternal.downloadAIImage(item.path);
+        });
+
+        actions.append(date, dl);
+        meta.append(prompt, actions);
+        card.append(img, meta);
+        grid.appendChild(card);
+      }
+      listEl.appendChild(grid);
+    }
+
     function setMode(m) {
       mode = m;
       for (const b of document.querySelectorAll('#seg button')) b.classList.toggle('on', b.dataset.mode === m);
       clearBtn.style.display = m === 'pages' ? '' : 'none';
-      searchEl.placeholder = m === 'pages' ? 'Search history…' : 'Search chats…';
-      emptyEl.textContent = m === 'pages' ? 'Nothing here yet.' : 'No Breeze AI chats yet.';
+      searchEl.placeholder = m === 'pages' ? 'Search history…' : (m === 'chats' ? 'Search Nav chats…' : 'Search images…');
+      emptyEl.textContent = m === 'pages' ? 'Nothing here yet.' : (m === 'chats' ? 'No Nav chats yet.' : 'No generated images yet.');
       render();
     }
     for (const b of document.querySelectorAll('#seg button')) {
@@ -334,6 +446,7 @@
 
     breezeInternal.getHistory().then((h) => { all = h; render(); });
     if (breezeInternal.getChats) breezeInternal.getChats().then((c) => { chats = c || []; if (mode === 'chats') render(); });
+    if (breezeInternal.getAIImages) breezeInternal.getAIImages().then((items) => { images = items || []; if (mode === 'images') render(); });
     searchEl.addEventListener('input', render);
     document.getElementById('clear').addEventListener('click', () => {
       if (!confirm('Clear all browsing history?')) return;

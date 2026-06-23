@@ -2,8 +2,8 @@
 # Build Breeze Native into a runnable .app. Uses swiftc directly (the SwiftPM
 # `swift build` binary is broken in the standalone Command Line Tools — dyld
 # can't load BuildServerProtocol.framework). Compiles every file in
-# Sources/Breeze. Breeze AI is BYOK (OpenAI gpt-5.4-mini via the user's own key);
-# there is no bundled AI runtime.
+# Sources/Breeze. Nav talks to the Breeze Cloud Worker; there is no bundled
+# AI runtime and no OpenAI key in the app.
 set -e
 cd "$(dirname "$0")"
 
@@ -20,6 +20,20 @@ SDK="${BREEZE_SDK:-$(xcrun --show-sdk-path)}"
 MODULE_CACHE="${BREEZE_MODULE_CACHE:-${TMPDIR:-/tmp}/breeze-swift-module-cache}"
 mkdir -p "$MODULE_CACHE"
 
+xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
+}
+
+CLOUD_PLIST_KEYS=""
+if [[ -n "${BREEZE_CLOUD_AI_BASE_URL:-}" ]]; then
+  CLOUD_PLIST_KEYS+="  <key>BreezeCloudAIBaseURL</key><string>$(xml_escape "$BREEZE_CLOUD_AI_BASE_URL")</string>
+"
+fi
+if [[ -n "${BREEZE_CLOUD_CLIENT_TOKEN:-}" ]]; then
+  CLOUD_PLIST_KEYS+="  <key>BreezeCloudClientToken</key><string>$(xml_escape "$BREEZE_CLOUD_CLIENT_TOKEN")</string>
+"
+fi
+
 rm -rf "$OUT_DIR"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
@@ -31,6 +45,7 @@ swiftc -O -whole-module-optimization Sources/Breeze/*.swift \
 
 # Bundle the app icon so breezeLogo() finds it via Bundle.main.image(forResource:"icon").
 cp ../icon.png "$APP/Contents/Resources/icon.png" 2>/dev/null || true
+cp ../nav-icon.png "$APP/Contents/Resources/nav-icon.png" 2>/dev/null || true
 # Bundle the internal HTML pages (settings, updates, history, bookmarks, …).
 mkdir -p "$APP/Contents/Resources/ui"
 cp -R ../ui/. "$APP/Contents/Resources/ui/" 2>/dev/null || true
@@ -44,10 +59,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>3.7.6</string>
-  <key>CFBundleShortVersionString</key><string>3.7.6</string>
+  <key>CFBundleVersion</key><string>3.8.0</string>
+  <key>CFBundleShortVersionString</key><string>3.8.0</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
+${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>

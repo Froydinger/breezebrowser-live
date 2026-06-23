@@ -16,6 +16,10 @@ func breezeBaseLogo() -> NSImage? {
 
 func breezeLogo() -> NSImage? {
     guard let base = breezeBaseLogo() else { return nil }
+    return themedLogo(base)
+}
+
+func themedLogo(_ base: NSImage) -> NSImage {
     guard let data = base.tiffRepresentation,
           let input = CIImage(data: data),
           let filter = CIFilter(name: "CIColorMonochrome") else { return base }
@@ -28,6 +32,45 @@ func breezeLogo() -> NSImage? {
     tinted.addRepresentation(rep)
     tinted.isTemplate = false
     return tinted
+}
+
+func navLogo() -> NSImage? {
+    if let img = Bundle.main.image(forResource: "nav-icon") { return themedLogo(img) }
+    for p in ["../nav-icon.png", "nav-icon.png", "../ui/nav-icon.png"] {
+        if let img = NSImage(contentsOfFile: p) { return themedLogo(img) }
+    }
+    let size = NSSize(width: 256, height: 256)
+    let accent = Theme.shared.palette.accent.usingColorSpace(.sRGB) ?? Theme.shared.palette.accent
+    let top = accent.blended(withFraction: 0.28, of: .white) ?? accent
+    let bottom = accent.blended(withFraction: 0.32, of: .black) ?? accent
+    let img = NSImage(size: size, flipped: false) { rect in
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.22)
+        shadow.shadowOffset = NSSize(width: 0, height: -10)
+        shadow.shadowBlurRadius = 24
+        shadow.set()
+        let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 10, dy: 10))
+        NSGradient(colors: [top, bottom])?.draw(in: circle, angle: -38)
+        NSGraphicsContext.restoreGraphicsState()
+
+        if let symbol = tintedSymbol("location.north.fill", point: 112, weight: .semibold, color: .white) {
+            symbol.draw(in: NSRect(x: 72, y: 58, width: 112, height: 136),
+                        from: .zero, operation: .sourceOver, fraction: 1)
+        } else {
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: 128, y: 202))
+            path.line(to: NSPoint(x: 180, y: 54))
+            path.line(to: NSPoint(x: 128, y: 88))
+            path.line(to: NSPoint(x: 76, y: 54))
+            path.close()
+            NSColor.white.setFill()
+            path.fill()
+        }
+        return true
+    }
+    img.isTemplate = false
+    return img
 }
 
 final class NewTabView: NSView {

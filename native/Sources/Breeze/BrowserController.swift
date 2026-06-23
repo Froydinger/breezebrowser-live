@@ -94,7 +94,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var sidebarTopC: NSLayoutConstraint!
     var webContainerTopC: NSLayoutConstraint!
     var pinsTopC: NSLayoutConstraint!
-    lazy var llm = OpenAILLM(tools: self)    // the only AI backend: OpenAI gpt-5.4-mini via the user's own key (BYOK)
+    lazy var llm = OpenAILLM(tools: self)    // Breeze Cloud backend: OpenAI via the Cloudflare Worker
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     let remindersView = RemindersView()
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
@@ -249,6 +249,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
         assistant.onToggleFullscreen = { [weak self] in self?.toggleAssistantFullscreen() }
         assistant.onAttach = { [weak self] in self?.aiAttachImage() }
+        assistant.onDownloadImagePath = { [weak self] path in self?.downloadAIImage(path: path) }
         remindersView.onCancelReminder = { [weak self] id in
             self?.deleteReminderById(id)
         }
@@ -538,7 +539,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ])
 
         breezeCorner.isBordered = false
-        breezeCorner.image = breezeLogo()
+        breezeCorner.image = navLogo()
         breezeCorner.imageScaling = .scaleProportionallyDown
         breezeCorner.target = self; breezeCorner.action = #selector(openAssistant)
     }
@@ -952,8 +953,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func makeTabRow(_ t: Tab) -> TabRowView {
         let i = tabs.firstIndex { $0.id == t.id } ?? 0
-        let title = t.isChatTab ? "Breeze Chat" : t.title
-        let host = t.isChatTab ? "assistant" : hostOf(t.webView.url)
+        let title = t.isChatTab ? "Nav Chat" : t.title
+        let host = t.isChatTab ? "nav" : hostOf(t.webView.url)
         let inSplit = (t.splitPartnerId != nil)
         let row = TabRowView(title: title, host: host, active: i == active,
                              perf: t.perfMode, asleep: t.sleeping, inSplit: inSplit, isPrivate: t.isPrivate)
@@ -1365,7 +1366,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if fromNewTab, let t = current {
             t.isNewTab = false
             t.isChatTab = true
-            t.title = "Breeze Chat"
+            t.title = "Nav Chat"
             if assistantOpen { setAssistant(false) }
             prepareAIStatus()
             newChat()
@@ -1534,15 +1535,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         scheduleReflow()
     }
 
-    /// Set the chat input's enabled state + status based on whether a key is set.
-    /// Uses the cached `aiKeyConnected` flag so opening the assistant never reads secrets.
+    /// Set the chat input's enabled state + status based on whether Breeze Cloud is configured.
     func prepareAIStatus() {
         if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("Breeze AI · GPT-5.4-mini. Ask anything, or summarize this page.")
+            assistant.setModelStatus("Nav · GPT-5.4-mini. Ask anything, summarize pages, or make images.")
         } else {
-            assistant.setInputEnabled(true, placeholder: "Add your OpenAI key in Settings to start…")
-            assistant.setModelStatus("Breeze AI needs your OpenAI API key. Add it in Settings → Breeze AI (there's a link to create one).")
+            assistant.setInputEnabled(true, placeholder: "Nav is not configured in this build…")
+            assistant.setModelStatus("Nav is not configured in this build.")
         }
     }
 
@@ -1561,7 +1561,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
         // Create a new chat tab
-        let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Breeze Chat"
+        let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Nav Chat"
         wire(t)
         tabs.append(t); active = tabs.count - 1
         // Close the sidebar assistant panel
@@ -1579,7 +1579,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let i = tabs.firstIndex(where: { $0.isChatTab }) {
             active = i
         } else {
-            let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Breeze Chat"
+            let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Nav Chat"
             wire(t)
             tabs.append(t); active = tabs.count - 1
         }
@@ -1591,11 +1591,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func sendToAI(_ text: String) {
-        // No key yet → warn the user and point them to Settings instead of firing a
-        // doomed request. Uses the cached flag, so this never reads secret storage.
+        if assistant.wantsImageMode {
+            sendToAIImage(text)
+            return
+        }
+
+        // Cloud not configured → warn instead of firing a doomed request.
         if !llm.ready {
             assistant.addUser(text)
-            assistant.addAI("Breeze AI runs on your own OpenAI key. Add your API key in **Settings → Breeze AI** to start — there's a link there to create one at platform.openai.com.", chips: [])
+            assistant.addAI("Nav is not configured in this build yet. Use the BreezeTest build with the Worker URL embedded.", chips: [])
             prepareAIStatus()
             return
         }
@@ -1627,6 +1631,79 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 }
             }
             self.llm.send(text, history: history, contexts: contexts, completion: done)
+        }
+    }
+
+    func sendToAIImage(_ text: String) {
+        if !llm.ready {
+            assistant.addUser(text)
+            assistant.addAI("Nav is not configured in this build yet. Use the BreezeTest build with the Worker URL embedded.", chips: [])
+            prepareAIStatus()
+            return
+        }
+        ailog("sendToAIImage (gpt-image-2 low): \(text)")
+        assistant.addUser(text)
+        let bubble = assistant.addImageLoading()
+        assistant.setInputEnabled(false, placeholder: "Making image…")
+        assistant.setStatus("Making image…")
+        showRainbowGlow()
+
+        Task { [weak self] in
+            guard let self else { return }
+            let contexts = await self.gatherContexts()
+            let attachments = self.aiExtras.compactMap { extra -> AIImageAttachment? in
+                guard let data = extra.imageData else { return nil }
+                return AIImageAttachment(data: data, filename: extra.imageFilename ?? "breeze-image.png")
+            }
+            self.llm.generateImage(prompt: text, contexts: contexts, attachments: attachments) { [weak self] result in
+                guard let self else { return }
+                self.hideRainbowGlow()
+                self.assistant.setStatus(nil)
+                self.assistant.setInputEnabled(true)
+                self.assistant.focusInput()
+                switch result {
+                case .success(let image):
+                    let url = self.saveGeneratedImage(image, prompt: text)
+                    self.assistant.finishImage(bubble, image: image, prompt: text, path: url?.path)
+                case .failure(let error):
+                    self.assistant.failImage(bubble, message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func saveGeneratedImage(_ image: NSImage, prompt: String) -> URL? {
+        let dir = Store.shared.supportDirectory.appendingPathComponent("ai-images", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(Int(Date().timeIntervalSince1970 * 1000)).png")
+        guard let data = pngData(from: image) else { return nil }
+        do {
+            try data.write(to: url, options: .atomic)
+            Store.shared.addAIImage(prompt: prompt, path: url.path)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    func downloadAIImage(path: String) {
+        let source = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: source.path) else { return }
+        let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        let base = "Nav Image \(stamp.string(from: Date()))"
+        var dest = dir.appendingPathComponent("\(base).png")
+        var i = 2
+        while FileManager.default.fileExists(atPath: dest.path) {
+            dest = dir.appendingPathComponent("\(base) \(i).png")
+            i += 1
+        }
+        do {
+            try FileManager.default.copyItem(at: source, to: dest)
+            NSWorkspace.shared.activateFileViewerSelecting([dest])
+        } catch {
+            NSSound.beep()
         }
     }
 
@@ -1914,15 +1991,35 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self.assistant.setStatus("Reading \(name)…")
                 DispatchQueue.global(qos: .userInitiated).async {
                     let desc = VisionOCR.describe(url)
+                    let imageData = self.pngData(fromFile: url)
                     DispatchQueue.main.async {
                         self.aiExtras.append(AIExtra(label: "🖼 " + String(name.prefix(20)),
-                                                     tab: nil, imageText: "Attached image \"\(name)\":\n\(desc)"))
+                                                     tab: nil,
+                                                     imageText: "Attached image \"\(name)\":\n\(desc)",
+                                                     imageData: imageData,
+                                                     imageFilename: self.pngFilename(for: name)))
                         self.assistant.setStatus(nil)
                         self.updateAIContextPills()
                     }
                 }
             }
         }
+    }
+
+    func pngFilename(for name: String) -> String {
+        let base = (name as NSString).deletingPathExtension
+        return (base.isEmpty ? "breeze-image" : base) + ".png"
+    }
+
+    func pngData(fromFile url: URL) -> Data? {
+        guard let image = NSImage(contentsOf: url) else { return nil }
+        return pngData(from: image)
+    }
+
+    func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
     }
 
     // MARK: - AI tool callbacks (BrowserAITools) ----------------------------
@@ -2673,7 +2770,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         var settings = Store.shared.settings
         settings["rawAccent"] = Store.shared.string("accent")
         settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
-        // Secret presence is mirrored in `aiKeyConnected`; bridge state never reads the key.
+        settings["aiCloudEnabled"] = llm.usingCloud
+        settings["aiKeyConnected"] = llm.ready
         let settingsJSON = Store.json(settings)
         let onText = onAccentTextHex()
         return """
@@ -2683,7 +2781,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if (window.__bzOnSettings) window.__bzOnSettings(window.__bzSettings);
         (function(){var s=document.getElementById('bz-accent-fix')||document.createElement('style');
           s.id='bz-accent-fix';
-          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge,#openaiSaveBtn,#aiKeyToggle{color:\(onText) !important;}';
+          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
         (function(){
           var accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'\(effectiveAccentHex())';
@@ -2746,39 +2844,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "setSetting":
             if let key = args["key"] as? String { Store.shared.settings[key] = args["value"]; Store.shared.saveSettings() }
             applySettingsChange()
-        case "setSecret":
-            if let key = args["key"] as? String, let val = args["value"] as? String {
-                LocalSecrets.set(key, val)
-                if key == "openaiKey" {
-                    llm.cacheKey(val)
-                    Store.shared.settings["aiKeyConnected"] = !val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    Store.shared.saveSettings()
-                    prepareAIStatus()
-                }
-                applySettingsChange()
-            }
-        case "hasSecret":
-            if let key = args["key"] as? String {
-                let local = LocalSecrets.get(key)
-                let has = !(local.isEmpty ? LocalSecrets.migrateLegacyWithoutPrompt(key) : local).isEmpty
-                if key == "openaiKey", !has {
-                    Store.shared.settings["aiKeyConnected"] = false
-                    Store.shared.saveSettings()
-                    prepareAIStatus()
-                }
-                resolve(has ? "true" : "false")
-            }
-        case "deleteSecret":
-            if let key = args["key"] as? String {
-                LocalSecrets.delete(key)
-                if key == "openaiKey" {
-                    llm.cacheKey("")
-                    Store.shared.settings["aiKeyConnected"] = false
-                    Store.shared.saveSettings()
-                    prepareAIStatus()
-                }
-                applySettingsChange()
-            }
         case "openExternal":
             if let s = args["url"] as? String, let url = URL(string: s),
                url.scheme == "https" || url.scheme == "http" {
@@ -2789,6 +2854,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             broadcastToInternalPages()
         case "getHistory":
             resolve(Store.json(Store.shared.history))
+        case "getAIImages":
+            let items = Store.shared.images.map { item -> [String: Any] in
+                var copy = item
+                if let path = item["path"] as? String {
+                    copy["url"] = URL(fileURLWithPath: path).absoluteString
+                }
+                return copy
+            }
+            resolve(Store.json(items))
         case "clearHistory":
             Store.shared.history = []; Store.shared.saveHistory()
         case "deleteHistoryItem":
@@ -2831,6 +2905,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
         case "deleteChat":
             if let id = chatId(from: args["id"]) { Store.shared.deleteChat(id: id) }
+        case "downloadAIImage":
+            if let path = args["path"] as? String { downloadAIImage(path: path) }
         case "askAI":
             if let text = args["text"] as? String {
                 toggleAssistantFullscreen()
@@ -2910,7 +2986,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         findStatus.textColor = p.textSoft
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
-        breezeCorner.image = breezeLogo()
+        breezeCorner.image = navLogo()
         window.backgroundColor = p.bg
         root.needsDisplay = true
     }

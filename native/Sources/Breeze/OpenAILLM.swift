@@ -1,43 +1,34 @@
-// OpenAI BYOK backend. Breeze AI is powered by OpenAI's gpt-5.4-mini through the
-// user's OWN API key (stored in an owner-only local file). There is no local model and
-// no bundled runtime. Agentic: the model drives the browser via the tiny text
-// protocol in Agent.swift (OPEN/SEARCH/READ/CLICK/TYPE/REMIND) — we run each
-// action and feed the result back until it returns a plain-language answer.
-//
-// Key storage is deliberately prompt-free. Existing Keychain values are imported
-// only when macOS can return them without showing authentication UI.
+// Breeze Cloud backend. The app talks to a Cloudflare Worker, which holds the
+// OpenAI key server-side and enforces daily chat/image quotas.
 
+import AppKit
 import Foundation
 
 final class OpenAILLM: NSObject {
     weak var browser: (any BrowserAITools)?
     var onStatus: ((String) -> Void)?
 
-    // The single, gated model. Breeze AI is BYOK-only and locked to gpt-5.4-mini.
     private let model = "gpt-5.4-mini"
-    private let endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
-    private let keyAccount = "openaiKey"
+    private let cloudBaseURL = OpenAILLM.configuredURL("BREEZE_CLOUD_AI_BASE_URL", plistKey: "BreezeCloudAIBaseURL")
+    private let cloudClientToken = OpenAILLM.configuredString("BREEZE_CLOUD_CLIENT_TOKEN", plistKey: "BreezeCloudClientToken")
 
-    private(set) var lastStatus = "Add your OpenAI API key in Settings → Breeze AI to start."
+    private(set) var lastStatus = ""
 
-    // In-memory copy avoids touching disk on every message.
-    private var cachedKey: String?
+    var usingCloud: Bool { cloudBaseURL != nil }
 
-    /// "Ready" means a key has been connected.
-    var ready: Bool { Store.shared.bool("aiKeyConnected") }
+    /// "Ready" means this build has Breeze Cloud configured.
+    var ready: Bool { usingCloud }
 
     init(tools: any BrowserAITools) {
         super.init()
         browser = tools
+        lastStatus = usingCloud
+            ? "Nav is ready."
+            : "Nav is not configured in this build."
     }
 
-    /// Seed/clear the in-memory key when the user saves or removes it in Settings.
-    func cacheKey(_ key: String) {
-        cachedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
+    func cacheKey(_ key: String) {}
 
-    // Kept for interface parity with the old local backend. Nothing to reset
-    // (each send rebuilds the conversation) and nothing to shut down (no process).
     func resetChat() {}
     func shutdown() {}
 
@@ -51,26 +42,17 @@ final class OpenAILLM: NSObject {
 
     func send(_ text: String, history: [[String: String]], contexts: [AIContext],
               completion: @escaping (Result<(String, [String]), Error>) -> Void) {
-        let key: String
-        if let cachedKey {
-            key = cachedKey
-        } else {
-            let local = LocalSecrets.get(keyAccount)
-            key = local.isEmpty ? LocalSecrets.migrateLegacyWithoutPrompt(keyAccount) : local
-            cachedKey = key
-        }
-        guard !key.isEmpty else {
-            if Store.shared.bool("aiKeyConnected") {
-                Store.shared.settings["aiKeyConnected"] = false
-                Store.shared.saveSettings()
-            }
-            completion(.failure(Self.error("Breeze AI needs your OpenAI API key. Add it in Settings → Breeze AI — there's a link there to create one.")))
+        guard usingCloud else {
+            completion(.failure(Self.error("Nav is not configured in this build.")))
             return
         }
+
         guard let tools = browser else {
-            completion(.failure(Self.error("Breeze AI isn't ready yet.")))
+            completion(.failure(Self.error("Nav isn't ready yet.")))
             return
         }
+
+        let turnID = UUID().uuidString
         Task {
             do {
                 var turnHistory: [[String: String]] = [
@@ -84,7 +66,7 @@ final class OpenAILLM: NSObject {
                     userText: text, contexts: contexts, tools: tools,
                     ask: { msg in
                         turnHistory.append(["role": "user", "content": msg])
-                        let reply = try await self.complete(history: turnHistory, apiKey: key)
+                        let reply = try await self.complete(history: turnHistory, requestID: turnID)
                         turnHistory.append(["role": "assistant", "content": reply])
                         return reply
                     },
@@ -93,7 +75,7 @@ final class OpenAILLM: NSObject {
                             ["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))],
                             ["role": "user", "content": msg]
                         ]
-                        return try await self.complete(history: freshHistory, apiKey: key)
+                        return try await self.complete(history: freshHistory, requestID: turnID)
                     })
                 await MainActor.run { completion(.success((answer, chips))) }
             } catch {
@@ -102,22 +84,20 @@ final class OpenAILLM: NSObject {
         }
     }
 
-    /// One round-trip to OpenAI. gpt-5.4-mini is a reasoning model: we send a lean
-    /// body (no temperature/top_p — reasoning models reject non-default values) and
-    /// cap output with max_completion_tokens. If OpenAI rejects an optional param
-    /// (400), we retry once with the bare minimum so a future API tweak can't brick
-    /// the assistant.
-    private func complete(history: [[String: String]], apiKey: String, minimal: Bool = false) async throws -> String {
-        var req = URLRequest(url: endpoint)
+    private func complete(history: [[String: String]], minimal: Bool = false, requestID: String) async throws -> String {
+        guard let url = endpoint(path: "/v1/chat/completions") else {
+            throw Self.error("Nav is not configured in this build.")
+        }
+        var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        applyAuth(to: &req, requestID: requestID)
         req.timeoutInterval = 120
 
         var body: [String: Any] = ["model": model, "messages": history]
         if !minimal {
             body["max_completion_tokens"] = 2000
-            body["reasoning_effort"] = "low"   // keep agentic steps snappy
+            body["reasoning_effort"] = "low"
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -126,8 +106,7 @@ final class OpenAILLM: NSObject {
             throw Self.error("No response from OpenAI.")
         }
         if http.statusCode == 400 && !minimal {
-            // An optional parameter wasn't accepted — retry with model + messages only.
-            return try await complete(history: history, apiKey: apiKey, minimal: true)
+            return try await complete(history: history, minimal: true, requestID: requestID)
         }
         guard http.statusCode == 200 else {
             throw Self.error(Self.friendlyError(status: http.statusCode, data: data))
@@ -138,8 +117,6 @@ final class OpenAILLM: NSObject {
               let content = msg["content"] as? String else {
             throw Self.error("Unexpected response from OpenAI.")
         }
-        // Record exact token usage so Settings can show an estimated cost. Every
-        // agentic step counts (each is a real billed request).
         if let usage = json["usage"] as? [String: Any] {
             let inTok = usage["prompt_tokens"] as? Int ?? 0
             let outTok = usage["completion_tokens"] as? Int ?? 0
@@ -150,19 +127,203 @@ final class OpenAILLM: NSObject {
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Images
+
+    func generateImage(prompt: String, contexts: [AIContext], attachments: [AIImageAttachment],
+                       completion: @escaping (Result<NSImage, Error>) -> Void) {
+        guard usingCloud else {
+            completion(.failure(Self.error("Nav is not configured in this build.")))
+            return
+        }
+
+        let requestID = UUID().uuidString
+        let finalPrompt = imagePrompt(userPrompt: prompt, contexts: contexts)
+        Task {
+            do {
+                let image: NSImage
+                if attachments.isEmpty {
+                    image = try await createImage(prompt: finalPrompt, requestID: requestID)
+                } else {
+                    image = try await editImage(prompt: finalPrompt, attachments: attachments, requestID: requestID)
+                }
+                await MainActor.run { completion(.success(image)) }
+            } catch {
+                await MainActor.run { completion(.failure(error)) }
+            }
+        }
+    }
+
+    private func createImage(prompt: String, requestID: String) async throws -> NSImage {
+        guard let url = endpoint(path: "/v1/images/generations") else {
+            throw Self.error("Nav is not configured in this build.")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAuth(to: &req, requestID: requestID)
+        req.timeoutInterval = 240
+        req.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": "gpt-image-2",
+            "prompt": prompt,
+            "quality": "low",
+            "size": "1024x1024",
+            "n": 1,
+            "output_format": "png",
+        ])
+        return try await decodeImageResponse(req)
+    }
+
+    private func editImage(prompt: String, attachments: [AIImageAttachment], requestID: String) async throws -> NSImage {
+        guard let url = endpoint(path: "/v1/images/edits") else {
+            throw Self.error("Nav is not configured in this build.")
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        applyAuth(to: &req, requestID: requestID)
+        req.timeoutInterval = 240
+
+        let files = attachments.prefix(4).map {
+            MultipartFile(field: "image", filename: $0.filename, mime: "image/png", data: $0.data)
+        }
+        let multipart = makeMultipart(fields: [
+            "model": "gpt-image-2",
+            "prompt": prompt,
+            "quality": "low",
+            "size": "1024x1024",
+            "n": "1",
+            "output_format": "png",
+        ], files: files)
+        req.setValue("multipart/form-data; boundary=\(multipart.boundary)", forHTTPHeaderField: "Content-Type")
+        req.httpBody = multipart.body
+        return try await decodeImageResponse(req)
+    }
+
+    private func decodeImageResponse(_ req: URLRequest) async throws -> NSImage {
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw Self.error("No response from OpenAI.")
+        }
+        guard http.statusCode == 200 else {
+            throw Self.error(Self.friendlyError(status: http.statusCode, data: data))
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = json["data"] as? [[String: Any]],
+              let first = items.first else {
+            throw Self.error("Unexpected image response.")
+        }
+        if let b64 = first["b64_json"] as? String,
+           let imageData = Data(base64Encoded: b64),
+           let image = NSImage(data: imageData) {
+            return image
+        }
+        if let urlString = first["url"] as? String, let url = URL(string: urlString) {
+            let (imageData, _) = try await URLSession.shared.data(from: url)
+            if let image = NSImage(data: imageData) { return image }
+        }
+        throw Self.error("OpenAI returned no image data.")
+    }
+
+    private func imagePrompt(userPrompt: String, contexts: [AIContext]) -> String {
+        let relevant = contexts.map { "[\($0.label)]\n\(String($0.text.prefix(2000)))" }
+            .joined(separator: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if relevant.isEmpty { return userPrompt }
+        return """
+        Use this Breeze context only if it is relevant to the user's image request:
+        \(relevant)
+
+        User image request:
+        \(userPrompt)
+        """
+    }
+
+    // MARK: - Auth/config helpers
+
+    private func endpoint(path: String) -> URL? {
+        guard let cloudBaseURL else { return nil }
+        return cloudBaseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+    }
+
+    private func applyAuth(to req: inout URLRequest, requestID: String) {
+        if let token = cloudClientToken, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.setValue(cloudClientId(), forHTTPHeaderField: "X-Breeze-Client-Id")
+        req.setValue(requestID, forHTTPHeaderField: "X-Breeze-Request-Id")
+    }
+
+    private func cloudClientId() -> String {
+        let key = "aiCloudClientId"
+        let existing = Store.shared.string(key)
+        if !existing.isEmpty { return existing }
+        let created = UUID().uuidString
+        Store.shared.settings[key] = created
+        Store.shared.saveSettings()
+        return created
+    }
+
+    private static func configuredURL(_ envKey: String, plistKey: String) -> URL? {
+        guard let value = configuredString(envKey, plistKey: plistKey), !value.isEmpty else { return nil }
+        return URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func configuredString(_ envKey: String, plistKey: String) -> String? {
+        if let env = ProcessInfo.processInfo.environment[envKey], !env.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return env.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return Bundle.main.object(forInfoDictionaryKey: plistKey) as? String
+    }
+
     private static func friendlyError(status: Int, data: Data) -> String {
         var apiMessage = ""
-        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let err = json["error"] as? [String: Any],
-           let m = err["message"] as? String { apiMessage = m }
-        switch status {
-        case 401: return "Your OpenAI API key was rejected. Check it in Settings → Breeze AI."
-        case 429: return "OpenAI rate limit or quota reached. Check your usage and billing on platform.openai.com."
-        default:  return apiMessage.isEmpty ? "OpenAI request failed (HTTP \(status))." : apiMessage
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let err = json["error"] as? [String: Any],
+               let m = err["message"] as? String { apiMessage = m }
+            else if let err = json["error"] as? String { apiMessage = err }
         }
+        if status == 401 {
+            return "Breeze Cloud rejected this app build."
+        }
+        if status == 429 {
+            return apiMessage.isEmpty ? "Daily AI limit reached. Try again tomorrow." : apiMessage
+        }
+        return apiMessage.isEmpty ? "OpenAI request failed (HTTP \(status))." : apiMessage
     }
 
     private static func error(_ message: String) -> NSError {
         NSError(domain: "Breeze", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
+}
+
+private struct MultipartFile {
+    let field: String
+    let filename: String
+    let mime: String
+    let data: Data
+}
+
+private func makeMultipart(fields: [String: String], files: [MultipartFile]) -> (body: Data, boundary: String) {
+    let boundary = "BreezeBoundary-\(UUID().uuidString)"
+    var body = Data()
+
+    func append(_ string: String) {
+        if let data = string.data(using: .utf8) { body.append(data) }
+    }
+
+    for (key, value) in fields {
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
+        append("\(value)\r\n")
+    }
+
+    for file in files {
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"\(file.field)\"; filename=\"\(file.filename)\"\r\n")
+        append("Content-Type: \(file.mime)\r\n\r\n")
+        body.append(file.data)
+        append("\r\n")
+    }
+
+    append("--\(boundary)--\r\n")
+    return (body, boundary)
 }

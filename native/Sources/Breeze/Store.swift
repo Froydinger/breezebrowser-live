@@ -13,14 +13,17 @@ final class Store {
     private let historyURL: URL
     private let bookmarksURL: URL
     private let chatsURL: URL
+    private let imagesURL: URL
     private let openTabsURL: URL
     var chats: [[String: Any]] = []      // { id, title, messages:[{role,text}] }
+    var images: [[String: Any]] = []     // { id, prompt, path, ts }
 
     var settings: [String: Any]
     var pins: [Pin]
     var history: [[String: Any]]      // { url, title, ts }
     var bookmarks: [[String: Any]]    // { url, title, ts }
     var openTabs: [String]            // array of tab URLs
+    var supportDirectory: URL { dir }
 
     static let defaults: [String: Any] = [
         "theme": "system",
@@ -39,13 +42,14 @@ final class Store {
         "webNotifications": true,
         "tabSleepHours": 1,
         "aiInstructions": "",
-        // Non-secret mirror of "is an OpenAI key saved". Lets the UI show readiness
-        // without reading secret storage during ordinary rendering.
+        // Kept for settings compatibility with older profiles; Breeze Cloud readiness
+        // is derived from the build configuration, not a local key.
         "aiKeyConnected": false,
         // Cumulative OpenAI token usage (this Mac), for an estimated-cost readout.
         "aiUsageInput": 0,
         "aiUsageOutput": 0,
         "aiUsageSince": 0,
+        "aiCloudClientId": "",
         "lastSeenVersion": "",
         "permissions": [String: Any](),
         "reminders": [Any]()
@@ -65,6 +69,7 @@ final class Store {
         historyURL = dir.appendingPathComponent("history.json")
         bookmarksURL = dir.appendingPathComponent("bookmarks.json")
         chatsURL = dir.appendingPathComponent("chats.json")
+        imagesURL = dir.appendingPathComponent("images.json")
         openTabsURL = dir.appendingPathComponent("opentabs.json")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -87,14 +92,16 @@ final class Store {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         chats = (try? Data(contentsOf: chatsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        images = (try? Data(contentsOf: imagesURL)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
 
-        // Migrate any very old plaintext setting into the owner-only key file.
+        // Remove any very old plaintext OpenAI key setting. Breeze Cloud no longer
+        // uses BYOK, so this should not be retained in settings JSON.
         if let key = settings["openaiKey"] as? String, !key.isEmpty {
-            LocalSecrets.set("openaiKey", key)
             settings.removeValue(forKey: "openaiKey")
-            settings["aiKeyConnected"] = true
+            settings["aiKeyConnected"] = false
             saveSettings()
         }
     }
@@ -119,6 +126,21 @@ final class Store {
     func deleteChat(id: Double) { chats.removeAll { ($0["id"] as? Double) == id }; saveChats() }
     func chatMessages(id: Double) -> [[String: String]] {
         (chats.first { ($0["id"] as? Double) == id }?["messages"] as? [[String: String]]) ?? []
+    }
+
+    // MARK: - Generated images
+
+    func saveImages() {
+        if let data = try? JSONSerialization.data(withJSONObject: images, options: [.prettyPrinted]) {
+            try? data.write(to: imagesURL)
+        }
+    }
+
+    func addAIImage(prompt: String, path: String) {
+        let ts = Date().timeIntervalSince1970 * 1000
+        images.insert(["id": UUID().uuidString, "prompt": prompt, "path": path, "ts": ts], at: 0)
+        if images.count > 300 { images = Array(images.prefix(300)) }
+        saveImages()
     }
 
     static func json(_ obj: Any) -> String {

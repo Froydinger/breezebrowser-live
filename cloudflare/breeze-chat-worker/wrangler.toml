@@ -1,0 +1,19 @@
+name = "breeze-chat"
+main = "src/index.ts"
+compatibility_date = "2026-06-23"
+workers_dev = true
+
+[vars]
+OPENAI_CHAT_MODEL = "gpt-5.4-mini"
+OPENAI_IMAGE_MODEL = "gpt-image-2"
+MAX_OUTPUT_TOKENS = "1200"
+CHAT_DAILY_LIMIT = "30"
+IMAGE_DAILY_LIMIT = "10"
+
+[[durable_objects.bindings]]
+name = "QUOTA"
+class_name = "QuotaTracker"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["QuotaTracker"]

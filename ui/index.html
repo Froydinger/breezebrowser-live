@@ -15,8 +15,8 @@
   <!-- Breeze mark, permanently pinned to the top-right of the app. Click opens
        the AI assistant. In fullscreen + sidebar url-mode it hides until you
        hover the top-right corner so it never covers the page. -->
-  <button id="breeze-corner" title="Breeze AI (⌘E)">
-    <img src="icon.png" alt="Breeze AI" draggable="false" />
+  <button id="breeze-corner" title="Nav (⌘E)">
+    <img src="icon.png" alt="Nav" draggable="false" />
   </button>
   <div id="loadbar"><div id="loadbar-fill"></div></div>
   <div id="split-divider"><div class="split-grip"></div></div>
@@ -153,10 +153,10 @@
     <div class="ai-header">
       <span class="ai-title">
         <img class="ai-title-logo" src="icon.png" alt="" draggable="false" />
-        Assistant
+        Nav
       </span>
       <span class="ai-header-btns">
-        <button class="nav-btn" id="ai-settings-btn" title="Breeze AI settings">
+        <button class="nav-btn" id="ai-settings-btn" title="Nav settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
         </button>
         <button class="nav-btn" id="ai-history" title="Chat history">
@@ -183,8 +183,8 @@
     <div id="ai-messages">
       <div id="ai-empty">
         <img class="ai-empty-logo" src="icon.png" alt="" draggable="false" />
-        <h3>Private intelligence</h3>
-        <p>Runs entirely on your Mac.<br/>Nothing ever leaves this device.</p>
+        <h3>Nav</h3>
+        <p>Powered by Breeze Cloud.<br/>Reads pages, searches the web, and makes images.</p>
         <div class="ai-chips">
           <button class="ai-chip">Summarize this page</button>
           <button class="ai-chip">Key takeaways</button>
@@ -231,14 +231,14 @@
       <div class="onboard-step" data-step="0">
         <img class="onboard-logo" src="icon.png" alt="" draggable="false" />
         <h1>Welcome to Breeze</h1>
-        <p>A fast, beautiful native Mac browser with private local AI baked in — and zero tracking. Your data stays yours. Forever.</p>
+        <p>A fast, beautiful native Mac browser with Nav baked in — and zero tracking. Your data stays yours.</p>
         <button class="onboard-next primary">Let's go →</button>
       </div>
 
       <div class="onboard-step" data-step="1" hidden>
         <img class="brand-icon" src="icon.png" alt="" draggable="false" />
-        <h2>Meet Breeze AI</h2>
-        <p>Press <kbd>⌘E</kbd> anytime to open your assistant. It runs <b>100% locally on your Mac</b> — summarize pages, ask questions, even highlight text on any site and it becomes the topic. It can search the web and set reminders too.</p>
+        <h2>Meet Nav</h2>
+        <p>Press <kbd>⌘E</kbd> anytime to open Nav. It can summarize pages, answer questions, use selected text as context, search the web, make images, and set reminders.</p>
         <button class="onboard-next primary">Nice →</button>
       </div>
 
@@ -246,7 +246,7 @@
         <div class="onboard-icon">⌘</div>
         <h2>The essentials</h2>
         <ul class="onboard-list">
-          <li><kbd>⌘T</kbd> new tab · <kbd>⌘S</kbd> toggle sidebar · <kbd>⌘E</kbd> AI</li>
+          <li><kbd>⌘T</kbd> new tab · <kbd>⌘S</kbd> toggle sidebar · <kbd>⌘E</kbd> Nav</li>
           <li>Right-click a tab to <b>pin</b> it as an app or add it to a <b>group</b></li>
           <li><kbd>⌘⇧N</kbd> incognito · built-in ad blocking · auto-sleep idle tabs</li>
         </ul>
@@ -256,7 +256,7 @@
       <div class="onboard-step" data-step="3" hidden>
         <div class="onboard-icon">👋</div>
         <h2>Make it yours</h2>
-        <p>What should Breeze AI call you?</p>
+        <p>What should Nav call you?</p>
         <input id="onboard-name" type="text" placeholder="Your name (optional)" maxlength="40" />
         <p class="onboard-fine">You can change this anytime in Settings.</p>
         <button class="onboard-next primary">Next →</button>
@@ -265,7 +265,7 @@
       <div class="onboard-step" data-step="4" hidden>
         <img class="brand-icon" src="icon.png" alt="" draggable="false" />
         <h2>You're all set</h2>
-        <p>Press <kbd>⌘E</kbd> anytime for the assistant — powered by your own OpenAI key, it can read pages, search the web, click, type, and set reminders.</p>
+        <p>Press <kbd>⌘E</kbd> anytime for Nav — powered by Breeze Cloud, it can read pages, search the web, click, type, make images, and set reminders.</p>
         <button class="onboard-next primary" id="onboard-finish">Start browsing</button>
       </div>
 

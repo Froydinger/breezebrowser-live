@@ -309,7 +309,7 @@
         <span>Settings</span>
       </div>
       <button data-nav="general" class="on">General</button>
-      <button data-nav="ai">Breeze AI</button>
+      <button data-nav="ai">Nav</button>
       <button data-nav="reminders">Reminders</button>
       <button data-nav="search">Search</button>
       <button data-nav="performance">Performance</button>
@@ -491,7 +491,7 @@
     </section>
 
     <section data-tab="ai">
-      <h2>Breeze AI</h2>
+      <h2>Nav</h2>
       <div class="card">
         <div class="row">
           <div>
@@ -512,32 +512,21 @@
         <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:16px">
             <div style="flex:1">
-              <div class="row-label">OpenAI API key</div>
-              <div class="row-hint">Breeze AI is powered by OpenAI's <b>GPT-5.4-mini</b> using your own API key (BYOK). Your key stays in an owner-only file on this Mac and is only ever sent to OpenAI — no system password prompts.</div>
+              <div class="row-label">Breeze Cloud</div>
+              <div class="row-hint">Nav is powered by <b>GPT-5.4-mini</b> through Breeze Cloud. Your app does not store or expose an OpenAI API key.</div>
             </div>
-            <button id="aiKeyToggle" style="flex-shrink:0;font-family:inherit;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:500">Manage key</button>
-          </div>
-          <!-- Hidden until the user explicitly opens it. -->
-          <div id="aiKeyPanel" hidden style="display:flex;flex-direction:column;gap:10px;background:var(--surface-active);border-radius:10px;padding:14px">
-            <div id="aiKeyStatus" class="row-hint" style="margin:0">Checking…</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <input id="openaiKey" type="password" autocomplete="off" placeholder="sk-…"
-                style="flex:1;min-width:200px;font-family:inherit;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border, rgba(128,128,128,0.25));border-radius:9px;padding:8px 12px;outline:none" />
-              <button id="openaiSaveBtn" style="font-family:inherit;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:500">Save</button>
-              <button id="openaiRemoveBtn" style="font-family:inherit;font-size:12px;color:var(--text-soft);background:transparent;border:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-weight:500">Remove</button>
-            </div>
-            <div class="row-hint" style="margin:0">Don't have a key? <a href="#" id="getKeyLink" class="key-link">Create one at platform.openai.com →</a></div>
+            <span id="aiCloudStatus" class="badge">Checking</span>
           </div>
         </div>
         <div class="row" id="aiUsageRow">
           <div style="flex:1;padding-right:16px">
             <div class="row-label">Estimated usage</div>
-            <div class="row-hint" id="aiUsageHint">No usage yet. Estimated from tokens Breeze uses on this Mac at GPT-5.4-mini pricing — see your OpenAI dashboard for exact charges.</div>
+            <div class="row-hint" id="aiUsageHint">No usage yet. Text-token estimate for this Mac. Cloud limits reset daily.</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
             <div id="aiUsageCost" style="font-size:16px;font-weight:600;color:var(--text)">~$0.00</div>
             <div style="display:flex;gap:10px;align-items:center">
-              <a href="#" id="aiUsageDashboard" class="key-link" style="font-size:11.5px">OpenAI usage →</a>
+              <span class="row-hint" style="font-size:11.5px;margin:0">Text only</span>
               <button id="aiUsageReset" style="font-family:inherit;font-size:11.5px;color:var(--text-soft);background:var(--surface-active);border:none;border-radius:8px;padding:5px 10px;cursor:pointer;font-weight:500">Reset</button>
             </div>
           </div>
@@ -555,7 +544,7 @@
       <h2>Reminders</h2>
       <div class="card" id="reminder-list">
         <div class="row" id="reminder-empty">
-          <div class="row-hint">No active reminders. Ask Breeze AI to remind you — e.g. "remind me in 20 minutes to call mom" — and they'll show up here.</div>
+          <div class="row-hint">No active reminders. Ask Nav to remind you — e.g. "remind me in 20 minutes to call mom" — and they'll show up here.</div>
         </div>
       </div>
     </section>
@@ -659,8 +648,8 @@
       </div>
       <div class="card" id="faq">
         <details>
-          <summary>How does Breeze AI work?</summary>
-          <p>Press <b>⌘E</b> to open it. It's powered by OpenAI's <b>GPT-5.4-mini</b> using <b>your own API key</b> (add it above in <b>Settings → Breeze AI</b>). Ask it to "summarize this page," open a site, look something up on the web, or set a reminder, and it drives the browser to get it done.</p>
+          <summary>How does Nav work?</summary>
+          <p>Press <b>⌘E</b> to open it. It's powered by <b>GPT-5.4-mini</b> through Breeze Cloud. Ask it to "summarize this page," open a site, look something up on the web, make an image, or set a reminder, and it drives the browser to get it done.</p>
         </details>
         <details>
           <summary>Use the AI on selected text</summary>
@@ -668,7 +657,7 @@
         </details>
         <details>
           <summary>Search the web</summary>
-          <p>Just ask — when a question needs live info, Breeze AI opens your default search engine in a tab, reads the results, and answers with sources. Web browsing uses your normal browser; the AI itself uses your <b>OpenAI API key</b>.</p>
+          <p>Just ask — when a question needs live info, Nav opens your default search engine in a tab, reads the results, and answers with sources. Web browsing uses your normal browser; AI requests go through Breeze Cloud.</p>
         </details>
         <details>
           <summary>Set a reminder</summary>
@@ -680,7 +669,7 @@
         </details>
         <details>
           <summary>Shortcuts cheat-sheet</summary>
-          <p><b>⌘T</b> new tab · <b>⌘W</b> close · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⌘S</b> toggle sidebar · <b>⌘E</b> AI · <b>⌘L</b> address bar · <b>⌘D</b> bookmark · <b>⌘Y</b> history · <b>⇧⌘J</b> downloads · <b>⌘⇧N</b> incognito · <b>⌥⌘P</b> picture-in-picture · <b>⇧⌘D</b> dark mode.</p>
+          <p><b>⌘T</b> new tab · <b>⌘W</b> close · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⌘S</b> toggle sidebar · <b>⌘E</b> Nav · <b>⌘L</b> address bar · <b>⌘D</b> bookmark · <b>⌘Y</b> history · <b>⇧⌘J</b> downloads · <b>⌘⇧N</b> incognito · <b>⌥⌘P</b> picture-in-picture · <b>⇧⌘D</b> dark mode.</p>
         </details>
         <details>
           <summary>A site looks broken</summary>
@@ -688,7 +677,7 @@
         </details>
         <details>
           <summary>Privacy &amp; your data</summary>
-          <p>History and saved passwords are encrypted on this device with your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Your OpenAI API key is kept in Breeze's owner-only local storage and is only ever sent to OpenAI when you use the assistant. Nothing else syncs anywhere.</p>
+          <p>History, generated images, and saved passwords live on this Mac; passwords use your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Breeze does not store an OpenAI API key in the app. When you ask Nav for help, the prompt and relevant page/tab/image context are sent through Breeze Cloud to OpenAI, with daily fair-use limits.</p>
         </details>
       </div>
     </section>
@@ -785,6 +774,8 @@
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
+      const cloudStatus = document.getElementById('aiCloudStatus');
+      if (cloudStatus) cloudStatus.textContent = settings.aiCloudEnabled ? 'Connected' : 'Not configured';
 
       renderPerms();
       renderReminders();
@@ -808,71 +799,21 @@
       if (!costEl || !hintEl) return;
       costEl.textContent = '~$' + cost.toFixed(cost >= 1 ? 2 : 4);
       if (!inTok && !outTok) {
-        hintEl.textContent = 'No usage yet. Estimated from tokens Breeze uses on this Mac at GPT-5.4-mini pricing — see your OpenAI dashboard for exact charges.';
+        hintEl.textContent = 'No usage yet. Text-token estimate for this Mac. Cloud limits reset daily.';
       } else {
         let since = '';
         if (settings.aiUsageSince) {
           try { since = ' · since ' + new Date(settings.aiUsageSince).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch {}
         }
-        hintEl.textContent = `${fmtTokens(inTok)} in · ${fmtTokens(outTok)} out${since}. Estimated at GPT-5.4-mini pricing — see your OpenAI dashboard for exact charges.`;
+        hintEl.textContent = `${fmtTokens(inTok)} in · ${fmtTokens(outTok)} out${since}. Text-token estimate for this Mac.`;
       }
     }
     (function () {
       const reset = document.getElementById('aiUsageReset');
-      const dash = document.getElementById('aiUsageDashboard');
       if (reset) reset.addEventListener('click', () => {
         settings.aiUsageInput = 0; settings.aiUsageOutput = 0; settings.aiUsageSince = Date.now();
         if (typeof breezeInternal.resetAIUsage === 'function') breezeInternal.resetAIUsage();
         renderAIUsage();
-      });
-      if (dash) dash.addEventListener('click', (e) => {
-        e.preventDefault();
-        breezeInternal.openExternal('https://platform.openai.com/usage');
-      });
-    })();
-
-    // ---- OpenAI API key (BYOK) -------------------------------------------
-    // Prompt-free local API-key management.
-    (function () {
-      const toggle = document.getElementById('aiKeyToggle');
-      const panel = document.getElementById('aiKeyPanel');
-      const statusEl = document.getElementById('aiKeyStatus');
-      const input = document.getElementById('openaiKey');
-      const saveBtn = document.getElementById('openaiSaveBtn');
-      const removeBtn = document.getElementById('openaiRemoveBtn');
-      const getLink = document.getElementById('getKeyLink');
-      if (!toggle || !panel) return;
-
-      async function refreshStatus() {
-        try {
-          const has = await breezeInternal.hasSecret('openaiKey');
-          statusEl.textContent = has ? '✓ A key is connected. Saving a new one replaces it.' : 'No key saved yet — paste your key below.';
-        } catch {
-          statusEl.textContent = 'Paste your key below.';
-        }
-      }
-
-      toggle.addEventListener('click', () => {
-        const opening = panel.hidden;
-        panel.hidden = !opening;
-        toggle.textContent = opening ? 'Hide' : 'Manage key';
-        if (opening) refreshStatus();
-      });
-      saveBtn.addEventListener('click', () => {
-        const v = (input.value || '').trim();
-        if (!v) { statusEl.textContent = 'Enter a key first.'; return; }
-        breezeInternal.setSecret('openaiKey', v);
-        input.value = '';
-        statusEl.textContent = '✓ Key saved. Breeze AI is ready.';
-      });
-      removeBtn.addEventListener('click', () => {
-        breezeInternal.deleteSecret('openaiKey');
-        input.value = '';
-        statusEl.textContent = 'Key removed.';
-      });
-      getLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        breezeInternal.openExternal('https://platform.openai.com/api-keys');
       });
     })();
 

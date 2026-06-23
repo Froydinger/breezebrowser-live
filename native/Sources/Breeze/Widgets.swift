@@ -52,6 +52,7 @@ final class HoverButton: NSButton {
     var symbol: String = "" { didSet { applyTheme() } }
     var symbolWeight: NSFont.Weight = .regular
     var pointSize: CGFloat = 15
+    var isOn = false { didSet { applyTheme() } }
     private var hovering = false
     var onTap: (() -> Void)?
 
@@ -83,9 +84,9 @@ final class HoverButton: NSButton {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
-        let color = hovering ? p.text : p.textSoft
+        let color = isOn ? p.accent : (hovering ? p.text : p.textSoft)
         image = tintedSymbol(symbol, point: pointSize, weight: symbolWeight, color: color)
-        layer?.backgroundColor = (hovering ? p.surfaceHover : .clear).cgColor
+        layer?.backgroundColor = (isOn ? p.surfaceActive : (hovering ? p.surfaceHover : .clear)).cgColor
     }
 
     override func updateTrackingAreas() {
