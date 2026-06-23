@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.8.3', icon: 'key-round', title: 'Site Permissions & Polished Window Controls', major: true, items: [
+        '<b>Traffic Lights Aligned</b> — The macOS window controls now sit visually even with Breeze&rsquo;s sidebar button in the top bar.',
+        '<b>Microphone &amp; Camera Work</b> — Breeze now includes the native macOS privacy strings and WebKit media-capture permission handling needed for sites that use navigator.mediaDevices.getUserMedia.',
+        '<b>Per-Site Permission Choices</b> — Camera, microphone, and location requests can be allowed once, always allowed, or blocked, with saved choices managed from Settings → Site Permissions.',
+        '<b>Settings Actually Controls Permissions</b> — The Site Permissions page now writes through to Breeze native settings instead of being display-only.',
+        '<b>Cache Clearing Is Safer</b> — Clear selected data now honors the checkboxes, so clearing cache no longer silently wipes cookies and signs you out unless Cookies &amp; site data is selected.' ] },
       { v: '3.8.1', icon: 'search-check', title: 'Cleaner Find & Better Page Menus', major: true, items: [
         '<b>Find Stays Visible</b> — Command-F now opens as a raised overlay with a stronger background, border, and shadow so it does not disappear over bright pages.',
         '<b>Richer Right-Click Menus</b> — Page menus now include link actions, image actions, selected-text search, Ask Nav about selection, editable-field actions, bookmark, share, find, print, and normal navigation.',

@@ -62,6 +62,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var titleObs: [UUID: NSKeyValueObservation] = [:]
     var urlObs: [UUID: NSKeyValueObservation] = [:]
     var popupWindows: [UUID: NSWindow] = [:]
+    var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
 
     // chrome
     let root = GradientBackgroundView()
@@ -268,6 +269,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         window.contentView = root
         
         window.makeKeyAndOrderFront(nil)
+        alignTrafficLights()
 
         // load persisted state + apply settings
         pins = Store.shared.pins
@@ -938,11 +940,28 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func windowDidResize(_ n: Notification) {
         splitLeftWidthC?.constant = max(webContainer.bounds.width, 1) * splitRatio - 3
         updateRainbowFrame()
+        alignTrafficLights()
         scheduleReflow()
     }
 
     func windowDidMove(_ n: Notification) {
+        alignTrafficLights()
         updateRainbowFrame()
+    }
+
+    func alignTrafficLights() {
+        let offsetX: CGFloat = 10
+        let offsetY: CGFloat = -11
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = window.standardWindowButton(type) else { continue }
+            if trafficLightBaseFrames[type] == nil {
+                trafficLightBaseFrames[type] = button.frame
+            }
+            guard var frame = trafficLightBaseFrames[type] else { continue }
+            frame.origin.x += offsetX
+            frame.origin.y += offsetY
+            button.setFrameOrigin(frame.origin)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -2493,11 +2512,157 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return bareHost == bareSite || bareHost.hasSuffix("." + bareSite) || bareSite.hasSuffix("." + bareHost)
     }
 
+    func originString(_ origin: WKSecurityOrigin) -> String {
+        let scheme = (origin.value(forKey: "protocol") as? String) ?? "https"
+        let host = origin.host
+        let port = origin.port
+        let defaultPort = (scheme == "https" && port == 443) || (scheme == "http" && port == 80)
+        return port > 0 && !defaultPort ? "\(scheme)://\(host):\(port)" : "\(scheme)://\(host)"
+    }
+
+    func storedPermission(origin: String, permission: String) -> Bool? {
+        guard let permissions = Store.shared.settings["permissions"] as? [String: Any],
+              let byPerm = permissions[origin] as? [String: Any] else { return nil }
+        if let value = byPerm[permission] as? Bool { return value }
+        if (permission == "camera" || permission == "microphone"),
+           let legacy = byPerm["media"] as? Bool { return legacy }
+        return nil
+    }
+
+    func setSitePermission(origin: String, permission: String, allowed: Bool?) {
+        var permissions = Store.shared.settings["permissions"] as? [String: Any] ?? [:]
+        var byPerm = permissions[origin] as? [String: Any] ?? [:]
+        if let allowed {
+            byPerm[permission] = allowed
+        } else {
+            byPerm.removeValue(forKey: permission)
+        }
+        if byPerm.isEmpty { permissions.removeValue(forKey: origin) }
+        else { permissions[origin] = byPerm }
+        Store.shared.settings["permissions"] = permissions
+        Store.shared.saveSettings()
+        broadcastToInternalPages()
+    }
+
+    func permissionKeys(for type: WKMediaCaptureType) -> [String] {
+        switch type {
+        case .camera: return ["camera"]
+        case .microphone: return ["microphone"]
+        case .cameraAndMicrophone: return ["camera", "microphone"]
+        @unknown default: return ["camera", "microphone"]
+        }
+    }
+
+    func mediaPermissionTitle(for type: WKMediaCaptureType) -> String {
+        switch type {
+        case .camera: return "Camera"
+        case .microphone: return "Microphone"
+        case .cameraAndMicrophone: return "Camera and Microphone"
+        @unknown default: return "Camera and Microphone"
+        }
+    }
+
+    @available(macOS 12.0, *)
+    func webView(_ webView: WKWebView,
+                 requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let originText = originString(origin)
+        let keys = permissionKeys(for: type)
+        let stored = keys.compactMap { storedPermission(origin: originText, permission: $0) }
+        if stored.count == keys.count, stored.allSatisfy({ $0 }) {
+            decisionHandler(.grant)
+            return
+        }
+        if stored.contains(false) {
+            decisionHandler(.deny)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "\(originText) wants to use your \(mediaPermissionTitle(for: type).lowercased())"
+        alert.informativeText = "Breeze can allow this once, remember the choice for this site, or block it. You can change saved choices in Settings → Site Permissions."
+        alert.addButton(withTitle: "Allow Once")
+        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: "Block")
+        let result = alert.runModal()
+        switch result {
+        case .alertFirstButtonReturn:
+            decisionHandler(.grant)
+        case .alertSecondButtonReturn:
+            for key in keys { setSitePermission(origin: originText, permission: key, allowed: true) }
+            decisionHandler(.grant)
+        default:
+            for key in keys { setSitePermission(origin: originText, permission: key, allowed: false) }
+            decisionHandler(.deny)
+        }
+    }
+
+    @available(macOS 27.0, *)
+    func webView(_ webView: WKWebView,
+                 requestGeolocationPermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let originText = originString(origin)
+        if let stored = storedPermission(origin: originText, permission: "geolocation") {
+            decisionHandler(stored ? .grant : .deny)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "\(originText) wants to use your location"
+        alert.informativeText = "Breeze can allow this once, remember the choice for this site, or block it. You can change saved choices in Settings → Site Permissions."
+        alert.addButton(withTitle: "Allow Once")
+        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: "Block")
+        let result = alert.runModal()
+        switch result {
+        case .alertFirstButtonReturn:
+            decisionHandler(.grant)
+        case .alertSecondButtonReturn:
+            setSitePermission(origin: originText, permission: "geolocation", allowed: true)
+            decisionHandler(.grant)
+        default:
+            setSitePermission(origin: originText, permission: "geolocation", allowed: false)
+            decisionHandler(.deny)
+        }
+    }
+
     func clearAllBrowsingData() {
         let store = WKWebsiteDataStore.default()
         store.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { [weak self] records in
             store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records) {
-                self?.current?.webView.reload()
+                DispatchQueue.main.async { self?.current?.webView.reload() }
+            }
+        }
+    }
+
+    func clearBrowsingData(options: [String: Any]) {
+        var types = Set<String>()
+        if options["cache"] as? Bool == true {
+            types.insert(WKWebsiteDataTypeDiskCache)
+            types.insert(WKWebsiteDataTypeMemoryCache)
+            types.insert(WKWebsiteDataTypeOfflineWebApplicationCache)
+        }
+        if options["cookies"] as? Bool == true {
+            types.insert(WKWebsiteDataTypeCookies)
+            types.insert(WKWebsiteDataTypeLocalStorage)
+            types.insert(WKWebsiteDataTypeSessionStorage)
+            types.insert(WKWebsiteDataTypeIndexedDBDatabases)
+            types.insert(WKWebsiteDataTypeWebSQLDatabases)
+        }
+        if options["history"] as? Bool == true {
+            Store.shared.history = []
+            Store.shared.saveHistory()
+        }
+        guard !types.isEmpty else {
+            DispatchQueue.main.async { self.current?.webView.reload() }
+            return
+        }
+        let store = WKWebsiteDataStore.default()
+        store.fetchDataRecords(ofTypes: types) { [weak self] records in
+            store.removeData(ofTypes: types, for: records) {
+                DispatchQueue.main.async { self?.current?.webView.reload() }
             }
         }
     }
@@ -2998,6 +3163,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "setSetting":
             if let key = args["key"] as? String { Store.shared.settings[key] = args["value"]; Store.shared.saveSettings() }
             applySettingsChange()
+        case "setSitePermission":
+            if let origin = args["origin"] as? String,
+               let permission = args["permission"] as? String {
+                let value = args["value"]
+                let allowed = value is NSNull || value == nil ? nil : (value as? Bool)
+                setSitePermission(origin: origin, permission: permission, allowed: allowed)
+            }
         case "openExternal":
             if let s = args["url"] as? String, let url = URL(string: s),
                url.scheme == "https" || url.scheme == "http" {
@@ -3071,7 +3243,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             // Reflects the cached flag, not secret storage, so this never prompts.
             resolve(llm.ready ? "true" : "false")
         case "clearBrowsingData":
-            clearAllBrowsingData(); resolve("{}")
+            clearBrowsingData(options: args); resolve("{}")
         case "resetBrowser":
             Store.shared.settings = Store.defaults; Store.shared.pins = []
             Store.shared.history = []; Store.shared.bookmarks = []

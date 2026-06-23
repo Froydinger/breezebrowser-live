@@ -59,14 +59,18 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>3.8.1</string>
-  <key>CFBundleShortVersionString</key><string>3.8.1</string>
+  <key>CFBundleVersion</key><string>3.8.3</string>
+  <key>CFBundleShortVersionString</key><string>3.8.3</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSCameraUsageDescription</key><string>Breeze needs camera access when a website you choose asks to use your camera.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Breeze needs microphone access when a website you choose asks to use your microphone.</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>Breeze needs location access when a website you choose asks to use your location.</string>
+  <key>NSLocationUsageDescription</key><string>Breeze needs location access when a website you choose asks to use your location.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
