@@ -11,6 +11,8 @@ final class TabRowView: NSView {
     private let close = HoverButton(symbol: "xmark", size: 20, point: 9)
     private let perfBadge = NSTextField(labelWithString: "🚀")
     private let privateBadge = NSTextField(labelWithString: "🕵️")
+    private var titleTrailingToBadges: NSLayoutConstraint!
+    private var titleTrailingToEdge: NSLayoutConstraint!
     private var active: Bool
     private var inSplit: Bool
     private var hovering = false
@@ -52,6 +54,8 @@ final class TabRowView: NSView {
         privateBadge.toolTip = "Private Tab"
 
         addSubview(faviconView); addSubview(titleLabel); addSubview(perfBadge); addSubview(privateBadge); addSubview(close)
+        titleTrailingToBadges = titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: privateBadge.leadingAnchor, constant: -4)
+        titleTrailingToEdge = titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 38),
             faviconView.widthAnchor.constraint(equalToConstant: 16),
@@ -60,7 +64,7 @@ final class TabRowView: NSView {
             faviconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             titleLabel.leadingAnchor.constraint(equalTo: faviconView.trailingAnchor, constant: 9),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: privateBadge.leadingAnchor, constant: -4),
+            titleTrailingToEdge,
             privateBadge.trailingAnchor.constraint(equalTo: perfBadge.leadingAnchor, constant: -4),
             privateBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
             perfBadge.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
@@ -68,6 +72,7 @@ final class TabRowView: NSView {
             close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+        titleTrailingToBadges.isActive = false
         addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
@@ -120,11 +125,15 @@ final class TabRowView: NSView {
     }
     override func mouseEntered(with e: NSEvent) {
         hovering = true; close.animator().alphaValue = 1
+        titleTrailingToEdge.isActive = false
+        titleTrailingToBadges.isActive = true
         if !perfBadge.isHidden { perfBadge.animator().alphaValue = 0 }
         applyTheme()
     }
     override func mouseExited(with e: NSEvent) {
         hovering = false; close.animator().alphaValue = 0
+        titleTrailingToBadges.isActive = false
+        titleTrailingToEdge.isActive = true
         if !perfBadge.isHidden { perfBadge.animator().alphaValue = 1 }
         applyTheme()
     }

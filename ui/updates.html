@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.1', icon: 'shield-check', title: 'Sharper Browsing Controls', major: true, items: [
+        '<b>Optional Extreme Ad Blocking</b> — Normal mode stays compatibility-first, and Extreme mode can push harder on ad-heavy sites.',
+        '<b>Per-Site Escape Hatch</b> — When Extreme mode is on, a small shield appears in the URL bar so you can turn it off for the current site if something breaks.',
+        '<b>Shift-Enter Searches</b> — Press Shift-Enter in the address or new-tab field to send the text straight to Google.',
+        '<b>More Room for Tab Titles</b> — Sidebar tab names keep the close button out of the way until hover, so titles ellipsize later.',
+        '<b>Cleaner New Tab Divider</b> — The plus divider is drawn as a single connected control instead of text dashes.' ] },
       { v: '4.0.0', icon: 'search-check', title: 'Nav Research Summaries', major: true, items: [
         '<b>Research Summary Pages</b> — Research-style Nav tasks now finish on a polished Breeze summary page instead of leaving you on a stray final search tab.',
         '<b>Sources Included</b> — Summary pages collect the useful links Nav found into a clean sources grid.',

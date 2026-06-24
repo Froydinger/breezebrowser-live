@@ -124,6 +124,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let address = NSTextField()
     let suggestionsPopover = AddressSuggestionsPopover()
     let bookmarkBtn = HoverButton(symbol: "bookmark", size: 22, point: 12)
+    let adblockModeBtn = HoverButton(symbol: "shield.slash", size: 22, point: 11)
     let breezeCorner = NSButton()
     let findBar = NSView()
     let findField = NSSearchField()
@@ -364,7 +365,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         tabsDoc.translatesAutoresizingMaskIntoConstraints = false
         tabsDoc.addSubview(tabsStack)
 
-        let newTabBtn = HoverTextButton(defaultText: " ——————  +  —————— ", hoverText: " ——————  +  —————— ")
+        let newTabBtn = LinePlusButton()
         newTabBtn.onTap = { [weak self] in self?.openNewTab() }
         newTabBtn.translatesAutoresizingMaskIntoConstraints = false
         tabsDoc.addSubview(newTabBtn)
@@ -520,11 +521,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let clearc = HoverButton(symbol: "trash", size: 22, point: 11)
         clearc.onTap = { [weak self] in self?.clearCurrentSiteCache() }
         bookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
+        adblockModeBtn.toolTip = "Turn off Extreme blocking for this site"
+        adblockModeBtn.onTap = { [weak self] in self?.allowCurrentSiteInExtremeAdblock() }
         let share = HoverButton(symbol: "square.and.arrow.up", size: 22, point: 12)
         share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
         addressWrap.addSubview(copylink); addressWrap.addSubview(address)
-        addressWrap.addSubview(clearc); addressWrap.addSubview(bookmarkBtn); addressWrap.addSubview(share)
-        let actions = NSStackView(views: [clearc, bookmarkBtn, share]); actions.spacing = 2
+        addressWrap.addSubview(clearc); addressWrap.addSubview(bookmarkBtn); addressWrap.addSubview(adblockModeBtn); addressWrap.addSubview(share)
+        let actions = NSStackView(views: [clearc, bookmarkBtn, adblockModeBtn, share]); actions.spacing = 2
         actions.translatesAutoresizingMaskIntoConstraints = false
         addressWrap.addSubview(actions)
         NSLayoutConstraint.activate([
@@ -1564,6 +1567,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if window.firstResponder !== address.currentEditor() { address.attributedStringValue = styledAddress(urlStr) }
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
+        updateAdblockModeButton()
         // keep split panes' address bars and nav buttons current
         if let t = current, let partnerId = t.splitPartnerId, let s = tabs.first(where: { $0.id == partnerId }) {
             let isCurrentOnRight = t.splitIsRight
@@ -3603,10 +3607,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         renderPins()
         applyChromeTheme()
         if Store.shared.settings["adblockEnabled"] as? Bool ?? true {
-            AdBlocker.shared.apply(to: sharedConfig.userContentController)
+            AdBlocker.shared.rebuild()
         } else {
             AdBlocker.shared.remove(from: sharedConfig.userContentController)
         }
+        updateAdblockModeButton()
         broadcastToInternalPages()
         newTab.applyTheme(); newTab.tick()
     }
@@ -3623,6 +3628,39 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "duckduckgo": return "https://duckduckgo.com/?q=\(e)"
         case "bing":       return "https://www.bing.com/search?q=\(e)"
         default:           return "https://www.google.com/search?q=\(e)"
+        }
+    }
+
+    func googleSearchURL(for query: String) -> String {
+        let e = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        return "https://www.google.com/search?q=\(e)"
+    }
+
+    func currentHost() -> String? {
+        guard let host = current?.webView.url?.host?.lowercased() else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    func updateAdblockModeButton() {
+        let extreme = Store.shared.string("adblockMode") == "extreme" && (Store.shared.settings["adblockEnabled"] as? Bool ?? true)
+        let host = currentHost()
+        let exceptions = Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []
+        let disabledHere = host.map { h in exceptions.contains { h == $0 || h.hasSuffix("." + $0) } } ?? false
+        adblockModeBtn.isHidden = !extreme || host == nil || disabledHere
+        adblockModeBtn.isOn = extreme && !disabledHere
+    }
+
+    func allowCurrentSiteInExtremeAdblock() {
+        guard let host = currentHost() else { return }
+        var exceptions = Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []
+        if !exceptions.contains(host) { exceptions.append(host) }
+        Store.shared.settings["adblockSiteExceptions"] = exceptions
+        Store.shared.saveSettings()
+        AdBlocker.shared.rebuild { [weak self] in
+            DispatchQueue.main.async {
+                self?.updateAdblockModeButton()
+                self?.current?.webView.reload()
+            }
         }
     }
 
@@ -3839,6 +3877,8 @@ extension BrowserController: AddressSuggestionsDelegate {
             }
         }
         if control === address || control === newTab.field {
+            let shiftSearch = (NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false) &&
+                commandSelector == #selector(NSResponder.insertNewline(_:))
             if suggestionsPopover.isShown {
                 if commandSelector == #selector(NSResponder.moveUp(_:)) {
                     suggestionsPopover.moveSelectionUp()
@@ -3847,6 +3887,10 @@ extension BrowserController: AddressSuggestionsDelegate {
                     suggestionsPopover.moveSelectionDown()
                     return true
                 } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                    if shiftSearch {
+                        submitField(control, textView: textView, forceGoogleSearch: true)
+                        return true
+                    }
                     if suggestionsPopover.triggerSelected() {
                         return true
                     }
@@ -3857,14 +3901,14 @@ extension BrowserController: AddressSuggestionsDelegate {
                     return true
                 }
             } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-                submitField(control, textView: textView)
+                submitField(control, textView: textView, forceGoogleSearch: shiftSearch)
                 return true
             }
         }
         return false
     }
 
-    private func submitField(_ control: NSControl, textView: NSTextView) {
+    private func submitField(_ control: NSControl, textView: NSTextView, forceGoogleSearch: Bool = false) {
         guard let field = control as? NSTextField else { return }
         let text = textView.string
         let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
@@ -3872,6 +3916,10 @@ extension BrowserController: AddressSuggestionsDelegate {
         if field === newTab.field {
             field.stringValue = ""
             newTab.updateFieldHeight()
+        }
+        if forceGoogleSearch {
+            navigate(googleSearchURL(for: text))
+            return
         }
         submitQuery(text, isCmdEnter: isCmd)
     }

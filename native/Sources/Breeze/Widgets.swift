@@ -175,6 +175,79 @@ final class HoverTextButton: NSButton {
     override func mouseExited(with e: NSEvent)  { hovering = false; applyTheme() }
     @objc private func tapped() { onTap?() }
 }
+
+final class LinePlusButton: NSButton {
+    private var hovering = false
+    var onTap: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        translatesAutoresizingMaskIntoConstraints = false
+        isBordered = false
+        wantsLayer = true
+        layer?.cornerRadius = 12
+        target = self
+        action = #selector(tapped)
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged), name: Theme.didChange, object: nil)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = bounds.height / 2
+    }
+
+    @objc private func themeChanged() { needsDisplay = true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        layer?.backgroundColor = Theme.shared.palette.surfaceHover.cgColor
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let p = Theme.shared.palette
+        let color = hovering ? p.text : p.textSoft.withAlphaComponent(0.52)
+        color.setStroke()
+        color.setFill()
+        let y = bounds.midY
+        let centerGap: CGFloat = 28
+        let left = NSBezierPath()
+        left.lineWidth = 2
+        left.lineCapStyle = .round
+        left.move(to: NSPoint(x: 12, y: y))
+        left.line(to: NSPoint(x: bounds.midX - centerGap, y: y))
+        left.stroke()
+        let right = NSBezierPath()
+        right.lineWidth = 2
+        right.lineCapStyle = .round
+        right.move(to: NSPoint(x: bounds.midX + centerGap, y: y))
+        right.line(to: NSPoint(x: bounds.width - 12, y: y))
+        right.stroke()
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+            .foregroundColor: color
+        ]
+        let s = NSString(string: "+")
+        let size = s.size(withAttributes: attrs)
+        s.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2 - 0.5), withAttributes: attrs)
+    }
+
+    @objc private func tapped() { onTap?() }
+}
 /// Top-left origin view so scroll-view content starts at the top.
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 

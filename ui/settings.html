@@ -579,9 +579,19 @@
             <span class="knob"></span>
           </label>
         </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Extreme ad blocking</div>
+            <div class="row-hint">Optional stronger blocking for ad-heavy sites. If a page breaks, use the shield in the URL bar to turn it off for that site.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="adblockExtreme" />
+            <span class="knob"></span>
+          </label>
+        </div>
         <div class="row" style="display:block">
           <div class="row-hint" style="line-height:1.55">
-            <b>Why a few sites still show ads.</b> Breeze always does its best to give you ad-free browsing and blocks ads &amp; trackers across the web. But some sites — <b>YouTube</b> especially — now stream video ads from the very same place as the video itself, and the engine Breeze is built on (Apple's WebKit) doesn't allow the deep, script-level blocking that desktop browser extensions use. Even uBlock Origin is fighting a losing battle here as YouTube finalizes these changes, and browser extensions aren't supported in apps like Breeze. There's no clean way around it — sites are simply getting greedier. We think the native speed, battery life, and system features (Apple Passwords, Picture-in-Picture, Netflix/DRM video) are worth the trade-off, and Breeze will keep blocking everything it can.
+            <b>Why a few sites still show ads.</b> Breeze blocks at the WebKit content-rule layer for speed, privacy, and App Store-friendly behavior. Some ads are served from the same infrastructure as real content, so normal mode avoids heavy cosmetic blocking that can break sites. Extreme mode is there when you want to push harder, with a per-site off switch in the URL bar.
           </div>
         </div>
       </div>
@@ -758,6 +768,7 @@
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
       document.getElementById('adblockEnabled').checked = settings.adblockEnabled !== false;
+      document.getElementById('adblockExtreme').checked = settings.adblockMode === 'extreme';
       document.getElementById('webNotifications').checked = settings.webNotifications !== false;
       document.getElementById('webNotifications2').checked = settings.webNotifications !== false;
       document.getElementById('notificationSounds').checked = settings.notificationSounds !== false;
@@ -835,6 +846,7 @@
     document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
     document.getElementById('adblockEnabled').addEventListener('change', (e) => set('adblockEnabled', e.target.checked));
+    document.getElementById('adblockExtreme').addEventListener('change', (e) => set('adblockMode', e.target.checked ? 'extreme' : 'normal'));
     document.getElementById('webNotifications').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.getElementById('webNotifications2').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.getElementById('notificationSounds').addEventListener('change', (e) => set('notificationSounds', e.target.checked));

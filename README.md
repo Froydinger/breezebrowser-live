@@ -2,7 +2,7 @@
 
 Breeze is a fast native macOS browser built with Swift, AppKit, and WKWebView. Nav, its built-in assistant, talks to Breeze Cloud for GPT-5.4-mini chat plus gpt-image-2 image generation/editing without exposing an API key in the app.
 
-Current release: **4.0.0** for Apple Silicon Macs.
+Current release: **4.0.1** for Apple Silicon Macs.
 
 ## Run it
 
