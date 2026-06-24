@@ -422,7 +422,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let label = SelectableMessageTextView(maxWidth: messageMaxWidth)
         if user {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 13),
+                .font: NSFont.systemFont(ofSize: 14),
                 .foregroundColor: onAccentText(p.accent)
             ]
             label.attributedString = NSAttributedString(string: text, attributes: attrs)
@@ -664,15 +664,15 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         }
         let full = NSRange(location: 0, length: attr.length)
         attr.addAttribute(.foregroundColor, value: color, range: full)
-        // normalize every run to 13pt while preserving bold/italic traits
+        // normalize every run to 14pt while preserving bold/italic traits
         attr.enumerateAttribute(.font, in: full) { val, range, _ in
             let traits = (val as? NSFont)?.fontDescriptor.symbolicTraits ?? []
-            var desc = NSFont.systemFont(ofSize: 13).fontDescriptor
+            var desc = NSFont.systemFont(ofSize: 14).fontDescriptor
             var keep: NSFontDescriptor.SymbolicTraits = []
             if traits.contains(.bold) { keep.insert(.bold) }
             if traits.contains(.italic) { keep.insert(.italic) }
             if !keep.isEmpty { desc = desc.withSymbolicTraits(keep) }
-            let f = NSFont(descriptor: desc, size: 13) ?? .systemFont(ofSize: 13)
+            let f = NSFont(descriptor: desc, size: 14) ?? .systemFont(ofSize: 14)
             attr.addAttribute(.font, value: f, range: range)
         }
         let para = NSMutableParagraphStyle(); para.paragraphSpacing = 5; para.lineSpacing = 1.5

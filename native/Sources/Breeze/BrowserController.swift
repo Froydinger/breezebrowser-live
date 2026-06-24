@@ -1765,7 +1765,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 case .success(let (answer, toolChips)):
                     let chips = labels + toolChips
                     let textAns = answer.isEmpty ? "…" : answer
-                    self.assistant.addAI(textAns, chips: chips)
+                    let openedSummary = self.openResearchSummaryIfNeeded(query: text, answer: textAns, chips: toolChips)
+                    if openedSummary {
+                        self.assistant.addAI("I opened your research summary. It has the main takeaways and sources from what I found.", chips: chips)
+                    } else {
+                        self.assistant.addAI(textAns, chips: chips)
+                    }
                     self.broadcastToInternalPages()   // refresh the usage/cost readout on any open Settings page
                     self.saveAgentSnapshotAndWalkthrough(query: text, answer: textAns)
                 case .failure(let e):
@@ -1774,6 +1779,122 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
             self.llm.send(text, history: history, contexts: contexts, completion: done)
         }
+    }
+
+    @discardableResult
+    func openResearchSummaryIfNeeded(query: String, answer: String, chips: [String]) -> Bool {
+        let q = query.lowercased()
+        let researchy = chips.contains { $0.lowercased().contains("web search") || $0.lowercased().contains("http") } ||
+            q.contains("research") || q.contains("find ") || q.contains("list ") || q.contains("best ") ||
+            q.contains("recommend") || q.contains("compare") || q.contains("options")
+        let transactional = q.contains("fill ") || q.contains("type ") || q.contains("click ") ||
+            q.contains("email ") || q.contains("log in") || q.contains("sign in") || q.contains("submit")
+        guard researchy && !transactional && answer.count > 180 else { return false }
+        guard let url = writeResearchSummaryPage(query: query, answer: answer) else { return false }
+        let tab: Tab
+        if let cur = current, !cur.isChatTab {
+            tab = cur
+        } else {
+            tab = Tab()
+            wire(tab)
+            tabs.append(tab)
+            active = tabs.count - 1
+        }
+        tab.isNewTab = false
+        tab.isChatTab = false
+        tab.title = "Research Summary"
+        showActive()
+        tab.webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        refreshSidebar()
+        return true
+    }
+
+    func writeResearchSummaryPage(query: String, answer: String) -> URL? {
+        let dir = Store.shared.supportDirectory.appendingPathComponent("Research Summaries", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("research-\(Int(Date().timeIntervalSince1970)).html")
+        let html = researchSummaryHTML(query: query, answer: answer, links: extractLinks(from: answer))
+        do {
+            try html.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            print("Breeze research summary write failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func extractLinks(from markdown: String) -> [(String, String)] {
+        let pattern = #"(?:(?:\[(.*?)\]\((https?://[^\s)]+)\))|(https?://[^\s)]+))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = markdown as NSString
+        var out: [(String, String)] = []
+        for m in regex.matches(in: markdown, range: NSRange(location: 0, length: ns.length)) {
+            let title = m.range(at: 1).location == NSNotFound ? "" : ns.substring(with: m.range(at: 1))
+            let rawURL = m.range(at: 2).location == NSNotFound ? ns.substring(with: m.range(at: 3)) : ns.substring(with: m.range(at: 2))
+            let cleanURL = rawURL.trimmingCharacters(in: CharacterSet(charactersIn: ".,;"))
+            let label = title.isEmpty ? (URL(string: cleanURL)?.host ?? cleanURL) : title
+            if !out.contains(where: { $0.1 == cleanURL }) { out.append((label, cleanURL)) }
+            if out.count >= 12 { break }
+        }
+        return out
+    }
+
+    func markdownToResearchHTML(_ text: String) -> String {
+        var html = text.htmlEscaped
+        if let regex = try? NSRegularExpression(pattern: #"\*\*(.*?)\*\*"#) {
+            html = regex.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: (html as NSString).length), withTemplate: "<strong>$1</strong>")
+        }
+        if let regex = try? NSRegularExpression(pattern: #"\[(.*?)\]\((https?://[^\s)]+)\)"#) {
+            html = regex.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: (html as NSString).length), withTemplate: "<a href=\"$2\">$1</a>")
+        }
+        if let regex = try? NSRegularExpression(pattern: #"(?<!["=])(https?://[^\s<]+)"#) {
+            html = regex.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: (html as NSString).length), withTemplate: "<a href=\"$1\">$1</a>")
+        }
+        let lines = html.components(separatedBy: .newlines)
+        var out: [String] = []
+        var inList = false
+        for raw in lines {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("## ") {
+                if inList { out.append("</ul>"); inList = false }
+                out.append("<h2>\(String(line.dropFirst(3)))</h2>")
+            } else if line.hasPrefix("# ") {
+                if inList { out.append("</ul>"); inList = false }
+                out.append("<h1>\(String(line.dropFirst(2)))</h1>")
+            } else if line.hasPrefix("- ") || line.hasPrefix("• ") {
+                if !inList { out.append("<ul>"); inList = true }
+                out.append("<li>\(String(line.dropFirst(2)))</li>")
+            } else if line.isEmpty {
+                if inList { out.append("</ul>"); inList = false }
+            } else {
+                if inList { out.append("</ul>"); inList = false }
+                out.append("<p>\(line)</p>")
+            }
+        }
+        if inList { out.append("</ul>") }
+        return out.joined(separator: "\n")
+    }
+
+    func researchSummaryHTML(query: String, answer: String, links: [(String, String)]) -> String {
+        let body = markdownToResearchHTML(answer)
+        let linkCards = links.map { label, url in
+            "<a class=\"source\" href=\"\(url.htmlEscaped)\"><span>\(label.htmlEscaped)</span><small>\((URL(string: url)?.host ?? url).htmlEscaped)</small></a>"
+        }.joined(separator: "\n")
+        return """
+        <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Research Summary — Breeze</title>
+        <style>
+        :root{color-scheme:light dark;--bg:#f2f0ed;--card:rgba(255,255,255,.72);--text:#23232a;--soft:rgba(35,35,42,.58);--accent:#3aa6b9;--line:rgba(0,0,0,.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+        @media(prefers-color-scheme:dark){:root{--bg:#16161a;--card:rgba(255,255,255,.055);--text:#ececf0;--soft:rgba(236,236,240,.55);--line:rgba(255,255,255,.11)}}
+        *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 6%,color-mix(in srgb,var(--accent) 28%,transparent),transparent 28%),linear-gradient(160deg,var(--bg),color-mix(in srgb,var(--accent) 7%,var(--bg)));color:var(--text);padding:56px 24px 84px}.wrap{max-width:860px;margin:0 auto}
+        header{text-align:center;margin-bottom:34px;animation:rise .45s cubic-bezier(.22,1,.36,1)}.mark{width:62px;height:62px;border-radius:18px;margin:0 auto 16px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),#7c5bfa);box-shadow:0 22px 55px color-mix(in srgb,var(--accent) 35%,transparent)}.mark svg{width:34px;height:34px;stroke:white;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+        .pill{display:inline-block;color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent);font-size:12px;font-weight:750;padding:6px 12px;border-radius:999px;margin-bottom:12px}h1{font-size:44px;line-height:1.02;margin:0;font-weight:800;letter-spacing:-.8px}header p{color:var(--soft);font-size:16px;line-height:1.5;margin:14px auto 0;max-width:720px}
+        .panel{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,.14);backdrop-filter:blur(18px);animation:rise .55s cubic-bezier(.22,1,.36,1)}
+        .summary h1{font-size:30px}.summary h2{font-size:20px;margin:28px 0 10px}.summary p,.summary li{font-size:15.5px;line-height:1.62;color:var(--text)}.summary ul{padding-left:20px}.summary a{color:var(--accent);font-weight:700}
+        .sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:26px}.source{display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-radius:16px;background:color-mix(in srgb,var(--accent) 9%,transparent);text-decoration:none;border:1px solid color-mix(in srgb,var(--accent) 18%,transparent)}.source span{color:var(--text);font-weight:750}.source small{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+        </style></head><body><div class="wrap"><header><div class="mark"><svg viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h9l5 5v11.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5Z"/><path d="M14 3v6h6"/><path d="M8 14h8M8 17h6"/></svg></div><div class="pill">Nav Research Summary</div><h1>Research, wrapped.</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
+        """
     }
 
     func sendToAIImage(_ text: String) {
@@ -2271,17 +2392,31 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     // 100% reliable CLICK/TYPE. The numbered overlays cluttered the
                     // user's view and lingered after the agent finished (3.1.0 regression).
                     
+                    function labelFor(el) {
+                        var parts = [];
+                        if (el.getAttribute('aria-label')) parts.push('aria="' + el.getAttribute('aria-label') + '"');
+                        if (el.getAttribute('title')) parts.push('title="' + el.getAttribute('title') + '"');
+                        if (el.getAttribute('data-placeholder')) parts.push('placeholder="' + el.getAttribute('data-placeholder') + '"');
+                        if (el.id) {
+                            var lblEl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+                            if (lblEl && lblEl.innerText.trim()) parts.push('label="' + lblEl.innerText.trim().replace(/\s+/g, ' ') + '"');
+                        }
+                        return parts.join(' ');
+                    }
                     var desc = "";
                     var tag = el.tagName.toLowerCase();
-                    if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+                    var role = (el.getAttribute('role') || '').toLowerCase();
+                    if (tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable || role === 'textbox') {
                         var type = el.getAttribute('type') || 'text';
                         var placeholder = el.getAttribute('placeholder') || '';
                         var name = el.getAttribute('name') || '';
                         var value = el.value || '';
-                        desc = '(Input/' + tag + ')';
+                        desc = '(Input/' + tag + (role ? ' role=' + role : '') + (el.isContentEditable ? ' contenteditable' : '') + ')';
                         if (placeholder) desc += ' placeholder="' + placeholder + '"';
                         if (name) desc += ' name="' + name + '"';
                         if (value) desc += ' value="' + value + '"';
+                        var extraLabel = labelFor(el);
+                        if (extraLabel) desc += ' ' + extraLabel;
                     } else {
                         var text = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
                         if (text.length > 80) text = text.substring(0, 77) + '...';
@@ -2400,10 +2535,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             var target = '\(escapedTarget)'.trim().toLowerCase();
             
             function clickElement(el) {
-                el.click();
+                var rect = el.getBoundingClientRect();
+                var opts = { bubbles: true, cancelable: true, view: window,
+                             clientX: rect.left + Math.max(1, rect.width / 2),
+                             clientY: rect.top + Math.max(1, rect.height / 2) };
                 el.focus();
+                el.dispatchEvent(new MouseEvent('mouseover', opts));
+                el.dispatchEvent(new MouseEvent('mousedown', opts));
+                el.dispatchEvent(new MouseEvent('mouseup', opts));
+                el.dispatchEvent(new MouseEvent('click', opts));
                 if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) {
                     el.checked = !el.checked;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
                     el.dispatchEvent(new Event('change', { bubbles: true }));
                 }
                 return true;
@@ -2460,17 +2603,78 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             var target = '\(escapedTarget)'.trim().toLowerCase();
             var val = '\(escapedText)';
             
-            function setValue(el, v) {
-                el.focus();
-                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-                    el.value = v;
-                } else if (el.isContentEditable) {
-                    el.innerHTML = v;
-                } else {
-                    el.innerText = v;
+            function fire(el, name, extra) {
+                var event;
+                try {
+                    if (name === 'beforeinput' || name === 'input') {
+                        event = new InputEvent(name, Object.assign({ bubbles: true, cancelable: true, inputType: 'insertText', data: val }, extra || {}));
+                    } else {
+                        event = new Event(name, { bubbles: true, cancelable: true });
+                    }
+                } catch (e) {
+                    event = new Event(name, { bubbles: true, cancelable: true });
                 }
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+                el.dispatchEvent(event);
+            }
+
+            function nativeSet(el, v) {
+                var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype :
+                            el instanceof HTMLInputElement ? HTMLInputElement.prototype : null;
+                var desc = proto ? Object.getOwnPropertyDescriptor(proto, 'value') : null;
+                if (desc && desc.set) desc.set.call(el, v);
+                else el.value = v;
+            }
+
+            function selectAllEditable(el) {
+                var range = document.createRange();
+                range.selectNodeContents(el);
+                var sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+
+            function closestWritable(el) {
+                while (el && el !== document.documentElement) {
+                    var tag = (el.tagName || '').toLowerCase();
+                    var role = (el.getAttribute && (el.getAttribute('role') || '').toLowerCase()) || '';
+                    if (tag === 'textarea') return el;
+                    if (tag === 'input') {
+                        var type = (el.getAttribute('type') || 'text').toLowerCase();
+                        if (!/^(button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/i.test(type)) return el;
+                    }
+                    if (el.isContentEditable || role === 'textbox') return el;
+                    el = el.parentElement;
+                }
+                return null;
+            }
+
+            function setValue(el, v) {
+                el = closestWritable(el) || el;
+                el.focus();
+                var tag = (el.tagName || '').toLowerCase();
+                var role = (el.getAttribute && (el.getAttribute('role') || '').toLowerCase()) || '';
+                if (tag === 'input' || tag === 'textarea') {
+                    nativeSet(el, v);
+                    if (typeof el.setSelectionRange === 'function') el.setSelectionRange(v.length, v.length);
+                    fire(el, 'beforeinput');
+                    fire(el, 'input');
+                    fire(el, 'change');
+                } else if (el.isContentEditable || role === 'textbox') {
+                    selectAllEditable(el);
+                    fire(el, 'beforeinput');
+                    var usedExec = false;
+                    try { usedExec = document.execCommand('insertText', false, v); } catch (e) {}
+                    if (!usedExec) {
+                        el.textContent = v;
+                    }
+                    fire(el, 'input');
+                    fire(el, 'change');
+                    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Unidentified' }));
+                } else {
+                    el.textContent = v;
+                    fire(el, 'input');
+                    fire(el, 'change');
+                }
                 return true;
             }
 
@@ -2491,18 +2695,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             } catch(e) {}
             
             // 3. Try finding input/textarea/editable by placeholder, label, value, or text
-            var inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"], div, span'));
+            var inputs = Array.from(document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"], [aria-label], [data-placeholder], div, span'));
             for (var el of inputs) {
                 var pl = (el.placeholder || "").trim().toLowerCase();
+                var aria = (el.getAttribute('aria-label') || "").trim().toLowerCase();
+                var title = (el.getAttribute('title') || "").trim().toLowerCase();
+                var dataPl = (el.getAttribute('data-placeholder') || "").trim().toLowerCase();
+                var name = (el.getAttribute('name') || "").trim().toLowerCase();
                 var valTxt = (el.value || "").trim().toLowerCase();
                 var inner = (el.innerText || "").trim().toLowerCase();
                 var label = "";
                 if (el.id) {
-                    var lblEl = document.querySelector('label[for="' + el.id + '"]');
+                    var lblEl = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
                     if (lblEl) label = lblEl.innerText.trim().toLowerCase();
                 }
                 
-                if (pl.includes(target) || valTxt.includes(target) || inner.includes(target) || label.includes(target)) {
+                if (pl.includes(target) || aria.includes(target) || title.includes(target) || dataPl.includes(target) || name.includes(target) || valTxt.includes(target) || inner.includes(target) || label.includes(target)) {
                     if (setValue(el, val)) {
                         return "Typed into element matching '" + target + "'";
                     }
