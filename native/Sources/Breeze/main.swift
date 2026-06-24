@@ -36,6 +36,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "g":
                 flags.contains(.shift) ? browser.findPrevious() : browser.findNextMatch()
                 return nil
+            case "+", "=":
+                browser.zoomPage(by: 0.1)
+                return nil
+            case "-":
+                browser.zoomPage(by: -0.1)
+                return nil
+            case "0":
+                browser.resetPageZoom()
+                return nil
             default:
                 return event
             }
@@ -96,9 +105,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let b = activeBrowser else { return }
         b.window.makeFirstResponder(b.address); b.address.currentEditor()?.selectAll(nil)
     }
-    @objc func reload() { activeBrowser?.current?.webView.reload() }
+    @objc func reload() { activeBrowser?.reloadCurrentTab() }
     @objc func goBack() { activeBrowser?.current?.webView.goBack() }
     @objc func goForward() { activeBrowser?.current?.webView.goForward() }
+    @objc func zoomIn() { activeBrowser?.zoomPage(by: 0.1) }
+    @objc func zoomOut() { activeBrowser?.zoomPage(by: -0.1) }
+    @objc func resetZoom() { activeBrowser?.resetPageZoom() }
     @objc func findInPage() { activeBrowser?.openFindBar() }
     @objc func findNext() { activeBrowser?.findNextMatch() }
     @objc func findPrevious() { activeBrowser?.findPrevious() }
@@ -184,6 +196,11 @@ editItem.submenu = editMenu
 let viewItem = NSMenuItem(); mainMenu.addItem(viewItem)
 let viewMenu = NSMenu(title: "View")
 viewMenu.addItem(mi("Reload Page", #selector(AppDelegate.reload), "r"))
+viewMenu.addItem(.separator())
+viewMenu.addItem(mi("Zoom In", #selector(AppDelegate.zoomIn), "+"))
+viewMenu.addItem(mi("Zoom Out", #selector(AppDelegate.zoomOut), "-"))
+viewMenu.addItem(mi("Actual Size", #selector(AppDelegate.resetZoom), "0"))
+viewMenu.addItem(.separator())
 viewMenu.addItem(mi("Toggle Sidebar", #selector(AppDelegate.toggleSidebar), "s"))
 viewMenu.addItem(mi("Toggle Assistant", #selector(AppDelegate.toggleAssistant), "e"))
 viewMenu.addItem(mi("Cycle Theme", #selector(AppDelegate.cycleTheme), "d", [.command, .shift]))

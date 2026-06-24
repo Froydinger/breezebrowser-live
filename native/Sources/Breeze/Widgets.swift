@@ -288,3 +288,74 @@ final class TabPlaceholderView: NSView {
         layer?.backgroundColor = Theme.shared.palette.bg.cgColor
     }
 }
+
+final class SelectableMessageTextView: NSTextView {
+    private var maxWidth: CGFloat
+
+    init(maxWidth: CGFloat) {
+        self.maxWidth = maxWidth
+        let storage = NSTextStorage()
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: maxWidth, height: .greatestFiniteMagnitude))
+        container.widthTracksTextView = false
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        super.init(frame: .zero, textContainer: container)
+        configure()
+    }
+
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        self.maxWidth = max(1, frameRect.width)
+        super.init(frame: frameRect, textContainer: container)
+        configure()
+    }
+
+    private func configure() {
+        translatesAutoresizingMaskIntoConstraints = false
+        drawsBackground = false
+        isEditable = false
+        isSelectable = true
+        isRichText = true
+        textContainerInset = .zero
+        textContainer?.lineFragmentPadding = 0
+        textContainer?.widthTracksTextView = false
+        textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
+        isVerticallyResizable = true
+        isHorizontallyResizable = false
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    var attributedString: NSAttributedString {
+        get { textStorage?.copy() as? NSAttributedString ?? NSAttributedString() }
+        set {
+            textStorage?.setAttributedString(newValue)
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard let layoutManager, let textContainer else { return NSSize(width: maxWidth, height: 0) }
+        layoutManager.ensureLayout(for: textContainer)
+        let used = layoutManager.usedRect(for: textContainer)
+        return NSSize(width: min(maxWidth, ceil(used.width)), height: ceil(used.height))
+    }
+}
+
+extension String {
+    var htmlEscaped: String {
+        replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+    }
+
+    var jsEscaped: String {
+        replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "")
+    }
+}

@@ -6,6 +6,7 @@ import Cocoa
 import WebKit
 import UserNotifications
 import CoreImage
+import QuartzCore
 
 let SIDEBAR_W: CGFloat = 216
 
@@ -495,7 +496,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         topBar.translatesAutoresizingMaskIntoConstraints = false
         back.onTap = { [weak self] in self?.current?.webView.goBack() }
         forward.onTap = { [weak self] in self?.current?.webView.goForward() }
-        reload.onTap = { [weak self] in self?.current?.webView.reload() }
+        reload.onTap = { [weak self] in self?.reloadCurrentTab() }
 
         addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 19
         addressWrap.translatesAutoresizingMaskIntoConstraints = false
@@ -887,7 +888,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pane.onNavigate = { [weak self, weak tab] text in if let tab { self?.navigateTab(tab, text) } }
         pane.back.onTap = { [weak tab] in tab?.webView.goBack() }
         pane.forward.onTap = { [weak tab] in tab?.webView.goForward() }
-        pane.reload.onTap = { [weak tab] in tab?.webView.reload() }
+        pane.reload.onTap = { [weak self, weak pane, weak tab] in
+            if let pane { self?.spinReloadButton(pane.reload) }
+            tab?.webView.reload()
+        }
         pane.onSidebarToggle = { [weak self] in self?.toggleSidebar() }
     }
 
@@ -1071,6 +1075,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 guard let self, let gi = self.groups.firstIndex(where: { $0.id == g.id }) else { return }
                 self.groups[gi].collapsed.toggle(); self.renderTabs()
             }
+            header.menuProvider = { [weak self] in self?.groupMenu(for: g) ?? [] }
             add(header)
             if !g.collapsed { for t in members { add(makeTabRow(t)) } }
         }
@@ -1097,13 +1102,58 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ]
     }
     func newGroup(with t: Tab) {
-        let g = TabGroup(id: nextGroupId, name: "Group \(nextGroupId)"); nextGroupId += 1
+        let g = TabGroup(id: nextGroupId, name: suggestedGroupName(for: t)); nextGroupId += 1
         groups.append(g); t.groupId = g.id; renderTabs()
     }
     func addToGroup(_ t: Tab, _ id: Int) { t.groupId = id; renderTabs() }
     func removeFromGroup(_ t: Tab) {
         let gid = t.groupId; t.groupId = nil
         if let gid, !tabs.contains(where: { $0.groupId == gid }) { groups.removeAll { $0.id == gid } }
+        renderTabs()
+    }
+    func groupMenu(for g: TabGroup) -> [MenuEntry] {
+        [
+            .item("Rename Group…", { [weak self] in self?.renameGroup(g.id) }),
+            .item("Disband Group", { [weak self] in self?.disbandGroup(g.id) }),
+            .separator,
+            .item("Delete Group Tabs", { [weak self] in self?.deleteGroup(g.id) }),
+        ]
+    }
+    func suggestedGroupName(for t: Tab) -> String {
+        let host = hostOf(t.webView.url)
+        return host.isEmpty ? "Group \(nextGroupId)" : host
+    }
+    func renameGroup(_ id: Int) {
+        guard let idx = groups.firstIndex(where: { $0.id == id }) else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename Group"
+        alert.informativeText = "Choose a short name for this tab group."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = groups[idx].name
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        groups[idx].name = name.isEmpty ? "Group \(id)" : name
+        renderTabs()
+    }
+    func disbandGroup(_ id: Int) {
+        for t in tabs where t.groupId == id { t.groupId = nil }
+        groups.removeAll { $0.id == id }
+        renderTabs()
+    }
+    func deleteGroup(_ id: Int) {
+        let members = tabs.filter { $0.groupId == id }
+        guard !members.isEmpty else { groups.removeAll { $0.id == id }; renderTabs(); return }
+        let alert = NSAlert()
+        alert.messageText = "Delete Group Tabs?"
+        alert.informativeText = "This closes \(members.count) tab\(members.count == 1 ? "" : "s") in this group."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        for t in members { closeTab(t) }
+        groups.removeAll { $0.id == id }
         renderTabs()
     }
 
@@ -1120,7 +1170,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
-    func openTab(url: String, isPrivate: Bool = false) {
+    @discardableResult
+    func openTab(url: String, isPrivate: Bool = false) -> Tab {
         let p = isPrivate || isPrivateWindow
         let t = Tab(isPrivate: p); t.isNewTab = false
         wire(t)
@@ -1144,6 +1195,64 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         
         showActive(); refreshSidebar()
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
+        return t
+    }
+
+    @discardableResult
+    func openTab(url: URL, from source: Tab? = nil, autoGroupSameSite: Bool = false) -> Tab {
+        let t = openTab(url: url.absoluteString, isPrivate: source?.isPrivate ?? false)
+        if autoGroupSameSite, let source, sameSite(source.webView.url, url) {
+            if let gid = source.groupId {
+                t.groupId = gid
+            } else {
+                let g = TabGroup(id: nextGroupId, name: suggestedGroupName(for: source))
+                nextGroupId += 1
+                groups.append(g)
+                source.groupId = g.id
+                t.groupId = g.id
+            }
+            renderTabs()
+        }
+        return t
+    }
+
+    func sameSite(_ a: URL?, _ b: URL?) -> Bool {
+        guard let ah = normalizedSiteHost(a), let bh = normalizedSiteHost(b) else { return false }
+        return ah == bh
+    }
+
+    func normalizedSiteHost(_ url: URL?) -> String? {
+        guard var h = url?.host?.lowercased(), !h.isEmpty else { return nil }
+        if h.hasPrefix("www.") { h.removeFirst(4) }
+        return h
+    }
+
+    func reloadCurrentTab() {
+        spinReloadButton(reload)
+        current?.webView.reload()
+    }
+
+    func zoomPage(by delta: CGFloat) {
+        guard let t = current, !t.isNewTab, !t.isChatTab else { return }
+        let next = min(3.0, max(0.5, t.pageZoom + delta))
+        t.pageZoom = next
+        t.webView.magnification = next
+    }
+
+    func resetPageZoom() {
+        guard let t = current, !t.isNewTab, !t.isChatTab else { return }
+        t.pageZoom = 1.0
+        t.webView.magnification = 1.0
+    }
+
+    func spinReloadButton(_ button: NSView) {
+        button.wantsLayer = true
+        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+        animation.fromValue = 0
+        animation.toValue = CGFloat.pi * 2
+        animation.duration = 0.42
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        button.layer?.add(animation, forKey: "breezeReloadSpin")
     }
 
     func wire(_ t: Tab) {
@@ -2771,6 +2880,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             decisionHandler(.cancel)
             return
         }
+        if navigationAction.navigationType == .linkActivated,
+           navigationAction.modifierFlags.contains(.command),
+           let source = tabs.first(where: { $0.webView === w }) {
+            openTab(url: url, from: source, autoGroupSameSite: true)
+            decisionHandler(.cancel)
+            return
+        }
         // `<a download>`, blob:/data: download links, and right-click "Download
         // Linked File" set shouldPerformDownload. WebKit won't save the file
         // unless we answer .download here — otherwise it just navigates and the
@@ -2900,7 +3016,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func openContextLinkInNewTab() {
         guard let url = contextLinkURL else { return }
-        openTab(url: url.absoluteString)
+        openTab(url: url, from: current, autoGroupSameSite: true)
     }
 
     @objc func openContextLinkInNewWindow() {
@@ -2927,7 +3043,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func openContextImageInNewTab() {
         guard let url = contextImageURL else { return }
-        openTab(url: url.absoluteString)
+        openTab(url: url, from: current, autoGroupSameSite: false)
     }
 
     @objc func downloadContextImage() {
@@ -2990,7 +3106,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func contextBack() { current?.webView.goBack() }
     @objc func contextForward() { current?.webView.goForward() }
-    @objc func contextReload() { current?.webView.reload() }
+    @objc func contextReload() { reloadCurrentTab() }
     @objc func contextFindInPage() { openFindBar() }
     @objc func bookmarkContextPage() {
         guard let url = contextPageURL ?? current?.webView.url else { return }
@@ -3345,6 +3461,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
         print("Breeze Navigation didFailProvisionalNavigation: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
+        showLoadFailureIfNeeded(for: w, error: error)
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
@@ -3352,13 +3469,37 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError error: Error) {
         print("Breeze Navigation didFail: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
+        showLoadFailureIfNeeded(for: w, error: error)
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
         }
     }
+    func showLoadFailureIfNeeded(for w: WKWebView, error: Error) {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && [NSURLErrorCancelled, NSURLErrorUserCancelledAuthentication].contains(ns.code) { return }
+        guard let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? w.url else { return }
+        let escapedURL = failing.absoluteString.htmlEscaped
+        let escapedMessage = error.localizedDescription.htmlEscaped
+        let retryURL = failing.absoluteString.jsEscaped
+        let html = """
+        <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Page failed to load</title>
+        <style>
+        :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:#eef8f8;color:#10252a}
+        body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 25% 12%,rgba(94,211,223,.32),transparent 34%),linear-gradient(145deg,#eef8f8,#dcebed)}
+        main{width:min(560px,calc(100vw - 44px));padding:34px;border-radius:24px;background:rgba(255,255,255,.72);box-shadow:0 24px 70px rgba(15,45,52,.18);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.68)}
+        h1{font-size:32px;line-height:1.05;margin:0 0 12px;font-weight:800;letter-spacing:0}p{font-size:15px;line-height:1.45;margin:0 0 18px;color:rgba(16,37,42,.72)}
+        .url{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;padding:12px 14px;border-radius:14px;background:rgba(16,37,42,.07);overflow-wrap:anywhere;color:rgba(16,37,42,.82)}
+        .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.btn{appearance:none;border:0;border-radius:999px;padding:10px 16px;font-weight:700;background:#2d9aac;color:white;text-decoration:none;cursor:pointer}.secondary{background:rgba(16,37,42,.10);color:#10252a}
+        ul{margin:18px 0 0;padding-left:19px;color:rgba(16,37,42,.72);font-size:14px;line-height:1.55}
+        @media (prefers-color-scheme:dark){:root{background:#14252b;color:#f7fbfb}body{background:radial-gradient(circle at 25% 12%,rgba(94,211,223,.20),transparent 34%),linear-gradient(145deg,#14252b,#0f1c21)}main{background:rgba(20,30,35,.78);border-color:rgba(255,255,255,.10);box-shadow:0 24px 70px rgba(0,0,0,.34)}p,.url,ul{color:rgba(247,251,251,.72)}.url{background:rgba(255,255,255,.08)}.secondary{background:rgba(255,255,255,.12);color:#f7fbfb}}
+        </style></head><body><main><h1>This page couldn't load.</h1><p>\(escapedMessage)</p><div class="url">\(escapedURL)</div><div class="actions"><button class="btn" onclick="location.href='\(retryURL)'">Try again</button><button class="btn secondary" onclick="history.back()">Go back</button></div><ul><li>Check the address for typos.</li><li>Try again after a moment if the site is busy.</li><li>If this is a login or app page, try again after site compatibility updates finish.</li></ul></main></body></html>
+        """
+        w.loadHTMLString(html, baseURL: failing.deletingLastPathComponent())
+    }
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
-        w.magnification = 1.0                 // every page loads at 100% — no stray pinch/smart-zoom carryover
+        w.magnification = tabs.first(where: { $0.webView === w })?.pageZoom ?? 1.0
         syncChrome()
         if isInternal(w) { injectBridgeState(into: w) }
     }

@@ -3,6 +3,8 @@
 import Cocoa
 import WebKit
 
+let breezeDefaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15"
+
 let sharedConfig: WKWebViewConfiguration = {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .default()
@@ -161,6 +163,7 @@ final class Tab {
     var splitIsRight = false     // true if this tab is placed on the right side of the split
     var isPopup = false          // opened via window.open() (e.g. an OAuth sign-in window)
     var isPrivate = false
+    var pageZoom: CGFloat = 1.0
 
     // `configuration` defaults to the shared config; window.open() popups must pass the
     // configuration WebKit hands us so window.opener/postMessage keep working.
@@ -189,6 +192,7 @@ final class Tab {
             config = sharedConfig
         }
         webView = WKWebView(frame: .zero, configuration: config)
+        webView.customUserAgent = breezeDefaultUserAgent
         if #available(macOS 13.3, iOS 16.4, *) {
             webView.isInspectable = true
         }

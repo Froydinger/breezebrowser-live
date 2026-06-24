@@ -59,8 +59,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>3.8.3</string>
-  <key>CFBundleShortVersionString</key><string>3.8.3</string>
+  <key>CFBundleVersion</key><string>3.8.4</string>
+  <key>CFBundleShortVersionString</key><string>3.8.4</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
@@ -85,6 +85,10 @@ ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   </array>
 </dict></plist>
 PLIST
+
+# User-provided artwork often arrives with FinderInfo/MACL/provenance xattrs.
+# Codesign rejects those inside a bundle, so strip them after all resources copy.
+xattr -cr "$APP" 2>/dev/null || true
 
 # Sign with the stable self-signed "Breeze Signing" cert so auto-updates verify.
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "Breeze Signing"; then

@@ -234,6 +234,7 @@ final class SplitPane: NSView {
 /// Collapsible tab-group header: carrot + colored dot + name + count.
 final class GroupHeaderView: NSView {
     var onToggle: (() -> Void)?
+    var menuProvider: (() -> [MenuEntry])?
     private let carrot = NSImageView()
     private let dot = NSView()
     private let nameLabel = NSTextField(labelWithString: "")
@@ -279,6 +280,9 @@ final class GroupHeaderView: NSView {
     private var carrotCollapsed = false
     func setCollapsed(_ c: Bool) { carrotCollapsed = c; apply(collapsed: c) }
     @objc private func clicked() { onToggle?() }
+    override func rightMouseDown(with e: NSEvent) {
+        if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
+    }
 }
 
 /// Sidebar now-playing mini-player. Deliberately NOT shaped like a tab row:

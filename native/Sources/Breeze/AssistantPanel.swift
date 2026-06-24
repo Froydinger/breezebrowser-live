@@ -35,6 +35,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var historyWidthC: NSLayoutConstraint!
     private let headerLogo = NSImageView()
     private let emptyLogo = NSImageView()
+    private var emptyChipViews: [(NSView, NSTextField)] = []
     private var imageMode = false
     // chat state
     private var chatId = Date().timeIntervalSince1970
@@ -237,10 +238,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     /// Full rounded pill with padding.
     private func chip(_ text: String) -> NSView {
         let pill = NSView(); pill.wantsLayer = true; pill.layer?.cornerRadius = 15
-        pill.layer?.backgroundColor = Theme.shared.palette.surface.cgColor
         pill.translatesAutoresizingMaskIntoConstraints = false
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 12); label.textColor = Theme.shared.palette.text
+        label.font = .systemFont(ofSize: 12)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -254,6 +254,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let g = NSClickGestureRecognizer(target: self, action: #selector(chipClicked(_:)))
         pill.addGestureRecognizer(g)
         pill.identifier = NSUserInterfaceItemIdentifier(text)
+        emptyChipViews.append((pill, label))
+        styleEmptyChip(pill, label: label)
         return pill
     }
     @objc private func chipClicked(_ g: NSClickGestureRecognizer) {
@@ -265,11 +267,13 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     func addUser(_ text: String) {
         messages.append(["role": "user", "text": text]); persist()
         addMessage(text, user: true)
+        applyTheme()
     }
     func addAI(_ text: String, chips: [String] = []) {
         messages.append(["role": "ai", "text": text]); persist()
         if !chips.isEmpty { addChipsRow(chips) }
         addMessage(text, user: false)
+        applyTheme()
     }
     func addImageLoading() -> GeneratedImageBubble {
         empty.isHidden = true
@@ -375,15 +379,16 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         card.layer?.backgroundColor = (user ? p.accent : aiBubble).cgColor
         card.translatesAutoresizingMaskIntoConstraints = false
         card.setContentHuggingPriority(.required, for: .horizontal)
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.isSelectable = true
-        label.preferredMaxLayoutWidth = messageMaxWidth
-        label.translatesAutoresizingMaskIntoConstraints = false
+        let label = SelectableMessageTextView(maxWidth: messageMaxWidth)
         if user {
-            label.font = .systemFont(ofSize: 13)
-            label.textColor = onAccentText(p.accent)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: onAccentText(p.accent)
+            ]
+            label.attributedString = NSAttributedString(string: text, attributes: attrs)
         } else {
-            label.attributedStringValue = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
+            label.textColor = .white
+            label.attributedString = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
         }
         card.addSubview(label)
         label.pin(to: card, insets: NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12))
@@ -610,10 +615,46 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     func focusInput() { window?.makeFirstResponder(input) }
 
+    override func layout() {
+        super.layout()
+        syncBackgroundLayers()
+    }
+
+    private func syncBackgroundLayers() {
+        guard let layer else { return }
+        let p = Theme.shared.palette
+        let gradient = (layer.sublayers?.first { $0.name == "assistantBgGrad" } as? CAGradientLayer) ?? CAGradientLayer()
+        gradient.name = "assistantBgGrad"
+        gradient.frame = bounds
+        gradient.colors = [p.bgTop.cgColor, p.bg.cgColor, p.bgBottom.cgColor]
+        gradient.locations = [0, 0.55, 1]
+        gradient.startPoint = CGPoint(x: 0.1, y: 1)
+        gradient.endPoint = CGPoint(x: 0.9, y: 0)
+        if gradient.superlayer == nil { layer.insertSublayer(gradient, at: 0) }
+
+        let wash = layer.sublayers?.first { $0.name == "assistantAccentWash" } ?? CALayer()
+        wash.name = "assistantAccentWash"
+        wash.frame = bounds
+        wash.backgroundColor = p.accent.withAlphaComponent(0.12).cgColor
+        if wash.superlayer == nil { layer.insertSublayer(wash, above: gradient) }
+    }
+
+    private func styleEmptyChip(_ pill: NSView, label: NSTextField) {
+        let p = Theme.shared.palette
+        if p.isDark {
+            pill.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.88).cgColor
+            label.textColor = NSColor(white: 0.10, alpha: 1)
+        } else {
+            pill.layer?.backgroundColor = p.surface.cgColor
+            label.textColor = p.text
+        }
+    }
+
     @objc func applyTheme() {
         let p = Theme.shared.palette
         appearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)   // sync glass/material so light-mode chat text stays readable
         layer?.backgroundColor = p.bg.cgColor
+        syncBackgroundLayers()
         inputWrap.layer?.backgroundColor = p.surface.cgColor
         input.textColor = p.text
         status.textColor = p.textSoft
@@ -621,6 +662,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         emptyLogo.image = navLogo()
         emptyTitle?.textColor = p.text
         emptySub?.textColor = p.textSoft
+        emptyChipViews.forEach { styleEmptyChip($0.0, label: $0.1) }
         imageBtn.isOn = imageMode
     }
 }

@@ -1050,6 +1050,16 @@ html.dark #assistant::before {
   transform: translateY(-1px);
 }
 
+html.dark #ai-empty .ai-chip {
+  border-color: rgba(255,255,255,0.72);
+  background: rgba(255,255,255,0.88);
+  color: #1a1a1f;
+}
+
+html.dark #ai-empty .ai-chip:hover {
+  background: rgba(255,255,255,0.96);
+}
+
 .msg.user {
   background: linear-gradient(135deg,
     color-mix(in srgb, var(--accent) 92%, #fff),

@@ -16,15 +16,22 @@ func breezeBaseLogo() -> NSImage? {
 
 func breezeLogo() -> NSImage? {
     guard let base = breezeBaseLogo() else { return nil }
-    return themedLogo(base)
+    let rawAccent = Store.shared.string("accent").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if rawAccent == Theme.monoAccent { return themedLogo(base) }
+    if rawAccent.isEmpty || rawAccent == Theme.defaultAccent { return base }
+    return navTintedLogo(base, color: Theme.shared.palette.accent)
 }
 
 func themedLogo(_ base: NSImage) -> NSImage {
+    themedLogo(base, color: Theme.shared.palette.accent)
+}
+
+func themedLogo(_ base: NSImage, color: NSColor) -> NSImage {
     guard let data = base.tiffRepresentation,
           let input = CIImage(data: data),
           let filter = CIFilter(name: "CIColorMonochrome") else { return base }
     filter.setValue(input, forKey: kCIInputImageKey)
-    filter.setValue(CIColor(color: Theme.shared.palette.accent), forKey: kCIInputColorKey)
+    filter.setValue(CIColor(color: color), forKey: kCIInputColorKey)
     filter.setValue(1.0, forKey: kCIInputIntensityKey)
     guard let output = filter.outputImage else { return base }
     let rep = NSCIImageRep(ciImage: output)
@@ -34,15 +41,92 @@ func themedLogo(_ base: NSImage) -> NSImage {
     return tinted
 }
 
+func navTintedLogo(_ base: NSImage, color: NSColor) -> NSImage {
+    guard let cg = base.cgImage(forProposedRect: nil, context: nil, hints: nil),
+          let target = color.usingColorSpace(.deviceRGB) else { return themedLogo(base, color: color) }
+    let width = cg.width
+    let height = cg.height
+    let bytesPerRow = width * 4
+    var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    guard let ctx = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
+                              bytesPerRow: bytesPerRow, space: colorSpace,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return base }
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+    let targetHue = hue(of: target)
+    for y in 0..<height {
+        for x in 0..<width {
+            let i = y * bytesPerRow + x * 4
+            let alpha = CGFloat(pixels[i + 3]) / 255
+            if alpha <= 0.02 { continue }
+            let r = CGFloat(pixels[i]) / 255
+            let g = CGFloat(pixels[i + 1]) / 255
+            let b = CGFloat(pixels[i + 2]) / 255
+            let maxC = max(r, g, b)
+            let minC = min(r, g, b)
+            let isWhitePaper = minC > 0.72 && (maxC - minC) < 0.20
+            if isWhitePaper { continue }
+
+            let (_, sat, bri) = hsb(r, g, b)
+            let darkerBrightness = min(0.82, max(0.32, bri * 0.72))
+            let richerSaturation = min(0.86, max(0.46, sat * 0.92))
+            let c = NSColor(calibratedHue: targetHue, saturation: richerSaturation, brightness: darkerBrightness, alpha: alpha)
+                .usingColorSpace(.deviceRGB) ?? target
+            pixels[i] = UInt8(clamping: Int(round(c.redComponent * 255)))
+            pixels[i + 1] = UInt8(clamping: Int(round(c.greenComponent * 255)))
+            pixels[i + 2] = UInt8(clamping: Int(round(c.blueComponent * 255)))
+        }
+    }
+
+    guard let out = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8,
+                              bytesPerRow: bytesPerRow, space: colorSpace,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage() else { return base }
+    let img = NSImage(size: NSSize(width: width, height: height))
+    img.addRepresentation(NSBitmapImageRep(cgImage: out))
+    img.isTemplate = false
+    return img
+}
+
+private func hsb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+    let maxC = max(r, g, b), minC = min(r, g, b)
+    let delta = maxC - minC
+    var h: CGFloat = 0
+    if delta > 0 {
+        if maxC == r { h = ((g - b) / delta).truncatingRemainder(dividingBy: 6) }
+        else if maxC == g { h = ((b - r) / delta) + 2 }
+        else { h = ((r - g) / delta) + 4 }
+        h /= 6
+        if h < 0 { h += 1 }
+    }
+    return (h, maxC == 0 ? 0 : delta / maxC, maxC)
+}
+
+private func hue(of color: NSColor) -> CGFloat {
+    let c = color.usingColorSpace(.deviceRGB) ?? color
+    return hsb(c.redComponent, c.greenComponent, c.blueComponent).0
+}
+
 func navLogo() -> NSImage? {
-    if let img = Bundle.main.image(forResource: "nav-icon") { return themedLogo(img) }
+    let accent = Theme.shared.palette.accent
+    let rawAccent = Store.shared.string("accent").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let tint = rawAccent == Theme.monoAccent ? accent : (accent.blended(withFraction: 0.36, of: .black) ?? accent)
+    if let img = Bundle.main.image(forResource: "nav-icon") {
+        if rawAccent == Theme.monoAccent { return themedLogo(img, color: tint) }
+        if rawAccent.isEmpty || rawAccent == Theme.defaultAccent { return img }
+        return navTintedLogo(img, color: tint)
+    }
     for p in ["../nav-icon.png", "nav-icon.png", "../ui/nav-icon.png"] {
-        if let img = NSImage(contentsOfFile: p) { return themedLogo(img) }
+        if let img = NSImage(contentsOfFile: p) {
+            if rawAccent == Theme.monoAccent { return themedLogo(img, color: tint) }
+            if rawAccent.isEmpty || rawAccent == Theme.defaultAccent { return img }
+            return navTintedLogo(img, color: tint)
+        }
     }
     let size = NSSize(width: 256, height: 256)
-    let accent = Theme.shared.palette.accent.usingColorSpace(.sRGB) ?? Theme.shared.palette.accent
-    let top = accent.blended(withFraction: 0.28, of: .white) ?? accent
-    let bottom = accent.blended(withFraction: 0.32, of: .black) ?? accent
+    let fallbackAccent = tint.usingColorSpace(.sRGB) ?? tint
+    let top = fallbackAccent.blended(withFraction: 0.28, of: .white) ?? fallbackAccent
+    let bottom = fallbackAccent.blended(withFraction: 0.32, of: .black) ?? fallbackAccent
     let img = NSImage(size: size, flipped: false) { rect in
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
