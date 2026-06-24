@@ -4,13 +4,19 @@ final class AdBlocker {
     static let shared = AdBlocker()
     private var identifier = "breeze-adblock"
     private var ruleLists: [WKContentRuleList] = []
+    private var pendingCompiles = 0
+    private var idleCallbacks: [() -> Void] = []
 
     private init() {}
 
     func compileIfNeeded(completion: @escaping () -> Void) {
+        beginCompile()
         compileRuleLists {
-            self.apply(to: sharedConfig.userContentController)
-            completion()
+            DispatchQueue.main.async {
+                self.apply(to: sharedConfig.userContentController)
+                completion()
+                self.finishCompile()
+            }
         }
     }
 
@@ -24,7 +30,8 @@ final class AdBlocker {
     private func compileRuleLists(_ done: @escaping () -> Void) {
         let mode = Store.shared.string("adblockMode") == "extreme" ? "extreme" : "normal"
         let exceptions = (Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []).sorted().joined(separator: ",")
-        identifier = "breeze-adblock-\(mode)-\(abs(exceptions.hashValue))"
+        let cacheKey = "\(mode)|\(exceptions)"
+        identifier = "breeze-adblock-\(mode)-\(stableHash(cacheKey))"
         WKContentRuleListStore.default().lookUpContentRuleList(forIdentifier: identifier) { [weak self] list, _ in
             if let list = list { self?.ruleLists = [list]; done(); return }
             guard let url = Bundle.main.url(forResource: "easylist", withExtension: "json"),
@@ -83,6 +90,45 @@ final class AdBlocker {
         guard let data = try? JSONSerialization.data(withJSONObject: arr),
               let out = String(data: data, encoding: .utf8) else { return baseJSON }
         return out
+    }
+
+    private func stableHash(_ value: String) -> String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return String(hash, radix: 16)
+    }
+
+    private func beginCompile() {
+        if Thread.isMainThread {
+            pendingCompiles += 1
+        } else {
+            DispatchQueue.main.sync { pendingCompiles += 1 }
+        }
+    }
+
+    private func finishCompile() {
+        pendingCompiles = max(0, pendingCompiles - 1)
+        guard pendingCompiles == 0 else { return }
+        let callbacks = idleCallbacks
+        idleCallbacks.removeAll()
+        callbacks.forEach { $0() }
+    }
+
+    var isBusy: Bool {
+        Thread.isMainThread ? pendingCompiles > 0 : DispatchQueue.main.sync { pendingCompiles > 0 }
+    }
+
+    func waitUntilIdle(_ done: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            if self.pendingCompiles == 0 {
+                done()
+            } else {
+                self.idleCallbacks.append(done)
+            }
+        }
     }
 
     func apply(to controller: WKUserContentController) {

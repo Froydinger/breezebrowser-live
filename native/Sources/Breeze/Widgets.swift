@@ -184,6 +184,12 @@ final class LinePlusButton: NSButton {
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
+        title = ""
+        attributedTitle = NSAttributedString(string: "")
+        alternateTitle = ""
+        image = nil
+        imagePosition = .noImage
+        bezelStyle = .regularSquare
         wantsLayer = true
         layer?.cornerRadius = 12
         target = self
@@ -218,24 +224,24 @@ final class LinePlusButton: NSButton {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
         let p = Theme.shared.palette
-        let color = hovering ? p.text : p.textSoft.withAlphaComponent(0.52)
+        let color = hovering ? p.text : p.text.withAlphaComponent(0.5)
         color.setStroke()
         color.setFill()
         let y = bounds.midY
         let centerGap: CGFloat = 28
+        let lineLength = max(24, (bounds.midX - centerGap - 12) * 0.5)
         let left = NSBezierPath()
         left.lineWidth = 2
         left.lineCapStyle = .round
-        left.move(to: NSPoint(x: 12, y: y))
+        left.move(to: NSPoint(x: bounds.midX - centerGap - lineLength, y: y))
         left.line(to: NSPoint(x: bounds.midX - centerGap, y: y))
         left.stroke()
         let right = NSBezierPath()
         right.lineWidth = 2
         right.lineCapStyle = .round
         right.move(to: NSPoint(x: bounds.midX + centerGap, y: y))
-        right.line(to: NSPoint(x: bounds.width - 12, y: y))
+        right.line(to: NSPoint(x: bounds.midX + centerGap + lineLength, y: y))
         right.stroke()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .bold),

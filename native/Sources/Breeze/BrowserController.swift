@@ -410,6 +410,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             tabsStack.trailingAnchor.constraint(equalTo: tabsDoc.trailingAnchor),
 
             newTabBtn.topAnchor.constraint(equalTo: tabsStack.bottomAnchor, constant: 10),
+            newTabBtn.leadingAnchor.constraint(equalTo: tabsDoc.leadingAnchor),
+            newTabBtn.trailingAnchor.constraint(equalTo: tabsDoc.trailingAnchor),
             newTabBtn.centerXAnchor.constraint(equalTo: tabsDoc.centerXAnchor),
             newTabBtn.heightAnchor.constraint(equalToConstant: 24),
             newTabBtn.bottomAnchor.constraint(equalTo: tabsDoc.bottomAnchor, constant: -10),
@@ -3728,6 +3730,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func showLoadFailureIfNeeded(for w: WKWebView, error: Error) {
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && [NSURLErrorCancelled, NSURLErrorUserCancelledAuthentication].contains(ns.code) { return }
+        // WebKit reports policy/redirect interruptions as navigation failures even when
+        // a reload or follow-up main-frame load can proceed normally.
+        if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
         guard let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? w.url else { return }
         let escapedURL = failing.absoluteString.htmlEscaped
         let escapedMessage = error.localizedDescription.htmlEscaped

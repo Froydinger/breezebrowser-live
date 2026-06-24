@@ -148,6 +148,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.2', icon: 'sparkles', title: 'New Tab Hotfix', major: true, items: [
+        '<b>New Tab Center Restored</b> — The clock, greeting, and input bar now keep the right light/dark contrast instead of disappearing into light backgrounds.',
+        '<b>Clean Plus Divider</b> — The sidebar new-tab divider no longer leaks the default system button title, and now stays compact and subtle.',
+        '<b>Search Hint</b> — The new-tab input shows Enter vs. Shift-Enter hints so explicit web searches are easier to discover.',
+        '<b>Quieter Recovery</b> — Transient WebKit frame interruptions and fast quit-after-launch cleanup no longer surface scary error screens.' ] },
       { v: '4.0.1', icon: 'shield-check', title: 'Sharper Browsing Controls', major: true, items: [
         '<b>Optional Extreme Ad Blocking</b> — Normal mode stays compatibility-first, and Extreme mode can push harder on ad-heavy sites.',
         '<b>Per-Site Escape Hatch</b> — When Extreme mode is on, a small shield appears in the URL bar so you can turn it off for the current site if something breaks.',

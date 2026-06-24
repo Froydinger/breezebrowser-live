@@ -163,6 +163,7 @@ final class NewTabView: NSView {
     private let logo = NSImageView()
     private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
+    private let hint = NSTextField(labelWithString: "Enter: ask/open URL    Shift-Enter: search web")
     let field = NSTextField()
     var onSubmit: ((String, Bool) -> Void)?
     private var timer: Timer?
@@ -182,6 +183,12 @@ final class NewTabView: NSView {
         greeting.font = .systemFont(ofSize: 15)
         greeting.alignment = .center
         greeting.translatesAutoresizingMaskIntoConstraints = false
+
+        hint.font = .systemFont(ofSize: 12)
+        hint.alignment = .center
+        hint.lineBreakMode = .byTruncatingTail
+        hint.translatesAutoresizingMaskIntoConstraints = false
+        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         field.placeholderString = "Ask Breeze, or type a URL"
         field.font = .systemFont(ofSize: 16)
@@ -204,7 +211,7 @@ final class NewTabView: NSView {
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
 
-        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap)
+        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap); addSubview(hint)
         let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 560)
         widthC.priority = .defaultHigh
         let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
@@ -233,6 +240,10 @@ final class NewTabView: NSView {
             field.trailingAnchor.constraint(equalTo: fieldWrap.trailingAnchor, constant: -22),
             field.topAnchor.constraint(equalTo: fieldWrap.topAnchor, constant: 16),
             field.bottomAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: -16),
+
+            hint.centerXAnchor.constraint(equalTo: centerXAnchor),
+            hint.topAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: 10),
+            hint.widthAnchor.constraint(lessThanOrEqualTo: fieldWrap.widthAnchor),
         ])
         self.fieldWrap = fieldWrap
         applyTheme(); tick()
@@ -268,14 +279,32 @@ final class NewTabView: NSView {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
+        let appAppearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)
+        appearance = appAppearance
+        clock.appearance = appAppearance
+        greeting.appearance = appAppearance
+        field.appearance = appAppearance
+        fieldWrap.appearance = appAppearance
+        hint.appearance = appAppearance
+
         logo.image = breezeLogo()
-        clock.textColor = p.text
-        greeting.textColor = p.textSoft
+        let clockColor = p.isDark ? p.text.withAlphaComponent(0.72) : p.text.withAlphaComponent(0.58)
+        let softColor = p.isDark ? p.text.withAlphaComponent(0.62) : p.text.withAlphaComponent(0.68)
+        clock.textColor = clockColor
+        greeting.textColor = softColor
+        hint.textColor = p.text.withAlphaComponent(p.isDark ? 0.42 : 0.50)
         field.textColor = p.text
-        fieldWrap.layer?.backgroundColor = p.surface.cgColor
+        field.placeholderAttributedString = NSAttributedString(
+            string: "Ask Breeze, or type a URL",
+            attributes: [
+                .foregroundColor: softColor,
+                .font: field.font ?? NSFont.systemFont(ofSize: 16)
+            ]
+        )
+        fieldWrap.layer?.backgroundColor = (p.isDark ? p.surface : NSColor.white.withAlphaComponent(0.72)).cgColor
         fieldWrap.layer?.shadowColor = NSColor.black.cgColor
-        fieldWrap.layer?.shadowOpacity = p.isDark ? 0.25 : 0.08
-        fieldWrap.layer?.shadowRadius = 18
+        fieldWrap.layer?.shadowOpacity = p.isDark ? 0.25 : 0.10
+        fieldWrap.layer?.shadowRadius = p.isDark ? 18 : 16
         fieldWrap.layer?.shadowOffset = CGSize(width: 0, height: -6)
     }
 
