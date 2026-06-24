@@ -1761,7 +1761,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             guard let self else { return }
             let contexts = await self.gatherContexts()
             let labels = contexts.map { $0.label }
-            let history = self.assistant.messages
+            let history = Store.shared.settings["aiUseChatHistory"] as? Bool != false ? self.assistant.messages : []
             let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
                 guard let self else { return }
                 self.ailog("model returned")
@@ -2197,27 +2197,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 out.append(AIContext(label: e.label, text: txt))
             }
         }
-        // Feed recent browsing history so the AI knows what the user has been doing
+        // Broader context is opt-in. Current page and explicit @-mentions are always
+        // available; history/bookmarks/other tabs only go out when enabled in Settings.
         let recentHistory = Store.shared.history.prefix(15)
-        if !recentHistory.isEmpty {
+        if Store.shared.bool("aiIncludeHistory"), !recentHistory.isEmpty {
             let lines = recentHistory.compactMap { h -> String? in
                 guard let url = h["url"] as? String, let title = h["title"] as? String else { return nil }
                 return "• \(title) (\(url))"
             }
             out.append(AIContext(label: "Recent history", text: "Recent browsing history:\n" + lines.joined(separator: "\n")))
         }
-        // Feed bookmarks so the AI knows user's saved sites
         let bookmarks = Store.shared.bookmarks.prefix(20)
-        if !bookmarks.isEmpty {
+        if Store.shared.bool("aiIncludeBookmarks"), !bookmarks.isEmpty {
             let lines = bookmarks.compactMap { b -> String? in
                 guard let url = b["url"] as? String, let title = b["title"] as? String else { return nil }
                 return "• \(title) (\(url))"
             }
             out.append(AIContext(label: "Bookmarks", text: "User's bookmarks:\n" + lines.joined(separator: "\n")))
         }
-        // Feed open tab titles/URLs so the AI knows the full session
         let openTabs = tabs.filter { !$0.isNewTab && !$0.isChatTab && $0.id != current?.id }
-        if !openTabs.isEmpty {
+        if Store.shared.bool("aiIncludeOpenTabs"), !openTabs.isEmpty {
             let lines = openTabs.map { "• \($0.title) (\(hostOf($0.webView.url)))" }
             out.append(AIContext(label: "Open tabs", text: "Other open tabs:\n" + lines.joined(separator: "\n")))
         }
@@ -3002,6 +3001,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.isPlaying = playing
         if let title = body["title"] as? String, !title.isEmpty { t.mediaTitle = title }
         if playing { nowPlayingTab = t }
+        if body["pip"] as? String == "leave",
+           let i = tabs.firstIndex(where: { $0.id == t.id }),
+           current?.id != t.id {
+            select(i)
+        }
         updateNowPlaying()
     }
 

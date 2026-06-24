@@ -6,7 +6,6 @@ import Carbon
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var browsers: [BrowserController] = []
     var keyMonitor: Any?
-    var waitingForAdblockBeforeQuit = false
     var activeBrowser: BrowserController? {
         browsers.first { $0.window.isKeyWindow } ?? browsers.first
     }
@@ -84,15 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard AdBlocker.shared.isBusy else { return .terminateNow }
-        if !waitingForAdblockBeforeQuit {
-            waitingForAdblockBeforeQuit = true
-            AdBlocker.shared.waitUntilIdle {
-                self.waitingForAdblockBeforeQuit = false
-                sender.reply(toApplicationShouldTerminate: true)
-            }
-        }
-        return .terminateLater
+        .terminateNow
     }
     func applicationWillTerminate(_ n: Notification) {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }

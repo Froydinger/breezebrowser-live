@@ -148,6 +148,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.3', icon: 'shield-check', title: 'Privacy & Playback Polish', major: true, items: [
+        '<b>Privacy by Choice</b> — Nav still understands the current page, while chat history, browsing history, bookmarks, and other open tabs are now controllable in Settings.',
+        '<b>Cleaner New-Tab Shortcut Hints</b> — The new-tab input now shows how to ask Nav, force web search, or type an explicit search.',
+        '<b>Subtler Plus Divider</b> — The sidebar new-tab divider uses lighter line art with shorter rails and a drawn plus, avoiding the heavy default button look.',
+        '<b>Picture-in-Picture Return Fix</b> — Closing or returning from PiP brings the source media tab forward again.',
+        '<b>Quieter Quit</b> — Breeze no longer waits on background adblock compilation during app termination, avoiding scary quit-time crash reports.',
+        '<b>Stronger Normal Ad Blocking</b> — Normal mode now includes additional high-confidence ad-network blocks while keeping broad cosmetic hiding in Extreme mode.' ] },
       { v: '4.0.2', icon: 'sparkles', title: 'New Tab Hotfix', major: true, items: [
         '<b>New Tab Center Restored</b> — The clock, greeting, and input bar now keep the right light/dark contrast instead of disappearing into light backgrounds.',
         '<b>Clean Plus Divider</b> — The sidebar new-tab divider no longer leaks the default system button title, and now stays compact and subtle.',

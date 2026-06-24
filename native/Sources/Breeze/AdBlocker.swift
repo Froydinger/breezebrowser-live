@@ -48,8 +48,7 @@ final class AdBlocker {
     }
 
     private func combinedRules(baseJSON: String, mode: String) -> String {
-        guard mode == "extreme",
-              var arr = (try? JSONSerialization.jsonObject(with: Data(baseJSON.utf8))) as? [[String: Any]] else {
+        guard var arr = (try? JSONSerialization.jsonObject(with: Data(baseJSON.utf8))) as? [[String: Any]] else {
             return baseJSON
         }
         let exceptions = (Store.shared.settings["adblockSiteExceptions"] as? [String] ?? [])
@@ -64,6 +63,7 @@ final class AdBlocker {
         let blockPatterns = [
             ".*://([^/]+\\.)?doubleclick\\.net/.*",
             ".*://([^/]+\\.)?googlesyndication\\.com/.*",
+            ".*://securepubads\\.g\\.doubleclick\\.net/.*",
             ".*://([^/]+\\.)?googleadservices\\.com/.*",
             ".*://([^/]+\\.)?amazon-adsystem\\.com/.*",
             ".*://([^/]+\\.)?taboola\\.com/.*",
@@ -73,10 +73,18 @@ final class AdBlocker {
             ".*://([^/]+\\.)?pubmatic\\.com/.*",
             ".*://([^/]+\\.)?scorecardresearch\\.com/.*",
             ".*://([^/]+\\.)?criteo\\.com/.*",
-            ".*://([^/]+\\.)?media\\.net/.*"
+            ".*://([^/]+\\.)?media\\.net/.*",
+            ".*://([^/]+\\.)?ads\\.yahoo\\.com/.*",
+            ".*://([^/]+\\.)?adtech\\.yahooinc\\.com/.*",
+            ".*://([^/]+\\.)?gemini\\.yahoo\\.com/.*"
         ]
         for pattern in blockPatterns {
             arr.append(["trigger": trigger(pattern), "action": ["type": "block"]])
+        }
+        guard mode == "extreme" else {
+            guard let data = try? JSONSerialization.data(withJSONObject: arr),
+                  let out = String(data: data, encoding: .utf8) else { return baseJSON }
+            return out
         }
         var cssTrigger: [String: Any] = ["url-filter": ".*"]
         if let unless { cssTrigger["unless-domain"] = unless }

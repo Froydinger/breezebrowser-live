@@ -163,7 +163,7 @@ final class NewTabView: NSView {
     private let logo = NSImageView()
     private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
-    private let hint = NSTextField(labelWithString: "Enter: ask/open URL    Shift-Enter: search web")
+    private let hint = NSTextField(labelWithString: "Enter: ask Nav or open URL    Cmd-Enter: search web    Type \"search ...\" to force search")
     let field = NSTextField()
     var onSubmit: ((String, Bool) -> Void)?
     private var timer: Timer?
@@ -184,7 +184,7 @@ final class NewTabView: NSView {
         greeting.alignment = .center
         greeting.translatesAutoresizingMaskIntoConstraints = false
 
-        hint.font = .systemFont(ofSize: 12)
+        hint.font = .systemFont(ofSize: 11.5, weight: .medium)
         hint.alignment = .center
         hint.lineBreakMode = .byTruncatingTail
         hint.translatesAutoresizingMaskIntoConstraints = false

@@ -66,13 +66,17 @@ extension WKWebViewConfiguration {
 let breezeMediaJS = """
 (function () {
   if (location.protocol === 'file:') return;
-  function report(p) {
-    try { window.webkit.messageHandlers.breezeMedia.postMessage({ playing: p, title: document.title }); } catch (e) {}
+  function report(p, pip) {
+    var body = { playing: p, title: document.title };
+    if (pip) body.pip = pip;
+    try { window.webkit.messageHandlers.breezeMedia.postMessage(body); } catch (e) {}
   }
   document.addEventListener('play', function () { report(true); }, true);
   document.addEventListener('playing', function () { report(true); }, true);
   document.addEventListener('pause', function () { report(false); }, true);
   document.addEventListener('ended', function () { report(false); }, true);
+  document.addEventListener('enterpictureinpicture', function () { report(true, 'enter'); }, true);
+  document.addEventListener('leavepictureinpicture', function () { report(false, 'leave'); }, true);
 })();
 """
 

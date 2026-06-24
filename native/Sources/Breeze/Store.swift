@@ -44,6 +44,10 @@ final class Store {
         "webNotifications": true,
         "tabSleepHours": 1,
         "aiInstructions": "",
+        "aiIncludeHistory": false,
+        "aiIncludeBookmarks": false,
+        "aiIncludeOpenTabs": false,
+        "aiUseChatHistory": true,
         // Kept for settings compatibility with older profiles; Breeze Cloud readiness
         // is derived from the build configuration, not a local key.
         "aiKeyConnected": false,

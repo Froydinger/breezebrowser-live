@@ -225,31 +225,32 @@ final class LinePlusButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         let p = Theme.shared.palette
-        let color = hovering ? p.text : p.text.withAlphaComponent(0.5)
+        let color = hovering ? p.text.withAlphaComponent(0.68) : p.text.withAlphaComponent(0.5)
         color.setStroke()
         color.setFill()
         let y = bounds.midY
-        let centerGap: CGFloat = 28
-        let lineLength = max(24, (bounds.midX - centerGap - 12) * 0.5)
+        let centerGap: CGFloat = 18
+        let lineLength = max(18, (bounds.midX - centerGap - 18) * 0.36)
         let left = NSBezierPath()
-        left.lineWidth = 2
+        left.lineWidth = 1.5
         left.lineCapStyle = .round
         left.move(to: NSPoint(x: bounds.midX - centerGap - lineLength, y: y))
         left.line(to: NSPoint(x: bounds.midX - centerGap, y: y))
         left.stroke()
         let right = NSBezierPath()
-        right.lineWidth = 2
+        right.lineWidth = 1.5
         right.lineCapStyle = .round
         right.move(to: NSPoint(x: bounds.midX + centerGap, y: y))
         right.line(to: NSPoint(x: bounds.midX + centerGap + lineLength, y: y))
         right.stroke()
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
-            .foregroundColor: color
-        ]
-        let s = NSString(string: "+")
-        let size = s.size(withAttributes: attrs)
-        s.draw(at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2 - 0.5), withAttributes: attrs)
+        let plus = NSBezierPath()
+        plus.lineWidth = 1.5
+        plus.lineCapStyle = .round
+        plus.move(to: NSPoint(x: bounds.midX - 3.5, y: y))
+        plus.line(to: NSPoint(x: bounds.midX + 3.5, y: y))
+        plus.move(to: NSPoint(x: bounds.midX, y: y - 3.5))
+        plus.line(to: NSPoint(x: bounds.midX, y: y + 3.5))
+        plus.stroke()
     }
 
     @objc private func tapped() { onTap?() }

@@ -531,6 +531,52 @@
             </div>
           </div>
         </div>
+        <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
+          <div>
+            <div class="row-label">Nav privacy</div>
+            <div class="row-hint">The current page is included so Nav can answer what you are looking at. Broader context starts off and can be added here.</div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="row-label">Use chat history in replies</div>
+              <div class="row-hint">Keep the current conversation connected, or make each message standalone.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="aiUseChatHistory" />
+              <span class="knob"></span>
+            </label>
+          </div>
+          <div class="row">
+            <div>
+              <div class="row-label">Include recent browsing history</div>
+              <div class="row-hint">Let Nav reference recently visited pages when you ask broad questions.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="aiIncludeHistory" />
+              <span class="knob"></span>
+            </label>
+          </div>
+          <div class="row">
+            <div>
+              <div class="row-label">Include bookmarks</div>
+              <div class="row-hint">Let Nav use saved sites as optional reference context.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="aiIncludeBookmarks" />
+              <span class="knob"></span>
+            </label>
+          </div>
+          <div class="row">
+            <div>
+              <div class="row-label">Include other open tabs</div>
+              <div class="row-hint">Let Nav see titles and domains for tabs you did not explicitly @ add.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="aiIncludeOpenTabs" />
+              <span class="knob"></span>
+            </label>
+          </div>
+        </div>
         <div class="row">
           <div>
             <div class="row-label">Web search &amp; browsing</div>
@@ -785,6 +831,10 @@
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
+      document.getElementById('aiUseChatHistory').checked = settings.aiUseChatHistory !== false;
+      document.getElementById('aiIncludeHistory').checked = !!settings.aiIncludeHistory;
+      document.getElementById('aiIncludeBookmarks').checked = !!settings.aiIncludeBookmarks;
+      document.getElementById('aiIncludeOpenTabs').checked = !!settings.aiIncludeOpenTabs;
       const cloudStatus = document.getElementById('aiCloudStatus');
       if (cloudStatus) cloudStatus.textContent = settings.aiCloudEnabled ? 'Connected' : 'Not configured';
 
@@ -860,6 +910,10 @@
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
     document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
+    document.getElementById('aiUseChatHistory').addEventListener('change', (e) => set('aiUseChatHistory', e.target.checked));
+    document.getElementById('aiIncludeHistory').addEventListener('change', (e) => set('aiIncludeHistory', e.target.checked));
+    document.getElementById('aiIncludeBookmarks').addEventListener('change', (e) => set('aiIncludeBookmarks', e.target.checked));
+    document.getElementById('aiIncludeOpenTabs').addEventListener('change', (e) => set('aiIncludeOpenTabs', e.target.checked));
 
     // AI text fields — debounced save so we don't spam on every keystroke
     let aiSaveTimer = null;
