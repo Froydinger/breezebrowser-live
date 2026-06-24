@@ -8,7 +8,7 @@ import UserNotifications
 import CoreImage
 import QuartzCore
 
-let SIDEBAR_W: CGFloat = 216
+let SIDEBAR_W: CGFloat = 286
 
 enum BrowserInitialContent {
     case restoredSession, newTab, empty
@@ -162,7 +162,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         root.addSubview(topBar)
         buildFindBar()
 
-        if let w = Store.shared.settings["sidebarWidth"] as? Double, w >= 200, w <= 460 { sidebarWidth = w }
+        if Store.shared.string("sidebarWidthDefaultVersion") != "3.8.6" {
+            sidebarWidth = SIDEBAR_W
+            Store.shared.settings["sidebarWidth"] = Double(sidebarWidth)
+            Store.shared.settings["sidebarWidthDefaultVersion"] = "3.8.6"
+            Store.shared.saveSettings()
+        } else if let w = Store.shared.settings["sidebarWidth"] as? Double, w >= 200, w <= 460 {
+            sidebarWidth = w
+        }
         sidebarLeft = sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 0)
         sidebarWidthC = sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth)
         topTrailC = addressWrap.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -54)
@@ -1246,13 +1253,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func spinReloadButton(_ button: NSView) {
-        button.wantsLayer = true
-        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
-        animation.fromValue = 0
-        animation.toValue = CGFloat.pi * 2
-        animation.duration = 0.42
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        button.layer?.add(animation, forKey: "breezeReloadSpin")
+        if let button = button as? HoverButton {
+            button.spinGlyph()
+            return
+        }
     }
 
     func wire(_ t: Tab) {
@@ -2051,7 +2055,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func ctxLabel(_ t: Tab) -> String {
         let s = t.title.isEmpty ? hostOf(t.webView.url) : t.title
-        return "📄 " + String(s.prefix(22))
+        return String(s.prefix(34))
     }
 
     @MainActor func gatherContexts() async -> [AIContext] {
@@ -2073,7 +2077,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 guard let url = h["url"] as? String, let title = h["title"] as? String else { return nil }
                 return "• \(title) (\(url))"
             }
-            out.append(AIContext(label: "🕐 Recent history", text: "Recent browsing history:\n" + lines.joined(separator: "\n")))
+            out.append(AIContext(label: "Recent history", text: "Recent browsing history:\n" + lines.joined(separator: "\n")))
         }
         // Feed bookmarks so the AI knows user's saved sites
         let bookmarks = Store.shared.bookmarks.prefix(20)
@@ -2082,13 +2086,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 guard let url = b["url"] as? String, let title = b["title"] as? String else { return nil }
                 return "• \(title) (\(url))"
             }
-            out.append(AIContext(label: "🔖 Bookmarks", text: "User's bookmarks:\n" + lines.joined(separator: "\n")))
+            out.append(AIContext(label: "Bookmarks", text: "User's bookmarks:\n" + lines.joined(separator: "\n")))
         }
         // Feed open tab titles/URLs so the AI knows the full session
         let openTabs = tabs.filter { !$0.isNewTab && !$0.isChatTab && $0.id != current?.id }
         if !openTabs.isEmpty {
             let lines = openTabs.map { "• \($0.title) (\(hostOf($0.webView.url)))" }
-            out.append(AIContext(label: "📑 Open tabs", text: "Other open tabs:\n" + lines.joined(separator: "\n")))
+            out.append(AIContext(label: "Open tabs", text: "Other open tabs:\n" + lines.joined(separator: "\n")))
         }
         return out
     }
@@ -2131,7 +2135,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     let desc = VisionOCR.describe(url)
                     let imageData = self.pngData(fromFile: url)
                     DispatchQueue.main.async {
-                        self.aiExtras.append(AIExtra(label: "🖼 " + String(name.prefix(20)),
+                        self.aiExtras.append(AIExtra(label: String(name.prefix(28)),
                                                      tab: nil,
                                                      imageText: "Attached image \"\(name)\":\n\(desc)",
                                                      imageData: imageData,

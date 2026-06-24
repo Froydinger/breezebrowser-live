@@ -19,6 +19,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     var onRemoveContext: ((Int) -> Void)?
     var onToggleFullscreen: (() -> Void)?
     var onDownloadImagePath: ((String) -> Void)?
+    private let contextScroll = NSScrollView()
     private let contextRow = NSStackView()
 
     private var headerView: NSStackView!
@@ -117,9 +118,19 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         input.translatesAutoresizingMaskIntoConstraints = false
         input.target = self; input.action = #selector(send)
         input.delegate = self
-        contextRow.orientation = .horizontal; contextRow.spacing = 5; contextRow.alignment = .centerY
+        contextRow.orientation = .horizontal; contextRow.spacing = 6; contextRow.alignment = .centerY
         contextRow.translatesAutoresizingMaskIntoConstraints = false
-        contextRow.isHidden = true
+        contextScroll.drawsBackground = false
+        contextScroll.hasHorizontalScroller = true
+        contextScroll.hasVerticalScroller = false
+        contextScroll.autohidesScrollers = true
+        contextScroll.scrollerStyle = .overlay
+        contextScroll.translatesAutoresizingMaskIntoConstraints = false
+        let contextDoc = FlippedView()
+        contextDoc.translatesAutoresizingMaskIntoConstraints = false
+        contextDoc.addSubview(contextRow)
+        contextScroll.documentView = contextDoc
+        contextScroll.isHidden = true
         sendBtn.onTap = { [weak self] in self?.send() }
         attachBtn.onTap = { [weak self] in self?.onAttach?() }
         imageBtn.toolTip = "Generate or edit an image"
@@ -130,13 +141,13 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         status.translatesAutoresizingMaskIntoConstraints = false
         status.isHidden = true
 
-        addSubview(header); addSubview(scroll); addSubview(empty); addSubview(historyView); addSubview(status); addSubview(contextRow); addSubview(inputWrap)
+        addSubview(header); addSubview(scroll); addSubview(empty); addSubview(historyView); addSubview(status); addSubview(contextScroll); addSubview(inputWrap)
         self.inputWrap = inputWrap
 
         messagesWidthC = messagesStack.widthAnchor.constraint(equalTo: doc.widthAnchor, constant: -16)
         inputWidthC = inputWrap.widthAnchor.constraint(equalTo: widthAnchor, constant: -24)
         statusWidthC = status.widthAnchor.constraint(equalTo: widthAnchor, constant: -32)
-        contextWidthC = contextRow.widthAnchor.constraint(equalTo: widthAnchor, constant: -28)
+        contextWidthC = contextScroll.widthAnchor.constraint(equalTo: widthAnchor, constant: -28)
         historyWidthC = historyView.widthAnchor.constraint(equalTo: widthAnchor)
 
         messagesWidthC.isActive = true
@@ -151,8 +162,14 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         historyTopToPanelC = historyView.topAnchor.constraint(equalTo: topAnchor, constant: 12)
 
         NSLayoutConstraint.activate([
-            contextRow.centerXAnchor.constraint(equalTo: centerXAnchor),
-            contextRow.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
+            contextScroll.centerXAnchor.constraint(equalTo: centerXAnchor),
+            contextScroll.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
+            contextScroll.heightAnchor.constraint(equalToConstant: 26),
+            contextDoc.heightAnchor.constraint(equalTo: contextScroll.contentView.heightAnchor),
+            contextRow.topAnchor.constraint(equalTo: contextDoc.topAnchor),
+            contextRow.leadingAnchor.constraint(equalTo: contextDoc.leadingAnchor),
+            contextRow.trailingAnchor.constraint(equalTo: contextDoc.trailingAnchor),
+            contextRow.bottomAnchor.constraint(equalTo: contextDoc.bottomAnchor),
             historyView.centerXAnchor.constraint(equalTo: centerXAnchor),
             historyView.bottomAnchor.constraint(equalTo: inputWrap.topAnchor, constant: -6),
             historyTopToHeaderC,
@@ -167,7 +184,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             scrollTopToHeaderC,
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            scroll.bottomAnchor.constraint(equalTo: contextRow.topAnchor, constant: -4),
+            scroll.bottomAnchor.constraint(equalTo: contextScroll.topAnchor, constant: -4),
             doc.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
             messagesStack.topAnchor.constraint(equalTo: doc.topAnchor, constant: 6),
             messagesStack.centerXAnchor.constraint(equalTo: doc.centerXAnchor),
@@ -340,32 +357,54 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private func addChipsRow(_ chips: [String]) {
         empty.isHidden = true
         let p = Theme.shared.palette
+        let visibleChips = Array(chips.prefix(4))
+        guard !visibleChips.isEmpty else { return }
         let row = NSStackView(); row.orientation = .horizontal; row.spacing = 5; row.alignment = .centerY
         row.translatesAutoresizingMaskIntoConstraints = false
-        for c in chips {
+        for c in visibleChips {
+            let clean = cleanPillText(c)
             let pill = NSView(); pill.wantsLayer = true; pill.layer?.cornerRadius = 8
             pill.layer?.backgroundColor = p.surface.cgColor
             pill.translatesAutoresizingMaskIntoConstraints = false
-            let l = NSTextField(labelWithString: c); l.font = .systemFont(ofSize: 10.5); l.textColor = p.textSoft
+            let icon = NSImageView(image: contextIcon(for: clean))
+            icon.imageScaling = .scaleProportionallyDown
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            let l = NSTextField(labelWithString: compactPillText(clean)); l.font = .systemFont(ofSize: 10.5); l.textColor = p.textSoft
+            l.lineBreakMode = .byTruncatingTail
             l.translatesAutoresizingMaskIntoConstraints = false
-            pill.addSubview(l)
+            pill.addSubview(icon); pill.addSubview(l)
             NSLayoutConstraint.activate([
                 pill.heightAnchor.constraint(equalToConstant: 18),
+                pill.widthAnchor.constraint(lessThanOrEqualToConstant: 154),
+                icon.widthAnchor.constraint(equalToConstant: 12),
+                icon.heightAnchor.constraint(equalToConstant: 12),
+                icon.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 7),
+                icon.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
                 l.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
-                l.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 7),
+                l.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 4),
                 l.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -7),
             ])
             row.addArrangedSubview(pill)
         }
-        let wrap = NSView(); wrap.translatesAutoresizingMaskIntoConstraints = false
-        wrap.addSubview(row)
-        messagesStack.addArrangedSubview(wrap)          // add BEFORE cross-view constraints
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = true
+        scroll.hasVerticalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        let doc = FlippedView()
+        doc.translatesAutoresizingMaskIntoConstraints = false
+        doc.addSubview(row)
+        scroll.documentView = doc
+        messagesStack.addArrangedSubview(scroll)
         NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: wrap.leadingAnchor),
-            row.topAnchor.constraint(equalTo: wrap.topAnchor),
-            row.bottomAnchor.constraint(equalTo: wrap.bottomAnchor),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: wrap.trailingAnchor),
-            wrap.widthAnchor.constraint(equalTo: messagesStack.widthAnchor),
+            scroll.widthAnchor.constraint(equalTo: messagesStack.widthAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 22),
+            doc.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor),
+            row.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
+            row.centerYAnchor.constraint(equalTo: doc.centerYAnchor),
         ])
     }
 
@@ -376,7 +415,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         // readable in light OR dark mode (avoids low-contrast text on a light panel).
         let aiBubble = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
         let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = 13
-        card.layer?.backgroundColor = (user ? p.accent : aiBubble).cgColor
+        let userBubble = p.accent.usingColorSpace(.deviceRGB) ?? p.accent
+        card.layer?.backgroundColor = (user ? userBubble : aiBubble).cgColor
         card.translatesAutoresizingMaskIntoConstraints = false
         card.setContentHuggingPriority(.required, for: .horizontal)
         let label = SelectableMessageTextView(maxWidth: messageMaxWidth)
@@ -468,13 +508,13 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             messagesWidthC = messagesStack.widthAnchor.constraint(equalToConstant: 600)
             inputWidthC = inputWrap.widthAnchor.constraint(equalToConstant: 600)
             statusWidthC = status.widthAnchor.constraint(equalToConstant: 600)
-            contextWidthC = contextRow.widthAnchor.constraint(equalToConstant: 600)
+            contextWidthC = contextScroll.widthAnchor.constraint(equalToConstant: 600)
             historyWidthC = historyView.widthAnchor.constraint(equalToConstant: 600)
         } else {
             messagesWidthC = messagesStack.widthAnchor.constraint(equalTo: scroll.documentView!.widthAnchor, constant: -16)
             inputWidthC = inputWrap.widthAnchor.constraint(equalTo: widthAnchor, constant: -24)
             statusWidthC = status.widthAnchor.constraint(equalTo: widthAnchor, constant: -32)
-            contextWidthC = contextRow.widthAnchor.constraint(equalTo: widthAnchor, constant: -28)
+            contextWidthC = contextScroll.widthAnchor.constraint(equalTo: widthAnchor, constant: -28)
             historyWidthC = historyView.widthAnchor.constraint(equalTo: widthAnchor)
         }
 
@@ -536,33 +576,82 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         contextRow.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let p = Theme.shared.palette
         func pill(_ text: String, removeIndex: Int?) -> NSView {
+            let clean = cleanPillText(text)
             let v = NSView(); v.wantsLayer = true; v.layer?.cornerRadius = 15
             v.layer?.backgroundColor = (removeIndex == nil ? p.surfaceActive : p.surface).cgColor
             v.translatesAutoresizingMaskIntoConstraints = false
-            let l = NSTextField(labelWithString: text); l.font = .systemFont(ofSize: 11); l.textColor = p.text
+            let icon = NSImageView(image: contextIcon(for: clean))
+            icon.imageScaling = .scaleProportionallyDown
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            let l = NSTextField(labelWithString: compactPillText(clean)); l.font = .systemFont(ofSize: 11); l.textColor = p.text
+            l.lineBreakMode = .byTruncatingTail
             l.translatesAutoresizingMaskIntoConstraints = false
-            v.addSubview(l)
-            l.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 9).isActive = true
+            v.addSubview(icon); v.addSubview(l)
+            icon.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 8).isActive = true
+            icon.centerYAnchor.constraint(equalTo: v.centerYAnchor).isActive = true
+            icon.widthAnchor.constraint(equalToConstant: 13).isActive = true
+            icon.heightAnchor.constraint(equalToConstant: 13).isActive = true
+            l.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5).isActive = true
             l.centerYAnchor.constraint(equalTo: v.centerYAnchor).isActive = true
             v.heightAnchor.constraint(equalToConstant: 22).isActive = true
+            v.widthAnchor.constraint(lessThanOrEqualToConstant: removeIndex == nil ? 172 : 150).isActive = true
             if let idx = removeIndex {
-                let x = NSButton(title: "✕", target: self, action: #selector(removePill(_:)))
-                x.isBordered = false; x.font = .systemFont(ofSize: 9); x.tag = idx
+                let x = NSButton(image: tintedSymbol("xmark", point: 9, weight: .semibold, color: p.textSoft) ?? NSImage(), target: self, action: #selector(removePill(_:)))
+                x.isBordered = false; x.tag = idx
                 x.contentTintColor = p.textSoft; x.translatesAutoresizingMaskIntoConstraints = false
                 v.addSubview(x)
                 x.leadingAnchor.constraint(equalTo: l.trailingAnchor, constant: 3).isActive = true
                 x.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -5).isActive = true
                 x.centerYAnchor.constraint(equalTo: v.centerYAnchor).isActive = true
+                x.widthAnchor.constraint(equalToConstant: 14).isActive = true
+                x.heightAnchor.constraint(equalToConstant: 14).isActive = true
             } else {
                 l.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -9).isActive = true
             }
             return v
         }
-        if let cur = current { contextRow.addArrangedSubview(pill(cur + " · included", removeIndex: nil)) }
+        if let cur = current { contextRow.addArrangedSubview(pill(cur, removeIndex: nil)) }
         for (i, e) in extras.enumerated() { contextRow.addArrangedSubview(pill(e, removeIndex: i)) }
-        contextRow.isHidden = (current == nil && extras.isEmpty)
+        contextScroll.isHidden = (current == nil && extras.isEmpty)
     }
     @objc private func removePill(_ sender: NSButton) { onRemoveContext?(sender.tag) }
+
+    private func cleanPillText(_ text: String) -> String {
+        var s = text
+        for prefix in ["📄 ", "🕐 ", "🔖 ", "📑 ", "🖼 ", "📁 "] {
+            if s.hasPrefix(prefix) { s.removeFirst(prefix.count) }
+        }
+        s = s.replacingOccurrences(of: " · included", with: "")
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func compactPillText(_ text: String) -> String {
+        switch text.lowercased() {
+        case "recent history": return "History"
+        case "open tabs": return "Tabs"
+        default:
+            let limit = 28
+            if text.count <= limit { return text }
+            return String(text.prefix(limit - 1)) + "…"
+        }
+    }
+
+    private func contextIcon(for text: String) -> NSImage {
+        let lower = text.lowercased()
+        let symbol: String
+        if lower.contains("history") {
+            symbol = "clock"
+        } else if lower.contains("bookmark") {
+            symbol = "bookmark"
+        } else if lower.contains("open tab") || lower == "tabs" || lower.contains("tabs") {
+            symbol = "rectangle.on.rectangle"
+        } else if lower.contains(".png") || lower.contains(".jpg") || lower.contains(".jpeg") || lower.contains(".heic") || lower.contains("image") {
+            symbol = "photo"
+        } else {
+            symbol = "doc.text"
+        }
+        return tintedSymbol(symbol, point: 10.5, weight: .semibold, color: Theme.shared.palette.textSoft) ?? NSImage()
+    }
 
     /// Render a markdown subset (bold/italic/code/links, preserved line breaks).
     static func renderMarkdown(_ s: String, color: NSColor) -> NSAttributedString {

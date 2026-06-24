@@ -148,6 +148,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '3.8.6', icon: 'panel-left', title: 'Sidebar & Nav Polish', major: true, items: [
+        '<b>Wider Default Sidebar</b> — The default sidebar now gives pinned apps room for four columns, while the skinny three-column layout remains available by resizing.',
+        '<b>Later Tab Truncation</b> — Tab titles get more room before ellipsizing in the default layout.',
+        '<b>Cleaner Nav Context Chips</b> — Context and response chips are compact, horizontally scrollable, and use native symbols instead of emoji.',
+        '<b>Better Accent Match</b> — User chat bubbles use the selected tint directly for a closer match.',
+        '<b>Refresh Spins In Place</b> — The reload symbol now rotates around the glyph center instead of orbiting around the button.' ] },
       { v: '3.8.4', icon: 'sparkles', title: 'New Breeze & Nav Icons', major: true, items: [
         '<b>New Breeze Mark</b> — Breeze now uses the refreshed dimensional B-heart icon throughout the app.',
         '<b>New Nav Mark</b> — Nav gets its own cleaner navigator icon, while new tab pages keep the Breeze mark.',

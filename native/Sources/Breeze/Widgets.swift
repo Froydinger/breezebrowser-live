@@ -99,6 +99,35 @@ final class HoverButton: NSButton {
     override func mouseEntered(with e: NSEvent) { hovering = true; applyTheme() }
     override func mouseExited(with e: NSEvent)  { hovering = false; applyTheme() }
     @objc private func tapped() { onTap?() }
+
+    func spinGlyph() {
+        guard let currentImage = image else { return }
+        let spinner = NSImageView(image: currentImage)
+        spinner.imageScaling = .scaleProportionallyDown
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.wantsLayer = true
+        image = nil
+        addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+            spinner.widthAnchor.constraint(equalToConstant: max(pointSize + 5, 18)),
+            spinner.heightAnchor.constraint(equalToConstant: max(pointSize + 5, 18)),
+        ])
+        layoutSubtreeIfNeeded()
+        let animation = CABasicAnimation(keyPath: "transform.rotation.z")
+        animation.fromValue = 0
+        animation.toValue = CGFloat.pi * 2
+        animation.duration = 0.42
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self, weak spinner] in
+            spinner?.removeFromSuperview()
+            self?.applyTheme()
+        }
+        spinner.layer?.add(animation, forKey: "breezeReloadSpin")
+        CATransaction.commit()
+    }
 }
 
 final class HoverTextButton: NSButton {
