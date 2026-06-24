@@ -487,6 +487,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             v.onSelect = { [weak self] in self?.openPin(p.url) }
             v.onUnpin = { [weak self] in self?.unpin(p.url) }
             v.menuProvider = { [weak self] in self?.pinMenu(p.url) ?? [] }
+            v.dragPayload = SidebarDragPayload(kind: .pin, id: p.url)
+            v.onDropPayload = { [weak self] payload, placement in self?.dropSidebarPayload(payload, onPin: p.url, placement: placement) ?? false }
             let openTab = pinnedTab(p.url)
             v.setState(open: openTab != nil, active: openTab != nil && openTab?.id == current?.id)
             row?.addArrangedSubview(v); inRow += 1
@@ -1006,6 +1008,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         row.onSelect = { [weak self] in self?.select(i) }
         row.onClose = { [weak self] in self?.closeTab(t) }
         row.menuProvider = { [weak self] in self?.tabMenu(for: t) ?? [] }
+        row.dragPayload = SidebarDragPayload(kind: .tab, id: t.id.uuidString)
+        row.onDropPayload = { [weak self] payload, placement in self?.dropSidebarPayload(payload, onTab: t.id, placement: placement) ?? false }
         return row
     }
 
@@ -1088,11 +1092,79 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self.groups[gi].collapsed.toggle(); self.renderTabs()
             }
             header.menuProvider = { [weak self] in self?.groupMenu(for: g) ?? [] }
+            header.dragPayload = SidebarDragPayload(kind: .group, id: "\(g.id)")
+            header.onDropPayload = { [weak self] payload, placement in self?.dropSidebarPayload(payload, onGroup: g.id, placement: placement) ?? false }
             add(header)
             if !g.collapsed { for t in members { add(makeTabRow(t)) } }
         }
         // ungrouped, non-pinned tabs (pinned tabs are housed in their pin icon)
         for t in tabs where t.groupId == nil && t.pinUrl == nil { add(makeTabRow(t)) }
+    }
+
+    func dropSidebarPayload(_ payload: SidebarDragPayload, onPin targetURL: String, placement: SidebarDropPlacement) -> Bool {
+        guard payload.kind == .pin, payload.id != targetURL,
+              let from = pins.firstIndex(where: { $0.url == payload.id }),
+              let to = pins.firstIndex(where: { $0.url == targetURL }) else { return false }
+        let pin = pins.remove(at: from)
+        var target = to
+        if from < to { target -= 1 }
+        if placement == .after { target += 1 }
+        pins.insert(pin, at: max(0, min(target, pins.count)))
+        persistPins()
+        renderPins()
+        return true
+    }
+
+    func dropSidebarPayload(_ payload: SidebarDragPayload, onTab targetID: UUID, placement: SidebarDropPlacement) -> Bool {
+        guard payload.kind == .tab,
+              let sourceID = UUID(uuidString: payload.id),
+              sourceID != targetID,
+              let from = tabs.firstIndex(where: { $0.id == sourceID }),
+              let to = tabs.firstIndex(where: { $0.id == targetID }) else { return false }
+        let currentID = current?.id
+        let targetGroup = tabs[to].groupId
+        let tab = tabs.remove(at: from)
+        tab.groupId = targetGroup
+        var target = to
+        if from < to { target -= 1 }
+        if placement == .after { target += 1 }
+        tabs.insert(tab, at: max(0, min(target, tabs.count)))
+        if let currentID, let idx = tabs.firstIndex(where: { $0.id == currentID }) { active = idx }
+        renderTabs()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
+        return true
+    }
+
+    func dropSidebarPayload(_ payload: SidebarDragPayload, onGroup targetID: Int, placement: SidebarDropPlacement) -> Bool {
+        switch payload.kind {
+        case .tab:
+            guard let sourceID = UUID(uuidString: payload.id),
+                  let idx = tabs.firstIndex(where: { $0.id == sourceID }) else { return false }
+            let currentID = current?.id
+            tabs[idx].groupId = targetID
+            if let lastMember = tabs.lastIndex(where: { $0.groupId == targetID && $0.id != sourceID }) {
+                let tab = tabs.remove(at: idx)
+                let insertAt = idx < lastMember ? lastMember : min(lastMember + 1, tabs.count)
+                tabs.insert(tab, at: insertAt)
+            }
+            if let currentID, let activeIndex = tabs.firstIndex(where: { $0.id == currentID }) { active = activeIndex }
+            renderTabs()
+            NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
+            return true
+        case .group:
+            guard let sourceID = Int(payload.id), sourceID != targetID,
+                  let from = groups.firstIndex(where: { $0.id == sourceID }),
+                  let to = groups.firstIndex(where: { $0.id == targetID }) else { return false }
+            let group = groups.remove(at: from)
+            var target = to
+            if from < to { target -= 1 }
+            if placement == .after { target += 1 }
+            groups.insert(group, at: max(0, min(target, groups.count)))
+            renderTabs()
+            return true
+        case .pin:
+            return false
+        }
     }
 
     // MARK: - Tab groups ----------------------------------------------------

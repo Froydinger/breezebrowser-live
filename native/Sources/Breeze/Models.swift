@@ -23,6 +23,8 @@ let sharedConfig: WKWebViewConfiguration = {
     // while a video is fullscreen (rounded corners kill the HW video overlay → black).
     c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMsg")
@@ -144,6 +146,32 @@ let breezeFullscreenJS = """
 })();
 """
 
+let breezeKeyboardJS = """
+(function () {
+  if (location.protocol === 'file:') return;
+  function editable(el) {
+    while (el && el !== document.documentElement) {
+      if (el.isContentEditable) return true;
+      var tag = (el.tagName || '').toLowerCase();
+      if (tag === 'textarea') return true;
+      if (tag === 'input') {
+        var type = (el.getAttribute('type') || 'text').toLowerCase();
+        return !/^(button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/i.test(type);
+      }
+      if ((el.getAttribute && el.getAttribute('role')) === 'textbox') return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Backspace' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (editable(e.target || document.activeElement)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+})();
+"""
+
 func hostOf(_ url: URL?) -> String {
     guard let h = url?.host else { return "" }
     return h.hasPrefix("www.") ? String(h.dropFirst(4)) : h
@@ -187,6 +215,8 @@ final class Tab {
             c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))

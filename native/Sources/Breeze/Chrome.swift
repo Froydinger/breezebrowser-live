@@ -2,9 +2,64 @@
 
 import Cocoa
 
-final class TabRowView: NSView {
+let breezeSidebarDragType = NSPasteboard.PasteboardType("com.froydinger.breeze.sidebar-item")
+
+enum SidebarDragKind: String {
+    case pin, tab, group
+}
+
+struct SidebarDragPayload {
+    let kind: SidebarDragKind
+    let id: String
+
+    var encoded: String { "\(kind.rawValue)|\(id)" }
+
+    static func decode(_ value: String?) -> SidebarDragPayload? {
+        guard let value else { return nil }
+        let parts = value.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let kind = SidebarDragKind(rawValue: parts[0]) else { return nil }
+        return SidebarDragPayload(kind: kind, id: parts[1])
+    }
+}
+
+enum SidebarDropPlacement {
+    case before, after
+}
+
+private func beginSidebarDrag(from view: NSView, event: NSEvent, payload: SidebarDragPayload, source: NSDraggingSource) {
+    let item = NSPasteboardItem()
+    item.setString(payload.encoded, forType: breezeSidebarDragType)
+    let draggingItem = NSDraggingItem(pasteboardWriter: item)
+    draggingItem.setDraggingFrame(view.bounds, contents: view.bitmapImageRepForCachingDisplay(in: view.bounds).map { rep in
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let img = NSImage(size: view.bounds.size)
+        img.addRepresentation(rep)
+        return img
+    })
+    view.beginDraggingSession(with: [draggingItem], event: event, source: source)
+}
+
+private func setSidebarDropHighlight(_ view: NSView, _ on: Bool) {
+    view.wantsLayer = true
+    view.layer?.borderWidth = on ? 1 : 0
+    view.layer?.borderColor = Theme.shared.palette.accent.withAlphaComponent(0.55).cgColor
+}
+
+private func verticalDropPlacement(_ view: NSView, _ info: NSDraggingInfo) -> SidebarDropPlacement {
+    let point = view.convert(info.draggingLocation, from: nil)
+    return point.y < view.bounds.midY ? .after : .before
+}
+
+private func horizontalDropPlacement(_ view: NSView, _ info: NSDraggingInfo) -> SidebarDropPlacement {
+    let point = view.convert(info.draggingLocation, from: nil)
+    return point.x > view.bounds.midX ? .after : .before
+}
+
+final class TabRowView: NSView, NSDraggingSource {
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
+    var dragPayload: SidebarDragPayload?
+    var onDropPayload: ((SidebarDragPayload, SidebarDropPlacement) -> Bool)?
     var menuProvider: (() -> [MenuEntry])?     // controller builds the full menu
     private let faviconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -74,6 +129,7 @@ final class TabRowView: NSView {
         ])
         titleTrailingToBadges.isActive = false
         addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
+        registerForDraggedTypes([breezeSidebarDragType])
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
                                                name: Theme.didChange, object: nil)
@@ -138,6 +194,28 @@ final class TabRowView: NSView {
         applyTheme()
     }
     @objc private func clicked() { onSelect?() }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragPayload else { return }
+        beginSidebarDrag(from: self, event: event, payload: dragPayload, source: self)
+    }
+
+    override var mouseDownCanMoveWindow: Bool { false }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .move }
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard SidebarDragPayload.decode(sender.draggingPasteboard.string(forType: breezeSidebarDragType)) != nil else { return [] }
+        setSidebarDropHighlight(self, true)
+        return .move
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setSidebarDropHighlight(self, false)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setSidebarDropHighlight(self, false)
+        guard let payload = SidebarDragPayload.decode(sender.draggingPasteboard.string(forType: breezeSidebarDragType)) else { return false }
+        return onDropPayload?(payload, verticalDropPlacement(self, sender)) ?? false
+    }
 
     override func rightMouseDown(with e: NSEvent) {
         if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
@@ -241,8 +319,10 @@ final class SplitPane: NSView {
 }
 
 /// Collapsible tab-group header: carrot + colored dot + name + count.
-final class GroupHeaderView: NSView {
+final class GroupHeaderView: NSView, NSDraggingSource {
     var onToggle: (() -> Void)?
+    var dragPayload: SidebarDragPayload?
+    var onDropPayload: ((SidebarDragPayload, SidebarDropPlacement) -> Bool)?
     var menuProvider: (() -> [MenuEntry])?
     private let carrot = NSImageView()
     private let dot = NSView()
@@ -272,6 +352,7 @@ final class GroupHeaderView: NSView {
             carrot.widthAnchor.constraint(equalToConstant: 10),
         ])
         addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
+        registerForDraggedTypes([breezeSidebarDragType])
         carrotCollapsed = collapsed
         apply(collapsed: collapsed)
         NotificationCenter.default.addObserver(self, selector: #selector(themed), name: Theme.didChange, object: nil)
@@ -289,6 +370,26 @@ final class GroupHeaderView: NSView {
     private var carrotCollapsed = false
     func setCollapsed(_ c: Bool) { carrotCollapsed = c; apply(collapsed: c) }
     @objc private func clicked() { onToggle?() }
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragPayload else { return }
+        beginSidebarDrag(from: self, event: event, payload: dragPayload, source: self)
+    }
+    override var mouseDownCanMoveWindow: Bool { false }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .move }
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard SidebarDragPayload.decode(sender.draggingPasteboard.string(forType: breezeSidebarDragType)) != nil else { return [] }
+        setSidebarDropHighlight(self, true)
+        return .move
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setSidebarDropHighlight(self, false)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setSidebarDropHighlight(self, false)
+        guard let payload = SidebarDragPayload.decode(sender.draggingPasteboard.string(forType: breezeSidebarDragType)) else { return false }
+        return onDropPayload?(payload, verticalDropPlacement(self, sender)) ?? false
+    }
     override func rightMouseDown(with e: NSEvent) {
         if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
     }
@@ -384,9 +485,11 @@ final class NowPlayingView: NSView {
     }
 }
 
-final class PinView: NSView {
+final class PinView: NSView, NSDraggingSource {
     var onSelect: (() -> Void)?
     var onUnpin: (() -> Void)?
+    var dragPayload: SidebarDragPayload?
+    var onDropPayload: ((SidebarDragPayload, SidebarDropPlacement) -> Bool)?
     var menuProvider: (() -> [MenuEntry])?
     private let iconView = NSImageView()
     private let letter = NSTextField(labelWithString: "")
@@ -428,6 +531,7 @@ final class PinView: NSView {
             letter.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
+        registerForDraggedTypes([breezeSidebarDragType])
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
                                                name: Theme.didChange, object: nil)
@@ -467,6 +571,26 @@ final class PinView: NSView {
     override func mouseEntered(with e: NSEvent) { hovering = true; applyTheme() }
     override func mouseExited(with e: NSEvent)  { hovering = false; applyTheme() }
     @objc private func clicked() { onSelect?() }
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragPayload else { return }
+        beginSidebarDrag(from: self, event: event, payload: dragPayload, source: self)
+    }
+    override var mouseDownCanMoveWindow: Bool { false }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .move }
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard SidebarDragPayload.decode(sender.draggingPasteboard.string(forType: breezeSidebarDragType)) != nil else { return [] }
+        setSidebarDropHighlight(self, true)
+        return .move
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        setSidebarDropHighlight(self, false)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        setSidebarDropHighlight(self, false)
+        guard let payload = SidebarDragPayload.decode(sender.draggingPasteboard.string(forType: breezeSidebarDragType)) else { return false }
+        return onDropPayload?(payload, horizontalDropPlacement(self, sender)) ?? false
+    }
 
     override func rightMouseDown(with e: NSEvent) {
         if let entries = menuProvider?() { popupMenu(entries, for: self, with: e) }
