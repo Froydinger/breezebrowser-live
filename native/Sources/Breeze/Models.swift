@@ -77,8 +77,31 @@ let breezeMediaJS = """
   document.addEventListener('playing', function () { report(true); }, true);
   document.addEventListener('pause', function () { report(false); }, true);
   document.addEventListener('ended', function () { report(false); }, true);
-  document.addEventListener('enterpictureinpicture', function () { report(true, 'enter'); }, true);
-  document.addEventListener('leavepictureinpicture', function () { report(false, 'leave'); }, true);
+  var lastPresentationMode = '';
+  function presentationModeOf(v) {
+    return (v && (v.webkitPresentationMode || v.presentationMode)) || '';
+  }
+  function reportPresentationMode(v) {
+    var mode = presentationModeOf(v);
+    if (!mode || mode === lastPresentationMode) return;
+    var previous = lastPresentationMode;
+    lastPresentationMode = mode;
+    if (mode === 'picture-in-picture') report(!(v && v.paused), 'enter');
+    else if (previous === 'picture-in-picture') report(!(v && v.paused), 'leave');
+  }
+  document.addEventListener('enterpictureinpicture', function (event) {
+    var v = event.target;
+    lastPresentationMode = 'picture-in-picture';
+    report(!(v && v.paused), 'enter');
+  }, true);
+  document.addEventListener('leavepictureinpicture', function (event) {
+    var v = event.target;
+    lastPresentationMode = presentationModeOf(v);
+    report(!(v && v.paused), 'leave');
+  }, true);
+  document.addEventListener('webkitpresentationmodechanged', function (event) {
+    reportPresentationMode(event.target);
+  }, true);
 })();
 """
 
@@ -226,6 +249,8 @@ final class Tab {
     var perfMode = false         // 🚀 boost: no throttle, square corners
     var isPlaying = false        // media currently playing in this tab
     var mediaTitle = ""
+    var lastMediaPauseAt: Date?
+    var isInPiP = false
     var sleeping = false         // discarded to save memory; reloads on activate
     var sleptURL: String?        // URL to restore when woken
     var lastActive = Date()

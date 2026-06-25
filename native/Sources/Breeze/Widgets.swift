@@ -401,64 +401,58 @@ final class TabPlaceholderView: NSView {
     }
 }
 
-final class SelectableMessageTextView: NSTextView {
+final class SelectableMessageTextView: NSTextField {
     private var maxWidth: CGFloat
 
     init(maxWidth: CGFloat) {
         self.maxWidth = maxWidth
-        let storage = NSTextStorage()
-        let layout = NSLayoutManager()
-        let container = NSTextContainer(size: NSSize(width: maxWidth, height: .greatestFiniteMagnitude))
-        container.widthTracksTextView = false
-        container.lineFragmentPadding = 0
-        layout.addTextContainer(container)
-        storage.addLayoutManager(layout)
-        super.init(frame: .zero, textContainer: container)
+        super.init(frame: .zero)
         configure()
     }
 
-    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+    override init(frame frameRect: NSRect) {
         self.maxWidth = max(1, frameRect.width)
-        super.init(frame: frameRect, textContainer: container)
+        super.init(frame: frameRect)
         configure()
     }
 
     private func configure() {
         translatesAutoresizingMaskIntoConstraints = false
-        drawsBackground = false
         isEditable = false
         isSelectable = true
-        isRichText = true
-        textContainerInset = .zero
-        textContainer?.lineFragmentPadding = 0
-        textContainer?.widthTracksTextView = false
-        textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
-        textContainer?.lineBreakMode = .byWordWrapping
-        isVerticallyResizable = true
-        isHorizontallyResizable = false
+        isBordered = false
+        drawsBackground = false
+        focusRingType = .none
+        lineBreakMode = .byWordWrapping
+        maximumNumberOfLines = 0
+        cell?.wraps = true
+        cell?.isScrollable = false
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .vertical)
     }
 
     required init?(coder: NSCoder) { nil }
 
     var attributedString: NSAttributedString {
-        get { textStorage?.copy() as? NSAttributedString ?? NSAttributedString() }
+        get { attributedStringValue }
         set {
-            textStorage?.setAttributedString(newValue)
+            attributedStringValue = newValue
             invalidateIntrinsicContentSize()
         }
     }
 
     func updateMaxWidth(_ width: CGFloat) {
         maxWidth = max(1, width)
-        textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
+        preferredMaxLayoutWidth = maxWidth
         invalidateIntrinsicContentSize()
     }
 
     override var intrinsicContentSize: NSSize {
-        guard let layoutManager, let textContainer else { return NSSize(width: maxWidth, height: 0) }
-        layoutManager.ensureLayout(for: textContainer)
-        let used = layoutManager.usedRect(for: textContainer)
-        return NSSize(width: min(maxWidth, ceil(used.width)), height: ceil(used.height))
+        let rect = attributedStringValue.boundingRect(
+            with: NSSize(width: maxWidth, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return NSSize(width: maxWidth, height: max(ceil(rect.height), 18))
     }
 }
 

@@ -77,11 +77,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func windowClosed(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
-            guard browsers.count > 1 else { return }
             browsers.removeAll { $0.window === win }
         }
     }
-    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         .terminateNow
     }
@@ -101,9 +100,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let b = BrowserController(isPrivateWindow: true)
         browsers.append(b)
     }
-    @objc func newTab() { activeBrowser?.openNewTab() }
-    @objc func newChatTab() { activeBrowser?.newFullscreenChat() }
-    @objc func newPrivateTab() { activeBrowser?.openNewTab(isPrivate: true) }
+    @objc func newTab() { (activeBrowser ?? makeBrowser()).openNewTab() }
+    @objc func newChatTab() { (activeBrowser ?? makeBrowser()).newFullscreenChat() }
+    @objc func newPrivateTab() { (activeBrowser ?? makeBrowser()).openNewTab(isPrivate: true) }
     @objc func closeTab() { if let t = activeBrowser?.current { activeBrowser?.closeTab(t) } }
     @objc func focusAddr() {
         guard let b = activeBrowser else { return }
@@ -128,6 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openPasswords() { activeBrowser?.openInternal(.passwords) }
     @objc func openUpdates() { activeBrowser?.openInternal(.updates) }
     @objc func checkForUpdates() { Updater.shared.check(manual: true) }
+    private func makeBrowser() -> BrowserController {
+        let b = BrowserController(initialContent: .newTab)
+        browsers.append(b)
+        return b
+    }
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(AppDelegate.toggleAssistant) {
             if activeBrowser?.current?.isChatTab == true {

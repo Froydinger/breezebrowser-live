@@ -20,22 +20,38 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     static var sharedPins: [Pin] = []
     static var sharedGroups: [TabGroup] = []
     static var sharedNextGroupId = 1
+    private var privateTabs: [Tab] = []
+    private var privatePins: [Pin] = []
+    private var privateGroups: [TabGroup] = []
+    private var privateNextGroupId = 1
 
     var tabs: [Tab] {
-        get { BrowserController.sharedTabs }
-        set { BrowserController.sharedTabs = newValue }
+        get { isPrivateWindow ? privateTabs : BrowserController.sharedTabs }
+        set {
+            if isPrivateWindow { privateTabs = newValue }
+            else { BrowserController.sharedTabs = newValue }
+        }
     }
     var pins: [Pin] {
-        get { BrowserController.sharedPins }
-        set { BrowserController.sharedPins = newValue }
+        get { isPrivateWindow ? privatePins : BrowserController.sharedPins }
+        set {
+            if isPrivateWindow { privatePins = newValue }
+            else { BrowserController.sharedPins = newValue }
+        }
     }
     var groups: [TabGroup] {
-        get { BrowserController.sharedGroups }
-        set { BrowserController.sharedGroups = newValue }
+        get { isPrivateWindow ? privateGroups : BrowserController.sharedGroups }
+        set {
+            if isPrivateWindow { privateGroups = newValue }
+            else { BrowserController.sharedGroups = newValue }
+        }
     }
     var nextGroupId: Int {
-        get { BrowserController.sharedNextGroupId }
-        set { BrowserController.sharedNextGroupId = newValue }
+        get { isPrivateWindow ? privateNextGroupId : BrowserController.sharedNextGroupId }
+        set {
+            if isPrivateWindow { privateNextGroupId = newValue }
+            else { BrowserController.sharedNextGroupId = newValue }
+        }
     }
 
     let window: NSWindow
@@ -129,11 +145,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let adblockModeBtn = HoverButton(symbol: "shield.slash", size: 22, point: 11)
     let breezeCorner = NSButton()
     let findBar = NSView()
-    let findField = NSSearchField()
+    let findField = NSTextField()
     let findStatus = NSTextField(labelWithString: "")
     let findPrev = HoverButton(symbol: "chevron.up", size: 24, point: 11)
     let findNext = HoverButton(symbol: "chevron.down", size: 24, point: 11)
     let findClose = HoverButton(symbol: "xmark", size: 24, point: 10)
+    var findLastTerm = ""
+    var findOrdinal = 0
 
     // footer
     let adblockPill = NSView()
@@ -283,7 +301,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         alignTrafficLights()
 
         // load persisted state + apply settings
-        pins = Store.shared.pins
+        pins = isPrivateWindow ? [] : Store.shared.pins
         pinSize = PinSize(rawValue: Store.shared.string("pinSize")) ?? .large
         applyThemeFromSettings()
         renderPins()
@@ -585,8 +603,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         findField.placeholderString = "Find in page"
         findField.font = .systemFont(ofSize: 13)
         findField.isBordered = false
-        findField.drawsBackground = true
-        findField.backgroundColor = .clear
+        findField.drawsBackground = false
         findField.focusRingType = .none
         findField.textColor = Theme.shared.palette.text
         findField.delegate = self
@@ -623,7 +640,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
             controls.trailingAnchor.constraint(equalTo: findBar.trailingAnchor, constant: -8),
             controls.centerYAnchor.constraint(equalTo: findBar.centerYAnchor),
-            findStatus.widthAnchor.constraint(equalToConstant: 62),
+            findStatus.widthAnchor.constraint(equalToConstant: 76),
         ])
     }
 
@@ -650,6 +667,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc func closeFindBar() {
         findBar.isHidden = true
         findStatus.stringValue = ""
+        findLastTerm = ""
+        findOrdinal = 0
         if current?.isNewTab == false, let webView = current?.webView {
             window.makeFirstResponder(webView)
         }
@@ -664,14 +683,56 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let term = findField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else {
             findStatus.stringValue = ""
+            findLastTerm = ""
+            findOrdinal = 0
             return
+        }
+        if term != findLastTerm {
+            findLastTerm = term
+            findOrdinal = 0
         }
         let config = WKFindConfiguration()
         config.backwards = backwards
         config.wraps = true
         webView.find(term, configuration: config) { [weak self] result in
+            guard let self else { return }
+            self.countFindMatches(term, in: webView) { total in
+                DispatchQueue.main.async {
+                    guard self.findLastTerm == term else { return }
+                    if result.matchFound {
+                        if total > 0 {
+                            if backwards {
+                                self.findOrdinal = self.findOrdinal <= 1 ? total : self.findOrdinal - 1
+                            } else {
+                                self.findOrdinal = self.findOrdinal >= total ? 1 : self.findOrdinal + 1
+                            }
+                            self.findStatus.stringValue = "\(self.findOrdinal) of \(total)"
+                        } else {
+                            self.findStatus.stringValue = "1 of ?"
+                        }
+                    } else {
+                        self.findOrdinal = 0
+                        self.findStatus.stringValue = "No results"
+                    }
+                }
+            }
+        }
+    }
+
+    func countFindMatches(_ term: String, in webView: WKWebView, done: @escaping (Int) -> Void) {
+        let js = """
+        (function(q){
+          q = String(q || '').toLowerCase();
+          if (!q) return 0;
+          var text = (document.body && document.body.innerText ? document.body.innerText : document.documentElement.innerText || '').toLowerCase();
+          var count = 0, pos = 0;
+          while ((pos = text.indexOf(q, pos)) !== -1) { count++; pos += Math.max(q.length, 1); if (count > 9999) break; }
+          return count;
+        })('\(term.jsEscaped)');
+        """
+        webView.evaluateJavaScript(js) { value, _ in
             DispatchQueue.main.async {
-                self?.findStatus.stringValue = result.matchFound ? "" : "No match"
+                done(value as? Int ?? 0)
             }
         }
     }
@@ -711,7 +772,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.isHidden = true
             assistant.removeFromSuperview()
         }
-        webContainer.subviews.forEach { $0.removeFromSuperview() }
+        for subview in webContainer.subviews {
+            if let pipTab = tabs.first(where: { $0.isInPiP && $0.webView === subview }), pipTab.id != current?.id {
+                pipTab.webView.isHidden = true
+            } else {
+                subview.removeFromSuperview()
+            }
+        }
         splitLeftWidthC = nil
         guard let t = current else { return }
 
@@ -754,7 +821,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         let primary: NSView = t.isNewTab ? newTab : t.webView
-        if t.isNewTab { newTab.startClock() } else { newTab.stopClock() }
+        if t.isNewTab { newTab.startClock() } else { newTab.stopClock(); t.webView.isHidden = false }
 
         // If assistant was in a chat tab, re-attach it to root and restore sidebar constraints
         if assistant.superview == nil || assistant.superview == webContainer {
@@ -917,7 +984,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         var s = q
         let isURL = q.contains("://") || (q.contains(".") && !q.contains(" "))
         if isURL { if !q.contains("://") { s = "https://" + q } } else { s = searchURL(for: q) }
-        if let u = URL(string: s) { t.isNewTab = false; t.webView.load(URLRequest(url: u)) }
+        if let u = URL(string: s) { loadPreparedURL(u, in: t, focus: false) }
     }
 
     // MARK: - Split view ----------------------------------------------------
@@ -1530,11 +1597,27 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if isURL { if !q.contains("://") { s = "https://" + q } }
         else { s = searchURL(for: q) }
         guard let u = URL(string: s) else { return }
+        loadPreparedURL(u, in: t, focus: true)
+    }
+
+    func loadPreparedURL(_ url: URL, in t: Tab, focus: Bool) {
         t.isNewTab = false
         t.isChatTab = false
+        t.sleeping = false
+        t.sleptURL = nil
         showActive()
-        t.webView.load(URLRequest(url: u))
-        window.makeFirstResponder(t.webView)
+        t.webView.isHidden = false
+        webContainer.layoutSubtreeIfNeeded()
+        DispatchQueue.main.async { [weak self, weak t] in
+            guard let self, let t else { return }
+            if t.webView.superview == nil {
+                self.webContainer.addSubview(t.webView)
+                t.webView.pin(to: self.webContainer)
+            }
+            t.webView.isHidden = false
+            t.webView.load(URLRequest(url: url))
+            if focus { self.window.makeFirstResponder(t.webView) }
+        }
     }
 
     @objc func addressSubmit() {
@@ -3093,13 +3176,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
               let t = tabs.first(where: { $0.webView === wv }),
               let body = message.body as? [String: Any] else { return }
         let playing = body["playing"] as? Bool ?? false
+        let pipEvent = body["pip"] as? String
+        if pipEvent == nil && !playing {
+            t.lastMediaPauseAt = Date()
+        }
         t.isPlaying = playing
         if let title = body["title"] as? String, !title.isEmpty { t.mediaTitle = title }
-        if playing { nowPlayingTab = t }
-        if body["pip"] as? String == "leave",
-           let i = tabs.firstIndex(where: { $0.id == t.id }),
-           current?.id != t.id {
-            select(i)
+        if pipEvent == "enter" {
+            t.isInPiP = true
+            nowPlayingTab = t
+        } else if pipEvent == "leave" {
+            t.isInPiP = false
+            if current?.id != t.id { t.webView.removeFromSuperview() }
+        } else if playing {
+            nowPlayingTab = t
         }
         updateNowPlaying()
     }
@@ -3369,6 +3459,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         if image != nil {
             menu.addTargetedItem("Open Image in New Tab", #selector(openContextImageInNewTab), self)
+            menu.addTargetedItem("Copy Image", #selector(copyContextImage), self)
             menu.addTargetedItem("Download Image", #selector(downloadContextImage), self)
             menu.addTargetedItem("Copy Image Address", #selector(copyContextImageAddress), self)
             menu.addItem(.separator())
@@ -3449,6 +3540,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc func downloadContextImage() {
         guard let url = contextImageURL, let webView = current?.webView else { return }
         startExplicitDownload(url, in: webView)
+    }
+
+    @objc func copyContextImage() {
+        guard let url = contextImageURL else { return }
+        if url.isFileURL, let image = NSImage(contentsOf: url) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([image])
+            return
+        }
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            DispatchQueue.main.async {
+                if let data, let image = NSImage(data: data) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.writeObjects([image])
+                } else {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                }
+            }
+        }.resume()
     }
 
     @objc func copyContextImageAddress() {
@@ -3711,8 +3822,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "getAIImages":
             let items = Store.shared.images.map { item -> [String: Any] in
                 var copy = item
-                if let path = item["path"] as? String {
-                    copy["url"] = URL(fileURLWithPath: path).absoluteString
+                if let path = item["path"] as? String,
+                   let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                    copy["url"] = "data:image/png;base64,\(data.base64EncodedString())"
                 }
                 return copy
             }
@@ -3867,7 +3979,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func findBarBackgroundColor() -> NSColor {
         let p = Theme.shared.palette
-        return p.isDark ? p.surface.withAlphaComponent(0.96) : NSColor.white.withAlphaComponent(0.98)
+        return p.isDark ? NSColor(srgbRed: 0.10, green: 0.11, blue: 0.13, alpha: 0.98) : NSColor(srgbRed: 0.97, green: 0.99, blue: 1.0, alpha: 0.98)
     }
 
     func updateFindBarAppearance() {
@@ -3876,7 +3988,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         findBar.layer?.borderColor = p.textSoft.withAlphaComponent(p.isDark ? 0.28 : 0.22).cgColor
         findBar.layer?.shadowOpacity = p.isDark ? 0.34 : 0.18
         findField.textColor = p.text
-        findField.backgroundColor = .clear
+        findField.placeholderAttributedString = NSAttributedString(
+            string: "Find in page",
+            attributes: [.foregroundColor: p.textSoft.withAlphaComponent(0.72)]
+        )
         findStatus.textColor = p.textSoft
     }
 
@@ -4037,7 +4152,14 @@ extension BrowserController: AddressSuggestionsDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, (field === address || field === newTab.field) else { return }
+        guard let field = obj.object as? NSTextField else { return }
+        if field === findField {
+            findLastTerm = ""
+            findOrdinal = 0
+            performFind(backwards: false)
+            return
+        }
+        guard field === address || field === newTab.field else { return }
         if field === newTab.field { newTab.updateFieldHeight() }
         if suggestionsPopover.isInternalUpdate { return }
         
