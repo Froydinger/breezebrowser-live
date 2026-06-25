@@ -203,6 +203,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.1.2', icon: 'key-round', title: 'Shortcut & Settings Polish', major: false, items: [
+        '<b>Fullscreen Nav Fixed</b> — Moving Nav from the sidebar into fullscreen now reopens the chat layout cleanly so bubbles stay inside the page.',
+        '<b>New Tab Input Choice</b> — Settings now lets you choose whether plain new-tab text asks Nav or searches the web.',
+        '<b>Shortcut Cleanup</b> — New Tab no longer shows incorrect inline shortcut hints; its Shortcuts link opens the accurate Settings cheat sheet.',
+        '<b>Default Browser Registration</b> — Breeze now registers itself more reliably with macOS for HTTP and HTTPS default-browser selection.' ] },
       { v: '4.1.1', icon: 'download', title: 'Update Recovery Hotfix', major: false, items: [
         '<b>4.x Updates Restored</b> — Check for Updates now sees current native Breeze releases instead of looking only at the old v3 channel.',
         '<b>Manual Install Required Once</b> — If you are already on a 4.x build, install this update from the website once; future updates will work from inside Breeze again.',

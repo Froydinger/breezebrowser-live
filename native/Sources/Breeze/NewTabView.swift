@@ -163,12 +163,11 @@ final class NewTabView: NSView {
     private let logo = NSImageView()
     private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
-    private let hint = NSTextField(labelWithString: "Enter: ask Nav or open URL    Cmd-Enter: search web    Type \"search ...\" to force search")
     private let shortcutsButton = NSButton(title: "Shortcuts", target: nil, action: nil)
     let field = NSTextField()
     var onSubmit: ((String, Bool) -> Void)?
+    var onOpenShortcuts: (() -> Void)?
     private var timer: Timer?
-    private var shortcutsOpen = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -186,18 +185,11 @@ final class NewTabView: NSView {
         greeting.alignment = .center
         greeting.translatesAutoresizingMaskIntoConstraints = false
 
-        hint.font = .systemFont(ofSize: 11.5, weight: .medium)
-        hint.alignment = .center
-        hint.lineBreakMode = .byTruncatingTail
-        hint.translatesAutoresizingMaskIntoConstraints = false
-        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        hint.isHidden = true
-
         shortcutsButton.translatesAutoresizingMaskIntoConstraints = false
         shortcutsButton.isBordered = false
         shortcutsButton.font = .systemFont(ofSize: 11.5, weight: .semibold)
         shortcutsButton.target = self
-        shortcutsButton.action = #selector(toggleShortcuts)
+        shortcutsButton.action = #selector(openShortcuts)
 
         field.placeholderString = "Ask Breeze, or type a URL"
         field.font = .systemFont(ofSize: 16)
@@ -220,7 +212,7 @@ final class NewTabView: NSView {
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
 
-        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap); addSubview(shortcutsButton); addSubview(hint)
+        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap); addSubview(shortcutsButton)
         let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 560)
         widthC.priority = .defaultHigh
         let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
@@ -252,10 +244,6 @@ final class NewTabView: NSView {
 
             shortcutsButton.centerXAnchor.constraint(equalTo: centerXAnchor),
             shortcutsButton.topAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: 10),
-
-            hint.centerXAnchor.constraint(equalTo: centerXAnchor),
-            hint.topAnchor.constraint(equalTo: shortcutsButton.bottomAnchor, constant: 4),
-            hint.widthAnchor.constraint(lessThanOrEqualTo: fieldWrap.widthAnchor),
         ])
         self.fieldWrap = fieldWrap
         applyTheme(); tick()
@@ -297,14 +285,12 @@ final class NewTabView: NSView {
         greeting.appearance = appAppearance
         field.appearance = appAppearance
         fieldWrap.appearance = appAppearance
-        hint.appearance = appAppearance
 
         logo.image = breezeLogo()
         let clockColor = p.isDark ? p.text.withAlphaComponent(0.72) : p.text.withAlphaComponent(0.58)
         let softColor = p.isDark ? p.text.withAlphaComponent(0.62) : p.text.withAlphaComponent(0.68)
         clock.textColor = clockColor
         greeting.textColor = softColor
-        hint.textColor = p.text.withAlphaComponent(p.isDark ? 0.42 : 0.50)
         shortcutsButton.contentTintColor = p.text.withAlphaComponent(p.isDark ? 0.50 : 0.56)
         field.textColor = p.text
         field.placeholderAttributedString = NSAttributedString(
@@ -321,11 +307,7 @@ final class NewTabView: NSView {
         fieldWrap.layer?.shadowOffset = CGSize(width: 0, height: -6)
     }
 
-    @objc private func toggleShortcuts() {
-        shortcutsOpen.toggle()
-        hint.isHidden = !shortcutsOpen
-        shortcutsButton.title = shortcutsOpen ? "Hide Shortcuts" : "Shortcuts"
-    }
+    @objc private func openShortcuts() { onOpenShortcuts?() }
 
     func tick() {
         let now = Date()

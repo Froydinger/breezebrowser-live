@@ -30,6 +30,7 @@ final class Store {
         "accent": "#3aa6b9",
         "pinSize": "large",
         "searchEngine": "google",
+        "newTabInputMode": "ask",
         "clock24": false,
         "showGreeting": true,
         "urlBarPosition": "top",

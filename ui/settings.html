@@ -438,6 +438,16 @@
             <option value="brave">Brave</option>
           </select>
         </div>
+        <div class="row">
+          <div>
+            <div class="row-label">New tab input</div>
+            <div class="row-hint">Choose what plain text does when it is not clearly a URL</div>
+          </div>
+          <select id="newTabInputMode">
+            <option value="ask">Ask Nav</option>
+            <option value="search">Search the web</option>
+          </select>
+        </div>
       </div>
     </section>
 
@@ -726,7 +736,7 @@
         </details>
         <details>
           <summary>Shortcuts cheat-sheet</summary>
-          <p><b>⌘T</b> new tab · <b>⌘W</b> close · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⌘S</b> toggle sidebar · <b>⌘E</b> Nav · <b>⌘L</b> address bar · <b>⌘D</b> bookmark · <b>⌘Y</b> history · <b>⇧⌘J</b> downloads · <b>⌘⇧N</b> incognito · <b>⌥⌘P</b> picture-in-picture · <b>⇧⌘D</b> dark mode.</p>
+          <p><b>⌘T</b> new tab · <b>⇧⌘T</b> new chat · <b>⌥⌘T</b> private tab · <b>⇧⌘N</b> private window · <b>⌘W</b> close tab · <b>⌘L</b> address bar · <b>Shift-Enter</b> force web search from the address/new-tab field · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⇧⌘G</b> previous match · <b>⌘R</b> reload · <b>⌘[</b> back · <b>⌘]</b> forward · <b>⌘S</b> sidebar · <b>⌘E</b> Nav · <b>⇧⌘D</b> cycle theme · <b>⌘Y</b> history · <b>⌥⌘B</b> bookmarks · <b>⇧⌘J</b> downloads.</p>
         </details>
         <details>
           <summary>A site looks broken</summary>
@@ -814,6 +824,7 @@
       document.getElementById('clock24').checked = !!settings.clock24;
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
+      document.getElementById('newTabInputMode').value = settings.newTabInputMode || 'ask';
       const adMode = settings.adblockEnabled === false || settings.adblockMode === 'off'
         ? 'off'
         : ((settings.adblockMode === 'advanced' || settings.adblockMode === 'extreme') ? 'advanced' : 'on');
@@ -899,6 +910,7 @@
     document.getElementById('clock24').addEventListener('change', (e) => set('clock24', e.target.checked));
     document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
+    document.getElementById('newTabInputMode').addEventListener('change', (e) => set('newTabInputMode', e.target.value));
     document.getElementById('adblockModeSelect').addEventListener('change', (e) => {
       const mode = e.target.value;
       set('adblockEnabled', mode !== 'off');
@@ -1113,8 +1125,10 @@
     }
     refreshDefault();
     document.getElementById('make-default').addEventListener('click', () => {
-      breezeInternal.makeDefaultBrowser();
-      setTimeout(refreshDefault, 1500);
+      const btn = document.getElementById('make-default');
+      btn.disabled = true;
+      btn.textContent = 'Setting…';
+      breezeInternal.makeDefaultBrowser().then(refreshDefault);
     });
   </script>
 </body>

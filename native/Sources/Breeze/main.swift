@@ -2,6 +2,7 @@
 
 import Cocoa
 import Carbon
+import CoreServices
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var browsers: [BrowserController] = []
@@ -10,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browsers.first { $0.window.isKeyWindow } ?? browsers.first
     }
     func applicationDidFinishLaunching(_ n: Notification) {
+        LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),

@@ -547,6 +547,25 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         refreshExistingMessageWidths()
     }
 
+    func prepareForFullscreenReparent() {
+        isHidden = true
+        setFullscreen(false, clearLights: false)
+        layoutSubtreeIfNeeded()
+    }
+
+    func finishFullscreenReparent(clearLights: Bool = false) {
+        isHidden = false
+        setFullscreen(true, clearLights: clearLights)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.setFullscreen(true, clearLights: clearLights)
+            self.needsLayout = true
+            self.layoutSubtreeIfNeeded()
+        }
+    }
+
     private func updateMessageWidths(fullscreen: Bool? = nil) {
         let isFullscreen = fullscreen ?? headerView.isHidden
         messageMaxWidth = max(120, messageColumnWidth(fullscreen: isFullscreen) - (isFullscreen ? 64 : 28))

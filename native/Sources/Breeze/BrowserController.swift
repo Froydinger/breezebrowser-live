@@ -7,6 +7,7 @@ import WebKit
 import UserNotifications
 import CoreImage
 import QuartzCore
+import CoreServices
 
 let SIDEBAR_W: CGFloat = 286
 
@@ -748,6 +749,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layer?.masksToBounds = true
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
+        newTab.onOpenShortcuts = { [weak self] in self?.openInternal(.settings, fragment: "help") }
         newTab.field.delegate = self
     }
 
@@ -786,6 +788,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if t.isChatTab {
             newTab.stopClock()
             topBar.isHidden = false
+            assistant.prepareForFullscreenReparent()
             setSidebarHidden(true)
             
             sidebarTopC.isActive = false
@@ -811,9 +814,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             topTrailC.constant = -54
             root.layoutSubtreeIfNeeded()
             
-            assistant.isHidden = false
-            assistant.setFullscreen(true, clearLights: false)
             webContainer.addSubview(assistant); assistant.pin(to: webContainer)
+            webContainer.layoutSubtreeIfNeeded()
+            assistant.finishFullscreenReparent(clearLights: false)
             assistant.focusInput()
             syncChrome()
             scheduleReflow()
@@ -1674,12 +1677,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         let fromNewTab = (current?.isNewTab == true)
+        let newTabMode = Store.shared.string("newTabInputMode")
 
-        // The new-tab "Ask Breeze, or type a URL" bar is a chat starter: anything
-        // that isn't a URL (handled above) opens the full-window chat, which decides
-        // whether to answer directly or act agentically — and can search the web
-        // itself. The address bar on a page keeps normal browser behavior: a bare,
-        // search-term-looking query goes straight to Google. ⌘-Enter always searches.
+        // The new-tab "Ask Breeze, or type a URL" bar is a chat starter unless
+        // the user chooses "Search the web" in Settings. Shift-Enter always
+        // searches. The address bar on a page keeps normal browser behavior:
+        // bare search-term-looking input goes straight to the selected engine.
         if !fromNewTab, looksLikeSearchTerm(q) {
             navigate(searchURL(for: q))
             return
@@ -1688,11 +1691,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // Conversational / task input → AI. From the new-tab page, turn the current
         // tab into a full-window chat tab. From a web page's address bar, open the
         // side assistant so the page stays visible.
+        if fromNewTab && newTabMode == "search" {
+            navigate(searchURL(for: q))
+            return
+        }
+
         if fromNewTab, let t = current {
             t.isNewTab = false
             t.isChatTab = true
             t.title = "Nav Chat"
             if assistantOpen { setAssistant(false) }
+            assistant.prepareForFullscreenReparent()
             prepareAIStatus()
             newChat()
             showActive()
@@ -1883,6 +1892,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func toggleAssistantFullscreen() {
         // If there's already a chat tab, switch to it
         if let i = tabs.firstIndex(where: { $0.isChatTab }) {
+            assistant.prepareForFullscreenReparent()
             select(i)
             return
         }
@@ -1891,6 +1901,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         wire(t)
         tabs.append(t); active = tabs.count - 1
         // Close the sidebar assistant panel
+        assistant.prepareForFullscreenReparent()
         if assistantOpen { setAssistant(false) }
         prepareAIStatus()
         updateAIContextPills()
@@ -1903,12 +1914,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// previous chat is preserved in History → Breeze AI chats.
     func newFullscreenChat() {
         if let i = tabs.firstIndex(where: { $0.isChatTab }) {
+            assistant.prepareForFullscreenReparent()
             active = i
         } else {
             let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Nav Chat"
             wire(t)
             tabs.append(t); active = tabs.count - 1
         }
+        assistant.prepareForFullscreenReparent()
         if assistantOpen { setAssistant(false) }
         prepareAIStatus()
         newChat()                       // fresh, blank conversation
@@ -3654,17 +3667,28 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Internal pages ------------------------------------------------
 
-    func openInternal(_ page: InternalPage) {
+    func openInternal(_ page: InternalPage, fragment: String? = nil) {
         guard let url = page.fileURL() else { NSSound.beep(); return }
+        let targetURL: URL
+        if let fragment, var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            comps.fragment = fragment
+            targetURL = comps.url ?? url
+        } else {
+            targetURL = url
+        }
         // reuse an already-open internal tab for this page, else open a new one
         if let i = tabs.firstIndex(where: { $0.webView.url?.lastPathComponent == page.file }) {
-            select(i); return
+            select(i)
+            if let fragment {
+                tabs[i].webView.evaluateJavaScript("location.hash = \(("#" + fragment).debugDescription); window.dispatchEvent(new HashChangeEvent('hashchange'));", completionHandler: nil)
+            }
+            return
         }
         let t = Tab(); t.isNewTab = false; t.title = page.title
         wire(t)
         tabs.append(t); active = tabs.count - 1
         showActive(); renderTabs()
-        t.webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        t.webView.loadFileURL(targetURL, allowingReadAccessTo: url.deletingLastPathComponent())
     }
 
     func isInternal(_ wv: WKWebView) -> Bool { wv.url?.isFileURL ?? false }
@@ -3891,9 +3915,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             pins = []; renderPins(); applySettingsChange(); resolve("{}")
         case "makeDefaultBrowser":
             if let bid = Bundle.main.bundleIdentifier {
+                LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
                 LSSetDefaultHandlerForURLScheme("http" as CFString, bid as CFString)
                 LSSetDefaultHandlerForURLScheme("https" as CFString, bid as CFString)
+                resolve(isDefaultBrowser() ? "true" : "false")
             }
+        case "isDefaultBrowser":
+            resolve(isDefaultBrowser() ? "true" : "false")
         case "openSystemPasswords":
             if let url = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
                 NSWorkspace.shared.open(url)
@@ -3901,6 +3929,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         default:
             break
         }
+    }
+
+    private func isDefaultBrowser() -> Bool {
+        guard let bid = Bundle.main.bundleIdentifier else { return false }
+        let httpApp = URL(string: "http://example.com").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
+        let httpsApp = URL(string: "https://example.com").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
+        let httpId = httpApp.flatMap { Bundle(url: $0)?.bundleIdentifier }
+        let httpsId = httpsApp.flatMap { Bundle(url: $0)?.bundleIdentifier }
+        return httpId == bid && httpsId == bid
     }
 
     /// Chat ids are JS numbers (a Double timestamp); accept Double/Int/String.
