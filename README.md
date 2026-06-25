@@ -1,6 +1,6 @@
 # Breeze Browser
 
-Breeze is a fast native macOS browser built with Swift, AppKit, and WKWebView. Nav, its built-in assistant, talks to Breeze Cloud for GPT-5.4-mini chat plus gpt-image-2 image generation/editing without exposing an API key in the app.
+Breeze is a fast native macOS browser built with Swift, AppKit, and WKWebView. Nav, its built-in assistant, talks to Breeze Cloud for chat plus image generation/editing without exposing provider credentials in the app.
 
 Current release: **4.0.6** for Apple Silicon Macs.
 
@@ -42,8 +42,8 @@ open -n dist-test/BreezeTest.app --args --profile BreezeTest
 
 ## Features
 
-- **Nav** — GPT-5.4-mini chat, browser actions, reminders, image generation, and image edits through the Breeze Cloud Worker. Fair-use limits are 30 chat requests and 10 image generations/edits per day.
-- **Cloud key safety** — users do not bring or expose an OpenAI API key in the browser. Breeze talks to the Cloudflare Worker instead.
+- **Nav** — chat, browser actions, reminders, image generation, and image edits through the Breeze Cloud Worker. Fair-use limits are 30 chat requests and 10 image generations/edits per day.
+- **Cloud key safety** — users do not bring or expose provider credentials in the browser. Breeze talks to the Cloudflare Worker instead.
 - **Ad & tracker blocking** — EasyList content rules run in the network layer of every tab.
 - **Permissions** — websites can request microphone, camera, and location access through native WebKit permission prompts, with saved choices managed in Settings.
 - **Tab groups** — create, rename, disband, or delete groups. Command-clicking same-site links opens them in a grouped tab.

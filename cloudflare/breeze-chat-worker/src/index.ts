@@ -1,7 +1,10 @@
 interface Env {
-  OPENAI_API_KEY: string;
-  OPENAI_CHAT_MODEL: string;
-  OPENAI_IMAGE_MODEL: string;
+  AI_PROVIDER_API_KEY: string;
+  AI_CHAT_ENDPOINT: string;
+  AI_IMAGE_GENERATION_ENDPOINT: string;
+  AI_IMAGE_EDIT_ENDPOINT: string;
+  AI_CHAT_MODEL: string;
+  AI_IMAGE_MODEL: string;
   MAX_OUTPUT_TOKENS: string;
   CHAT_DAILY_LIMIT: string;
   IMAGE_DAILY_LIMIT: string;
@@ -92,6 +95,12 @@ function intEnv(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function requiredEnv(value: string | undefined, name: string) {
+  const trimmed = (value || "").trim();
+  if (!trimmed) throw new Error(`missing_${name}`);
+  return trimmed;
+}
+
 function clientIdFor(req: Request) {
   const explicit = req.headers.get("X-Breeze-Client-Id")?.trim();
   if (explicit) return explicit.slice(0, 128);
@@ -163,14 +172,25 @@ async function proxyChat(req: Request, env: Env) {
     configuredMax,
   );
 
-  const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+  let endpoint: string;
+  let providerKey: string;
+  let providerModel: string;
+  try {
+    endpoint = requiredEnv(env.AI_CHAT_ENDPOINT, "AI_CHAT_ENDPOINT");
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY, "AI_PROVIDER_API_KEY");
+    providerModel = requiredEnv(env.AI_CHAT_MODEL, "AI_CHAT_MODEL");
+  } catch {
+    return json({ error: "provider_not_configured" }, 500);
+  }
+
+  const upstream = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${providerKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: env.OPENAI_CHAT_MODEL || "gpt-5.4-mini",
+      model: providerModel,
       messages: body.messages,
       max_completion_tokens: maxCompletionTokens,
       reasoning_effort: "low",
@@ -195,14 +215,25 @@ async function proxyImageGeneration(req: Request, env: Env) {
   const { quotaResp, quota } = await checkQuota(req, env, "image");
   if (!quotaResp.ok) return json(quota, quotaResp.status);
 
-  const upstream = await fetch("https://api.openai.com/v1/images/generations", {
+  let endpoint: string;
+  let providerKey: string;
+  let providerModel: string;
+  try {
+    endpoint = requiredEnv(env.AI_IMAGE_GENERATION_ENDPOINT, "AI_IMAGE_GENERATION_ENDPOINT");
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY, "AI_PROVIDER_API_KEY");
+    providerModel = requiredEnv(env.AI_IMAGE_MODEL, "AI_IMAGE_MODEL");
+  } catch {
+    return json({ error: "provider_not_configured" }, 500);
+  }
+
+  const upstream = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${providerKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: env.OPENAI_IMAGE_MODEL || "gpt-image-2",
+      model: providerModel,
       prompt: body.prompt,
       n: 1,
       quality: "low",
@@ -232,7 +263,18 @@ async function proxyImageEdit(req: Request, env: Env) {
   if (!quotaResp.ok) return json(quota, quotaResp.status);
 
   const upstreamForm = new FormData();
-  upstreamForm.set("model", env.OPENAI_IMAGE_MODEL || "gpt-image-2");
+  let endpoint: string;
+  let providerKey: string;
+  let providerModel: string;
+  try {
+    endpoint = requiredEnv(env.AI_IMAGE_EDIT_ENDPOINT, "AI_IMAGE_EDIT_ENDPOINT");
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY, "AI_PROVIDER_API_KEY");
+    providerModel = requiredEnv(env.AI_IMAGE_MODEL, "AI_IMAGE_MODEL");
+  } catch {
+    return json({ error: "provider_not_configured" }, 500);
+  }
+
+  upstreamForm.set("model", providerModel);
   upstreamForm.set("prompt", prompt);
   upstreamForm.set("n", "1");
   upstreamForm.set("quality", "low");
@@ -242,9 +284,9 @@ async function proxyImageEdit(req: Request, env: Env) {
   const mask = form.get("mask");
   if (mask instanceof File) upstreamForm.set("mask", mask);
 
-  const upstream = await fetch("https://api.openai.com/v1/images/edits", {
+  const upstream = await fetch(endpoint, {
     method: "POST",
-    headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+    headers: { Authorization: `Bearer ${providerKey}` },
     body: upstreamForm,
   });
 

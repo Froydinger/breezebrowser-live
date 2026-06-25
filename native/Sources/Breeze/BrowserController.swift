@@ -101,7 +101,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var sidebarTopC: NSLayoutConstraint!
     var webContainerTopC: NSLayoutConstraint!
     var pinsTopC: NSLayoutConstraint!
-    lazy var llm = OpenAILLM(tools: self)    // Breeze Cloud backend: OpenAI via the Cloudflare Worker
+    lazy var llm = CloudLLM(tools: self)    // Breeze Cloud backend; provider routing lives server-side.
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     let remindersView = RemindersView()
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
@@ -1780,7 +1780,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func prepareAIStatus() {
         if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("Nav · GPT-5.4-mini. Ask anything, summarize pages, or make images.")
+            assistant.setModelStatus("Nav · Breeze Cloud. Ask anything, summarize pages, or make images.")
         } else {
             assistant.setInputEnabled(true, placeholder: "Nav is not configured in this build…")
             assistant.setModelStatus("Nav is not configured in this build.")
@@ -1844,7 +1844,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             prepareAIStatus()
             return
         }
-        ailog("sendToAI (gpt-5.4-mini): \(text)")
+        ailog("sendToAI (Breeze Cloud): \(text)")
         assistant.addUser(text)
         assistant.setInputEnabled(false, placeholder: "Thinking…")
         assistant.setStatus("Thinking…")
@@ -2003,7 +2003,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             prepareAIStatus()
             return
         }
-        ailog("sendToAIImage (gpt-image-2 low): \(text)")
+        ailog("sendToAIImage (Breeze Cloud image services low): \(text)")
         assistant.addUser(text)
         let bubble = assistant.addImageLoading()
         assistant.setInputEnabled(false, placeholder: "Making image…")

@@ -1,4 +1,4 @@
-// Agentic loop for the Breeze AI backend (Breeze Cloud / OpenAI gpt-5.4-mini).
+// Agentic loop for the Breeze AI backend (Breeze Cloud / AI provider Breeze Cloud).
 // The model drives the browser through a tiny text protocol: it replies with a
 // single ACTION line (OPEN/SEARCH/READ/REMIND), we run it against BrowserAITools,
 // feed the result back, and loop until the model gives a plain-language answer.

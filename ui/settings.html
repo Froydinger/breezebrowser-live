@@ -523,7 +523,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:16px">
             <div style="flex:1">
               <div class="row-label">Breeze Cloud</div>
-              <div class="row-hint">Nav is powered by <b>GPT-5.4-mini</b> through Breeze Cloud. Your app does not store or expose an OpenAI API key.</div>
+              <div class="row-hint">Nav is powered by <b>Breeze Cloud</b>. Your app does not store or expose a provider credential.</div>
             </div>
             <span id="aiCloudStatus" class="badge">Checking</span>
           </div>
@@ -715,7 +715,7 @@
       <div class="card" id="faq">
         <details>
           <summary>How does Nav work?</summary>
-          <p>Press <b>⌘E</b> to open it. It's powered by <b>GPT-5.4-mini</b> through Breeze Cloud. Ask it to "summarize this page," open a site, look something up on the web, make an image, or set a reminder, and it drives the browser to get it done.</p>
+          <p>Press <b>⌘E</b> to open it. It's powered by <b>Breeze Cloud</b> through Breeze Cloud. Ask it to "summarize this page," open a site, look something up on the web, make an image, or set a reminder, and it drives the browser to get it done.</p>
         </details>
         <details>
           <summary>Use the AI on selected text</summary>
@@ -743,7 +743,7 @@
         </details>
         <details>
           <summary>Privacy &amp; your data</summary>
-          <p>History, generated images, and saved passwords live on this Mac; passwords use your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Breeze does not store an OpenAI API key in the app. When you ask Nav for help, the prompt and relevant page/tab/image context are sent through Breeze Cloud to OpenAI, with daily fair-use limits.</p>
+          <p>History, generated images, and saved passwords live on this Mac; passwords use your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Breeze does not store a provider credential in the app. When you ask Nav for help, the prompt and relevant page/tab/image context are sent through Breeze Cloud to a supported AI service, with daily fair-use limits.</p>
         </details>
       </div>
     </section>
@@ -855,7 +855,7 @@
     }
 
     // ---- AI usage estimate ------------------------------------------------
-    // GPT-5.4-mini pricing (USD per 1M tokens). Local estimate only.
+    // Breeze Cloud pricing (USD per 1M tokens). Local estimate only.
     const AI_PRICE_IN = 0.75, AI_PRICE_OUT = 4.50;
     function fmtTokens(n) {
       if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';

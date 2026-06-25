@@ -268,8 +268,8 @@
         '<b>Update Persistence Clarified</b> — Breeze still uses WebKit&rsquo;s persistent default website data store, so normal app updates do not clear cookies, cache, or logins.' ] },
       { v: '3.8.0', icon: 'bot', title: 'Meet Nav, Breeze Cloud & Images', major: true, items: [
         '<b>Nav Replaces Breeze AI</b> — The assistant is now Nav, with a dedicated compass-style corner icon while new chat pages keep the Breeze mark.',
-        '<b>Breeze Cloud Included</b> — Nav now works out of the box through the Breeze Cloud Worker using GPT-5.4-mini. No BYOK setup, no OpenAI key stored in the app, and daily fair-use limits protect the shared cloud key.',
-        '<b>Image Generation &amp; Edits</b> — Use the paintbrush button to make images with gpt-image-2 at low quality, or attach images and ask Nav to edit them with page/tab context.',
+        '<b>Breeze Cloud Included</b> — Nav now works out of the box through the Breeze Cloud Worker using Breeze Cloud. No provider key setup setup, no AI provider key stored in the app, and daily fair-use limits protect the shared cloud key.',
+        '<b>Image Generation &amp; Edits</b> — Use the paintbrush button to make images with Breeze Cloud image services at low quality, or attach images and ask Nav to edit them with page/tab context.',
         '<b>Images in History</b> — Generated images now appear under History → Images, and every image bubble has a download button.',
         '<b>Softer Image Loading</b> — The image placeholder is now a quieter blurred glow instead of a full-volume rainbow square.' ] },
       { v: '3.7.6', icon: 'search-check', title: 'Find, Pin Menus & Teal Chrome', major: true, items: [
@@ -287,34 +287,34 @@
         '<b>New Chat Input Grows</b> — The center Ask bar now expands up to four wrapped lines before scrolling, so longer prompts stay readable instead of clipping awkwardly.',
         '<b>Still Your Preferences</b> — Your personal AI instructions still apply on top of Breeze’s default personality, so you can tune the vibe without fighting the app.' ] },
       { v: '3.7.3', icon: 'key-round', title: 'No Prompts, Just Breeze', major: true, items: [
-        '<b>No More OpenAI Key Prompts</b> — Your API key now lives in Breeze\'s owner-only local storage, so using the assistant never triggers a macOS password, Touch ID, or Keychain authorization interruption.',
+        '<b>No More AI provider Key Prompts</b> — Your provider credential now lives in Breeze\'s owner-only local storage, so using the assistant never triggers a macOS password, Touch ID, or Keychain authorization interruption.',
         '<b>Rounder Everywhere</b> — Inputs, URL bars, buttons, sidebar tabs, settings controls, assistant controls, and suggestion hovers now share a softer pill-shaped design.',
         '<b>Suggestions Land in the Right Place</b> — New-tab suggestions open beneath the Ask bar, URL suggestions stay attached to the toolbar, and each menu shrinks to exactly the number of results it contains.',
-        '<b>Still Secure on This Mac</b> — Breeze stores the key in a file readable only by your macOS user account and sends it only to OpenAI when you use Breeze AI.' ] },
+        '<b>Still Secure on This Mac</b> — Breeze stores the key in a file readable only by your macOS user account and sends it only to AI provider when you use Breeze AI.' ] },
       { v: '3.7.2', icon: 'zap', title: 'Reliable Downloads, Tabs & Windows', major: true, items: [
         '<b>Downloads Finish Reliably</b> — Breeze now keeps every download alive from the moment a site starts it until the file finishes, fixing silent failures on JavaScript-heavy sites and right-click downloads.',
         '<b>Links Open Where You Asked</b> — Command-click and “Open Link in New Tab” open tabs, while “Open Link in New Window” now creates a real window.',
         '<b>New Windows Are Ready Immediately</b> — File → New Window now opens with a complete new-tab page, including your pins and search, instead of going blank or crashing.',
         '<b>Chat Reminders No Longer Crash</b> — Reminders scheduled by Breeze AI now appear safely in the sidebar and persist across relaunches while the macOS notification remains scheduled.' ] },
       { v: '3.7.1', icon: 'zap', title: 'Usage Estimates & Readable Chat', major: true, items: [
-        '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost at GPT-5.4-mini pricing, with a link to your OpenAI dashboard for exact charges. Reset the counter anytime.',
+        '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost at provider pricing, with a link to your AI provider dashboard for exact charges. Reset the counter anytime.',
         '<b>Readable AI Replies in Light Mode</b> — Assistant responses now sit in a clean dark bubble with white text, so they\'re easy to read in light mode (and dark).',
         '<b>Clearer Key Button</b> — Fixed the "Manage key" button being hard to see on light accents in dark mode.' ] },
-      { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by GPT-5.4-mini (BYOK)', major: true, items: [
-        '<b>Bring Your Own Key</b> — Breeze AI now runs on OpenAI\'s GPT-5.4-mini using your own API key. Add it in Settings → Breeze AI; there\'s a link to create one in seconds at platform.openai.com.',
-        '<b>No More Local Model</b> — The on-device Llama engine and its multi-gigabyte download are gone. Breeze installs smaller and the assistant is far smarter and faster.',
+      { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by Breeze Cloud (provider key setup)', major: true, items: [
+        '<b>Bring Your Own Key</b> — Breeze AI now runs on AI provider\'s Breeze Cloud using your own provider credential. Add it in Settings → Breeze AI; there\'s a link to create one in seconds at platform.openai.com.',
+        '<b>No More Local Model</b> — The on-device the local AI engine engine and its multi-gigabyte download are gone. Breeze installs smaller and the assistant is far smarter and faster.',
         '<b>Fully Agentic Browsing</b> — Ask Breeze to open sites, search the web, read the current page, click, type, and set reminders — it drives the browser for you to finish the task.',
         '<b>Friendly Key Prompts</b> — Use an AI feature without a key and Breeze points you to Settings to add one. No key, no surprise charges.',
-        '<b>Your Key Stays Yours</b> — Stored in the macOS Keychain and sent only to OpenAI. Breeze never asks for your keychain password just to open Settings.' ] },
-      { v: '3.6.1', icon: 'bot', title: 'Llama-Only Local AI Selection', major: true, items: [
-        '<b>Stopped Reusing Old Qwen Files</b> — Breeze now only reuses Llama model files from Application Support, so an old Qwen gguf can no longer get picked up by accident.',
-        '<b>Consistent Llama Copy</b> — The assistant and settings now consistently refer to the local Llama 3.1 8B model, which matches what Breeze actually runs.' ] },
+        '<b>Your Key Stays Yours</b> — Stored in the macOS Keychain and sent only to AI provider. Breeze never asks for your keychain password just to open Settings.' ] },
+      { v: '3.6.1', icon: 'bot', title: 'the local AI engine-Only Local AI Selection', major: true, items: [
+        '<b>Stopped Reusing Old the local AI engine Files</b> — Breeze now only reuses the local AI engine model files from Application Support, so an old the local AI engine gguf can no longer get picked up by accident.',
+        '<b>Consistent the local AI engine Copy</b> — The assistant and settings now consistently refer to the local the local AI engine model, which matches what Breeze actually runs.' ] },
       { v: '3.6.0', icon: 'zap', title: 'Faster Local AI & Redownload Model', major: true, items: [
-        '<b>Snappier AI Assistant</b> — Tuned the on-device agent for Llama 3.1 8B so it processes far less text per step and replies noticeably faster.',
+        '<b>Snappier AI Assistant</b> — Tuned the on-device agent for the local AI engine so it processes far less text per step and replies noticeably faster.',
         '<b>Smarter Agent (No More Spinning)</b> — Breeze AI now detects when it’s stuck repeating itself and answers from what it has instead of looping, so multi-step tasks finish quicker.',
-        '<b>Redownload Model Button</b> — Added a Redownload option in Settings → Breeze AI to wipe and reinstall the local Llama model with one click if it ever gets corrupted.' ] },
-      { v: '3.5.9', icon: 'zap', title: 'Llama 3.1 8B, Reminder Crash & Link Handoff Fixes', major: true, items: [
-        '<b>Local Llama 3.1 8B Upgrade</b> — Upgraded the default local AI engine to Llama 3.1 8B for faster, smarter, and fully private local assistance.',
+        '<b>Redownload Model Button</b> — Added a Redownload option in Settings → Breeze AI to wipe and reinstall the local the local AI engine model with one click if it ever gets corrupted.' ] },
+      { v: '3.5.9', icon: 'zap', title: 'the local AI engine, Reminder Crash & Link Handoff Fixes', major: true, items: [
+        '<b>Local the local AI engine Upgrade</b> — Upgraded the default local AI engine to the local AI engine for faster, smarter, and fully private local assistance.',
         '<b>Fixed Reminders Crash</b> — Prevented launch crashes caused by past/near-instant reminder schedules by enforcing safe delay boundaries.',
         '<b>Seamless External Link Handling</b> — Links opened from external apps like iMessage, Slack, or Mail now correctly and instantly route into your Breeze browser windows.' ] },
       { v: '3.5.8', icon: 'zap', title: 'AI Sidebar Bleeding Fix & New Tab Suggestions', major: true, items: [
@@ -332,7 +332,7 @@
         '<b>Reminders Set From Chat</b> — "Remind me in 10 minutes to call mom" now consistently creates the reminder. (If nothing fires, allow notifications for Breeze in System Settings → Notifications.)',
         '<b>Chat Tab No Longer Clips</b> — Leaving a fullscreen chat tab to click another tab no longer leaves the assistant as a clipped strip on the right edge. The chat stays in its own tab; the panel only opens when you ask for it.' ] },
       { v: '3.5.4', icon: 'zap', title: 'The Real Speed Fix — Local AI No Longer Overthinks', major: true, items: [
-        '<b>Qwen Stops Overthinking Every Reply</b> — The local Qwen model is a "reasoning" model that secretly wrote a long internal monologue before <i>every</i> answer — even "hey" generated ~113 tokens, ~90 of them hidden thinking, which is why replies took ~10 seconds. Breeze now runs it in fast direct-answer mode, cutting that to ~16 tokens. Chat and agentic steps are dramatically faster.',
+        '<b>the local AI engine Stops Overthinking Every Reply</b> — The local the local AI engine model is a "reasoning" model that secretly wrote a long internal monologue before <i>every</i> answer — even "hey" generated ~113 tokens, ~90 of them hidden thinking, which is why replies took ~10 seconds. Breeze now runs it in fast direct-answer mode, cutting that to ~16 tokens. Chat and agentic steps are dramatically faster.',
         '<b>Snappier Throughout</b> — Combined with capped generation length and prompt caching, every message and every browser action the AI takes now returns much sooner.' ] },
       { v: '3.5.3', icon: 'zap', title: 'Instant AI Replies (No More 10-Second "Hi")', major: true, items: [
         '<b>Way Faster AI With a Page Open</b> — Every message used to deep-scan the entire page (every button, link, and element) before the AI could respond, so even saying "hi" took ~10 seconds on a heavy page like YouTube. Breeze now grabs just the page title and text for context, and only does the full scan when the AI actually needs to click or type. Quick replies are quick again.' ] },
@@ -345,15 +345,15 @@
         '<b>Native File & Media Picker</b> — Implemented the WebKit open panel delegate so that file upload buttons and media attach menus on websites work correctly.',
         '<b>Fast & Stable Local AI</b> — Fixed a critical context size bug by disabling the buggy llama-server Jinja template wrapper. Prompt evaluation is now snappy and reliable.',
         '<b>Smarter Context Window</b> — Expanded the context size to 8192 tokens and increased the page text limit, allowing the local model to read long transcript pages and detailed articles without losing context.' ] },
-      { v: '3.5.0', icon: 'zap', title: 'Qwen 8B Priority, Live Progress & Link Fixes', major: true, items: [
-        '<b>Local Download Progress Bar</b> — Added a visual progress bar inside Settings showing the local Qwen 8B model download percentage.',
-        '<b>Dark Mode Button Fix</b> — Restyled the Qwen download button to make sure it is fully visible and high-contrasted in Dark mode.',
-        '<b>Qwen 8B Priority Engine</b> — Swapped the default Local AI engine to Qwen 8B as the primary model and added direct download actions to Settings.',
-        '<b>Purged OpenAI Settings</b> — Removed all OpenAI BYOK inputs, selectors, and background keychain queries, eliminating the macOS system password prompts in Settings.',
+      { v: '3.5.0', icon: 'zap', title: 'the local AI engine Priority, Live Progress & Link Fixes', major: true, items: [
+        '<b>Local Download Progress Bar</b> — Added a visual progress bar inside Settings showing the local the local AI engine model download percentage.',
+        '<b>Dark Mode Button Fix</b> — Restyled the the local AI engine download button to make sure it is fully visible and high-contrasted in Dark mode.',
+        '<b>the local AI engine Priority Engine</b> — Swapped the default Local AI engine to the local AI engine as the primary model and added direct download actions to Settings.',
+        '<b>Purged AI Provider Settings</b> — Removed all AI provider key setup inputs, selectors, and background keychain queries, eliminating the macOS system password prompts in Settings.',
         '<b>Custom URI Redirect Handoff</b> — Intercepts and opens external URI schemes (like twitter://, mailto:, slack://) natively, preventing page hangs and redirect loops.',
         '<b>Robust URL Launches</b> — Solved the blank tab issue when opening local file paths or unescaped query links from Finder or other applications.' ] },
-      { v: '3.4.7', icon: 'cpu', title: 'Qwen 8B Engine, Contextual History & Sidebar Reminders', major: true, items: [
-        '<b>Upgraded to Qwen3-8B</b> — Swapped the primary AI engine to Qwen3-8B for vastly superior reasoning, logic, and browser interaction.',
+      { v: '3.4.7', icon: 'cpu', title: 'the local AI engine Engine, Contextual History & Sidebar Reminders', major: true, items: [
+        '<b>Upgraded to the local AI engine</b> — Swapped the primary AI engine to the local AI engine for vastly superior reasoning, logic, and browser interaction.',
         '<b>Persistent Context & Chat History</b> — The agent now fully retains chat history and tab contexts across turns so it never loses track of your follow-up requests.',
         '<b>Native Sidebar Reminders</b> — Active reminders now display directly in the sidebar, letting you view and cancel them instantly.',
         '<b>Streamlined Sidebar Footer</b> — Removed the adblock badge and aligned footer icons (Downloads, Saved, History, Theme, Settings) horizontally to make room for reminders and media players.' ] },
@@ -382,13 +382,13 @@
         '<b>Fluid Window Resizing</b> — Resizing windows is now completely seamless, matching the window background color directly to the active theme to avoid rendering glitches.',
         '<b>Fixed Settings Accent Color Crash</b> — Solved a crash that occurred when opening Settings by safely parsing the device RGB color space.' ] },
       { v: '3.2.0', icon: 'key-round', title: 'Keychain Storage, Custom Models, Vertical Rail, & Popup Fixes', major: true, items: [
-        '<b>Secure Keychain Storage</b> — Your OpenAI API key is now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
-        '<b>Custom OpenAI Models</b> — Choose from the latest GPT-5.4 family (gpt-5.4-mini default, nano, or full), or type in any custom model ID.',
+        '<b>Secure Keychain Storage</b> — Your AI provider credential is now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
+        '<b>Custom AI Provider Options</b> — Choose from the supported AI provider options, or type in any compatible provider route.',
         '<b>Vertical Sidebar Button Rail</b> — Footer navigation buttons are stacked vertically to free horizontal space so the now-playing player is never truncated.',
         '<b>Real Popup Windows for OAuth</b> — window.open popups (Google/GitHub/Lovable sign-in) open in a real native window sharing session state, resolving loops and login failures.',
         '<b>Legible Light Mode Chat</b> — Synced the materials and text rendering so AI replies and selection highlights are clear and high-contrast in light mode.' ] },
-      { v: '3.1.2', icon: 'plug', title: 'Use your own OpenAI key, working sign-in popups', items: [
-        '<b>Bring your own OpenAI key</b> — in Settings → AI you can switch Breeze AI to OpenAI for stronger multi-step tasks like filling out forms. Choose from three cheap, capable models. Your key is stored only on your Mac and calls OpenAI directly — there is no Breeze server, and you pay OpenAI for your own usage.',
+      { v: '3.1.2', icon: 'plug', title: 'Use your own AI provider key, working sign-in popups', items: [
+        '<b>Bring your own AI provider key</b> — in Settings → AI you can switch Breeze AI to AI provider for stronger multi-step tasks like filling out forms. Choose from three cheap, capable models. Your key is stored only on your Mac and calls AI provider directly — there is no Breeze server, and you pay AI provider for your own usage.',
         '<b>Sign-in popups work now</b> — “Continue with Google / Apple / GitHub” pop-up windows no longer get blocked, so OAuth logins actually complete.',
         '<b>Cleaner fullscreen</b> — the gap reserved for the traffic-light buttons is reclaimed in fullscreen, where they only appear when you hover.' ] },
       { v: '3.1.1', icon: 'wrench', title: 'Agent fixes — cleaner, smarter, finishes the job', items: [
@@ -440,7 +440,7 @@
         'Long URLs now truncate cleanly in the address bar, pages always load at 100% zoom, and auto-update is built in.' ] },
       { v: '3.0.0', icon: 'shapes', title: 'Breeze goes native', major: true, items: [
         'Breeze is now a <b>native Mac app built on Apple’s WebKit</b> — no more Chromium. That means DRM video (Netflix &amp; co.), real passkeys, lower memory, and better battery.',
-        'Breeze AI now runs on <b>Apple Foundation Models</b> (the on-device intelligence behind Apple Intelligence), with a local Qwen model as automatic backup. Nothing leaves your Mac.',
+        'Breeze AI now runs on <b>on-device system intelligence</b> (the on-device intelligence behind Apple Intelligence), with a local the local AI engine model as automatic backup. Nothing leaves your Mac.',
         '<b>First install note:</b> because Breeze is independently signed (not paid Apple notarization), macOS shows an “unverified” warning the first time. Open <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>“Open Anyway”</b> next to Breeze. You only do this once.' ] },
       { v: '2.10.1', icon: 'shapes', title: 'Mac only, from here on', major: true, items: [
         'Breeze is now a <b>macOS-only</b> app (Apple Silicon). The Windows build has been retired so we can focus everything on the best possible Mac experience.',
@@ -479,15 +479,15 @@
       { v: '2.9.1', major: true, icon: 'book-open', title: 'Find the changelog anytime', items: [
         '<b>What\'s New in Settings</b> — jump to this page from <b>Settings → Help &amp; FAQ</b> whenever you like, not just after an update.',
         '<b>A bit of life</b> — the featured update up top now stands out at a glance.' ] },
-      { v: '2.9.0', major: true, icon: 'check-check', title: 'Snappier, calmer, all-Qwen', items: [
-        '<b>One brain family, two sizes</b> — both the fast and smart models are now Qwen2.5 (3B and 7B). Rock-solid at tools, no more stalls.',
+      { v: '2.9.0', major: true, icon: 'check-check', title: 'Snappier, calmer, all-the local AI engine', items: [
+        '<b>One brain family, two sizes</b> — both the fast and smart models are now the local AI engine (3B and 7B). Rock-solid at tools, no more stalls.',
         '<b>No more crash-report popup on quit</b> — ⌘Q, Finder → Quit, and updates now exit cleanly.',
         '<b>This changelog got fancy</b> — the latest release now gets the spotlight up top. 👋' ] },
       { v: '2.8.0', major: true, icon: 'newspaper', title: 'This very page', items: [
         'Updates now open to a <b>changelog page you can revisit</b> — not a popup that vanishes. Visit it anytime by typing <b>/updates</b> or via <b>Help → What\'s New</b>.',
         'Backfilled the full history so you can see where Breeze started and how far it\'s come.' ] },
       { v: '2.7.0', major: true, icon: 'cpu', title: 'Pick your AI brain', items: [
-        'Breeze now matches the AI model to your device — a smart <b>Qwen2.5 7B</b> for powerful Macs, or a fast, light <b>Qwen2.5 3B</b> for everything else.',
+        'Breeze now matches the AI model to your device — a smart <b>the larger local model</b> for powerful Macs, or a fast, light <b>the smaller local model</b> for everything else.',
         'A friendly picker recommends the best fit for your machine after each big update — your choice, always.',
         'Switch models anytime in <b>Settings → AI</b>.' ] },
       { v: '2.6.0', major: true, icon: 'graduation-cap', title: 'A smarter, more capable assistant', items: [
@@ -507,7 +507,7 @@
       { v: '2.3.9', icon: 'history', title: 'Reopen your tabs', items: [
         'Breeze can restore the tabs you had open when you quit — ask each time, always, or never.' ] },
       { v: '2.3.0', major: true, icon: 'bot', title: 'On-device AI, reimagined', items: [
-        'Switched to <b>Qwen2.5</b> with agentic web search — the assistant opens a real search, reads the results, and cites sources, all locally.',
+        'Switched to <b>the local AI engine</b> with agentic web search — the assistant opens a real search, reads the results, and cites sources, all locally.',
         'Reminders, split-view URL bars, and a more reliable assistant.' ] },
       { v: '2.2.0', icon: 'bell', title: 'Updates, notifications & passwords', items: [
         'Manual "Check for Updates", website notifications with per-site control, password capture & autofill, and proper code signing.' ] },

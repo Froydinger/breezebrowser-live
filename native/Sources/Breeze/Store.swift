@@ -52,7 +52,7 @@ final class Store {
         // Kept for settings compatibility with older profiles; Breeze Cloud readiness
         // is derived from the build configuration, not a local key.
         "aiKeyConnected": false,
-        // Cumulative OpenAI token usage (this Mac), for an estimated-cost readout.
+        // Cumulative AI provider token usage (this Mac), for an estimated-cost readout.
         "aiUsageInput": 0,
         "aiUsageOutput": 0,
         "aiUsageSince": 0,
@@ -108,8 +108,8 @@ final class Store {
         openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
 
-        // Remove any very old plaintext OpenAI key setting. Breeze Cloud no longer
-        // uses BYOK, so this should not be retained in settings JSON.
+        // Remove any very old plaintext AI provider key setting. Breeze Cloud no longer
+        // uses provider key setup, so this should not be retained in settings JSON.
         if let key = settings["openaiKey"] as? String, !key.isEmpty {
             settings.removeValue(forKey: "openaiKey")
             settings["aiKeyConnected"] = false
@@ -207,7 +207,7 @@ final class Store {
     func bool(_ key: String) -> Bool { settings[key] as? Bool ?? false }
     func int(_ key: String) -> Int { settings[key] as? Int ?? 0 }
 
-    // MARK: - AI usage accounting (local estimate; exact billing lives on OpenAI)
+    // MARK: - AI usage accounting (local estimate; exact billing lives on AI provider)
 
     /// Add a request's token counts to the running totals (call on the main thread).
     func addAIUsage(input: Int, output: Int) {

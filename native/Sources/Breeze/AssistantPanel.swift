@@ -225,7 +225,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let h = NSTextField(labelWithString: "Nav")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
         h.translatesAutoresizingMaskIntoConstraints = false
-        let p = NSTextField(labelWithString: "Powered by GPT-5.4-mini.\nReads pages, searches the web, makes images, and acts for you.")
+        let p = NSTextField(labelWithString: "Powered by Breeze Cloud.\nReads pages, searches the web, makes images, and acts for you.")
         p.font = .systemFont(ofSize: 12.5); p.alignment = .center; p.maximumNumberOfLines = 3
         p.textColor = Theme.shared.palette.textSoft
         p.translatesAutoresizingMaskIntoConstraints = false

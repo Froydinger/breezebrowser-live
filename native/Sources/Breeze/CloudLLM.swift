@@ -1,16 +1,15 @@
-// Breeze Cloud backend. The app talks to a Cloudflare Worker, which holds the
-// OpenAI key server-side and enforces daily chat/image quotas.
+// Breeze Cloud backend. Provider selection lives server-side so the app does
+// not expose model IDs or provider credentials.
 
 import AppKit
 import Foundation
 
-final class OpenAILLM: NSObject {
+final class CloudLLM: NSObject {
     weak var browser: (any BrowserAITools)?
     var onStatus: ((String) -> Void)?
 
-    private let model = "gpt-5.4-mini"
-    private let cloudBaseURL = OpenAILLM.configuredURL("BREEZE_CLOUD_AI_BASE_URL", plistKey: "BreezeCloudAIBaseURL")
-    private let cloudClientToken = OpenAILLM.configuredString("BREEZE_CLOUD_CLIENT_TOKEN", plistKey: "BreezeCloudClientToken")
+    private let cloudBaseURL = CloudLLM.configuredURL("BREEZE_CLOUD_AI_BASE_URL", plistKey: "BreezeCloudAIBaseURL")
+    private let cloudClientToken = CloudLLM.configuredString("BREEZE_CLOUD_CLIENT_TOKEN", plistKey: "BreezeCloudClientToken")
 
     private(set) var lastStatus = ""
 
@@ -94,7 +93,7 @@ final class OpenAILLM: NSObject {
         applyAuth(to: &req, requestID: requestID)
         req.timeoutInterval = 120
 
-        var body: [String: Any] = ["model": model, "messages": history]
+        var body: [String: Any] = ["messages": history]
         if !minimal {
             body["max_completion_tokens"] = 2000
             body["reasoning_effort"] = "low"
@@ -103,7 +102,7 @@ final class OpenAILLM: NSObject {
 
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else {
-            throw Self.error("No response from OpenAI.")
+            throw Self.error("No response from Breeze Cloud.")
         }
         if http.statusCode == 400 && !minimal {
             return try await complete(history: history, minimal: true, requestID: requestID)
@@ -115,7 +114,7 @@ final class OpenAILLM: NSObject {
               let choices = json["choices"] as? [[String: Any]],
               let msg = choices.first?["message"] as? [String: Any],
               let content = msg["content"] as? String else {
-            throw Self.error("Unexpected response from OpenAI.")
+            throw Self.error("Unexpected response from Breeze Cloud.")
         }
         if let usage = json["usage"] as? [String: Any] {
             let inTok = usage["prompt_tokens"] as? Int ?? 0
@@ -163,7 +162,6 @@ final class OpenAILLM: NSObject {
         applyAuth(to: &req, requestID: requestID)
         req.timeoutInterval = 240
         req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": "gpt-image-2",
             "prompt": prompt,
             "quality": "low",
             "size": "1024x1024",
@@ -186,7 +184,6 @@ final class OpenAILLM: NSObject {
             MultipartFile(field: "image", filename: $0.filename, mime: "image/png", data: $0.data)
         }
         let multipart = makeMultipart(fields: [
-            "model": "gpt-image-2",
             "prompt": prompt,
             "quality": "low",
             "size": "1024x1024",
@@ -201,7 +198,7 @@ final class OpenAILLM: NSObject {
     private func decodeImageResponse(_ req: URLRequest) async throws -> NSImage {
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse else {
-            throw Self.error("No response from OpenAI.")
+            throw Self.error("No response from Breeze Cloud.")
         }
         guard http.statusCode == 200 else {
             throw Self.error(Self.friendlyError(status: http.statusCode, data: data))
@@ -220,7 +217,7 @@ final class OpenAILLM: NSObject {
             let (imageData, _) = try await URLSession.shared.data(from: url)
             if let image = NSImage(data: imageData) { return image }
         }
-        throw Self.error("OpenAI returned no image data.")
+        throw Self.error("Breeze Cloud returned no image data.")
     }
 
     private func imagePrompt(userPrompt: String, contexts: [AIContext]) -> String {
@@ -287,7 +284,7 @@ final class OpenAILLM: NSObject {
         if status == 429 {
             return apiMessage.isEmpty ? "Daily AI limit reached. Try again tomorrow." : apiMessage
         }
-        return apiMessage.isEmpty ? "OpenAI request failed (HTTP \(status))." : apiMessage
+        return apiMessage.isEmpty ? "Breeze Cloud request failed (HTTP \(status))." : apiMessage
     }
 
     private static func error(_ message: String) -> NSError {
