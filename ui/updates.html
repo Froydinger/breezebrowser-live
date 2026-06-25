@@ -203,339 +203,72 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
-      { v: '4.1.0', icon: 'shapes', title: 'Window, PiP & Chat Polish', major: true, items: [
-        '<b>Nav Bubbles Fixed</b> — Short messages render as true rounded pills, while long replies wrap cleanly instead of clipping.',
+      { v: '4.1.0', icon: 'shapes', title: 'Cruise Control', major: true, items: [
+        '<b>Nav Chat Rebuilt</b> — Message bubbles now measure and draw themselves, so short replies stay pill-shaped and long replies wrap without clipping.',
+        '<b>PiP Behaves</b> — Closing Picture-in-Picture just closes PiP, while returning to the source tab is handled separately.',
         '<b>Find Bar Upgrade</b> — Command-F now uses a clearer high-contrast field with live result counts.',
         '<b>Private Windows Stay Private</b> — Incognito windows open blank and separate from normal synced tabs and pins.',
-        '<b>Generated Images Restored</b> — Images in History now render correctly and can still be downloaded.',
-        '<b>PiP Return Cleanup</b> — Picture-in-Picture close and return behavior is less jumpy, while the Now Playing controls stay reliable.',
-        '<b>Copy Image</b> — Right-click image menus now include Copy Image, alongside download and copy address.' ] },
-      { v: '4.0.8', icon: 'shapes', title: 'Nav Bubble Polish', major: true, items: [
+        '<b>Generated Images Restored</b> — Images in History render correctly again, with download support still in place.',
+        '<b>Copy Image</b> — Right-click image menus now include Copy Image alongside download and copy address.' ] },
+      { v: '4.0.8', icon: 'shapes', title: 'Nav Bubble Polish', major: false, items: [
         '<b>Rounder Nav Bubbles</b> — Chat bubbles now size to the message instead of turning short prompts into giant bars.',
         '<b>Fullscreen Wrapping Fixed</b> — Long Nav replies wrap inside the bubble instead of clipping off the right edge.',
         '<b>Cleaner Chat Shape</b> — User and Nav messages use softer, more native-feeling rounded bubbles across sidebar and fullscreen chat.' ] },
-      { v: '4.0.7', icon: 'shield-check', title: 'Download & Browser Polish', major: true, items: [
+      { v: '4.0.7', icon: 'download', title: 'Download Reliability', major: false, items: [
         '<b>Google Drive Large Downloads</b> — Large Google Drive files now download instead of opening a failed plug-in page.',
-        '<b>Tab Close Button Fix</b> — Tab close buttons are now more reliable across Macs, while Command-W and right-click close continue to work as expected.',
-        '<b>Install Instructions Included</b> — The download now includes a READ THIS FIRST file with temporary macOS install steps while Breeze developer signing is being finalized.',
-        '<b>Smarter Native Ad Blocking</b> — Breeze now uses a simpler Off, On, and Advanced blocking model. On mode is safer and smarter by default, while Advanced adds stronger filtering for users who want extra blocking and do not mind occasional site breakage.',
-        '<b>Better Apple Autofill Access</b> — Right-click menus in supported login fields now better preserve native Apple password and passkey autofill options when WebKit makes them available.',
-        '<b>Better Media Downloads</b> — Download links and right-click media downloads now save images, videos, and direct media files instead of opening failed media pages.',
-        '<b>Cleaner Nav Bubbles</b> — Fullscreen Nav chats now wrap long replies correctly, with calmer bubbles that scale across sidebar and fullscreen chat.' ] },
-      { v: '4.0.6', icon: 'sparkles', title: 'A Living What’s New', major: true, items: [
+        '<b>Better Media Downloads</b> — Download links and right-click media downloads save images, videos, and direct media files instead of opening failed media pages.',
+        '<b>Smarter Native Ad Blocking</b> — Breeze now uses a simpler Off, On, and Advanced blocking model, with safer defaults and a stronger optional mode.',
+        '<b>Better Apple Autofill Access</b> — Right-click menus in supported login fields better preserve native Apple password and passkey autofill options.' ] },
+      { v: '4.0.6', icon: 'sparkles', title: 'A Living What’s New', major: false, items: [
         '<b>Lander-Inspired Release Notes</b> — What’s New now uses the same airy editorial design language as the Breeze site.',
         '<b>Living Update Screen</b> — Soft looping shimmer, floating marks, and ambient motion make the page feel alive when you revisit it.',
         '<b>Less Scrolling</b> — Recent updates stay visible, while older releases collapse behind an Older Releases section.' ] },
-      { v: '4.0.5', icon: 'zap', title: 'Tab Cleanup & Refresh Polish', major: true, items: [
+      { v: '4.0.5', icon: 'zap', title: 'Tab Cleanup & Refresh Polish', major: false, items: [
         '<b>Close Other Tabs</b> — Keep the selected tab open while closing every other open tab, including open pinned app tabs while leaving the pins themselves in place.',
-        '<b>Pinned Apps Stay Awake</b> — A new Settings toggle keeps pinned app tabs from being put to sleep by default, with control for users who want different behavior.',
+        '<b>Pinned Apps Stay Awake</b> — A Settings toggle keeps pinned app tabs from being put to sleep by default, with control for users who want different behavior.',
         '<b>Cleaner Refresh Spin</b> — The reload icon now rotates around its own center for a smoother, more native-feeling refresh animation.' ] },
-      { v: '4.0.4', icon: 'panel-left', title: 'Sidebar Drag & Shortcut Polish', major: true, items: [
+      { v: '4.0.4', icon: 'panel-left', title: 'Sidebar Drag & Shortcut Polish', major: false, items: [
         '<b>Drag the Sidebar Around</b> — Reorder pinned apps, tabs, and tab folders directly in the sidebar, including moving tabs between folders.',
         '<b>Split Tabs Stay Together</b> — Dragging split-view tabs preserves the split relationship while letting you rearrange their place in the list.',
-        '<b>Backspace Stays Safe</b> — Pressing Backspace in web text fields now edits text instead of unexpectedly navigating back.',
-        '<b>Cleaner New Tab</b> — New-tab keyboard hints now live behind a compact Shortcuts toggle instead of sitting open under the input bar.' ] },
-      { v: '4.0.3', icon: 'shield-check', title: 'Privacy & Playback Polish', major: true, items: [
-        '<b>Privacy by Choice</b> — Nav still understands the current page, while chat history, browsing history, bookmarks, and other open tabs are now controllable in Settings.',
-        '<b>Cleaner New-Tab Shortcut Hints</b> — The new-tab input now shows how to ask Nav, force web search, or type an explicit search.',
-        '<b>Subtler Plus Divider</b> — The sidebar new-tab divider uses lighter line art with shorter rails and a drawn plus, avoiding the heavy default button look.',
+        '<b>Backspace Stays Safe</b> — Pressing Backspace in web text fields edits text instead of unexpectedly navigating back.',
+        '<b>Cleaner New Tab</b> — New-tab keyboard hints now live behind a compact Shortcuts toggle.' ] },
+      { v: '4.0.3', icon: 'shield-check', title: 'Privacy & Playback Polish', major: false, items: [
+        '<b>Privacy by Choice</b> — Nav still understands the current page, while chat history, browsing history, bookmarks, and other open tabs are controllable in Settings.',
+        '<b>Subtler Plus Divider</b> — The sidebar new-tab divider uses lighter line art with shorter rails and a drawn plus.',
         '<b>Picture-in-Picture Return Fix</b> — Closing or returning from PiP brings the source media tab forward again.',
-        '<b>Quieter Quit</b> — Breeze no longer waits on background adblock compilation during app termination, avoiding scary quit-time crash reports.',
-        '<b>Stronger Normal Ad Blocking</b> — Normal mode now includes additional high-confidence ad-network blocks while keeping broad cosmetic hiding in Extreme mode.' ] },
-      { v: '4.0.2', icon: 'sparkles', title: 'New Tab Hotfix', major: true, items: [
-        '<b>New Tab Center Restored</b> — The clock, greeting, and input bar now keep the right light/dark contrast instead of disappearing into light backgrounds.',
-        '<b>Clean Plus Divider</b> — The sidebar new-tab divider no longer leaks the default system button title, and now stays compact and subtle.',
-        '<b>Search Hint</b> — The new-tab input shows Enter vs. Shift-Enter hints so explicit web searches are easier to discover.',
-        '<b>Quieter Recovery</b> — Transient WebKit frame interruptions and fast quit-after-launch cleanup no longer surface scary error screens.' ] },
-      { v: '4.0.1', icon: 'shield-check', title: 'Sharper Browsing Controls', major: true, items: [
+        '<b>Quieter Quit</b> — Breeze no longer waits on background adblock compilation during app termination, avoiding scary quit-time crash reports.' ] },
+      { v: '4.0.2', icon: 'sparkles', title: 'New Tab Hotfix', major: false, items: [
+        '<b>New Tab Center Restored</b> — The clock, greeting, and input bar keep the right light/dark contrast instead of disappearing into light backgrounds.',
+        '<b>Clean Plus Divider</b> — The sidebar new-tab divider no longer leaks the default system button title, and stays compact and subtle.',
+        '<b>Search Hint</b> — The new-tab input shows Enter vs. Shift-Enter hints so explicit web searches are easier to discover.' ] },
+      { v: '4.0.1', icon: 'shield-check', title: 'Sharper Browsing Controls', major: false, items: [
         '<b>Optional Extreme Ad Blocking</b> — Normal mode stays compatibility-first, and Extreme mode can push harder on ad-heavy sites.',
-        '<b>Per-Site Escape Hatch</b> — When Extreme mode is on, a small shield appears in the URL bar so you can turn it off for the current site if something breaks.',
+        '<b>Per-Site Escape Hatch</b> — When Extreme mode is on, a shield in the URL bar lets you turn it off for the current site.',
         '<b>Shift-Enter Searches</b> — Press Shift-Enter in the address or new-tab field to send the text straight to Google.',
-        '<b>More Room for Tab Titles</b> — Sidebar tab names keep the close button out of the way until hover, so titles ellipsize later.',
-        '<b>Cleaner New Tab Divider</b> — The plus divider is drawn as a single connected control instead of text dashes.' ] },
-      { v: '4.0.0', icon: 'search-check', title: 'Nav Research Summaries', major: true, items: [
-        '<b>Research Summary Pages</b> — Research-style Nav tasks now finish on a polished Breeze summary page instead of leaving you on a stray final search tab.',
-        '<b>Sources Included</b> — Summary pages collect the useful links Nav found into a clean sources grid.',
+        '<b>More Room for Tab Titles</b> — Sidebar tab names keep the close button out of the way until hover, so titles ellipsize later.' ] },
+      { v: '4.0.0', icon: 'search-check', title: 'Full Speed Ahead', major: true, items: [
+        '<b>Modern Breeze Begins</b> — Breeze 4 starts the current native, AI-forward, privacy-focused generation of the browser.',
+        '<b>Research Summary Pages</b> — Research-style Nav tasks finish on a polished Breeze summary page with useful sources collected below.',
         '<b>Smarter Form Filling</b> — Nav can type into more modern fields, including React-style inputs, ARIA text boxes, and rich text editors.',
-        '<b>Better Agent Clicks</b> — Agent clicks now send fuller mouse events so custom web-app buttons respond more reliably.',
+        '<b>Better Agent Clicks</b> — Agent clicks send fuller mouse events so custom web-app buttons respond more reliably.',
         '<b>Bigger Chat Text</b> — User and Nav chat bubbles use larger text for easier reading.' ] },
-      { v: '3.8.6', icon: 'panel-left', title: 'Sidebar & Nav Polish', major: true, items: [
-        '<b>Wider Default Sidebar</b> — The default sidebar now gives pinned apps room for four columns, while the skinny three-column layout remains available by resizing.',
-        '<b>Later Tab Truncation</b> — Tab titles get more room before ellipsizing in the default layout.',
-        '<b>Cleaner Nav Context Chips</b> — Context and response chips are compact, horizontally scrollable, and use native symbols instead of emoji.',
-        '<b>Better Accent Match</b> — User chat bubbles use the selected tint directly for a closer match.',
-        '<b>Refresh Spins In Place</b> — The reload symbol now rotates around the glyph center instead of orbiting around the button.' ] },
-      { v: '3.8.4', icon: 'sparkles', title: 'New Breeze & Nav Icons', major: true, items: [
-        '<b>New Breeze Mark</b> — Breeze now uses the refreshed dimensional B-heart icon throughout the app.',
-        '<b>New Nav Mark</b> — Nav gets its own cleaner navigator icon, while new tab pages keep the Breeze mark.',
-        '<b>Teal by Default</b> — Fresh profiles and white/blank legacy accent values now resolve to Breeze teal by default.',
-        '<b>Assistant Contrast Fixes</b> — Empty-state quick prompts stay white with dark text in dark mode, and selecting AI message text no longer strips the bubble formatting.',
-        '<b>Smarter Groups</b> — Group headers now support rename, disband, and delete, and Command-clicking same-site links opens them in a group automatically.',
-        '<b>Page Zoom Shortcuts</b> — Command-Plus, Command-Minus, and Command-0 now zoom pages like a proper power-user browser.',
-        '<b>Modern Site Compatibility</b> — Breeze now presents a newer Safari-compatible identity and shows a polished recovery page for real navigation failures.',
-        '<b>Refresh Feels Alive</b> — The refresh icon now spins when you reload from the toolbar or page menu.' ] },
-      { v: '3.8.3', icon: 'key-round', title: 'Site Permissions & Polished Window Controls', major: true, items: [
-        '<b>Traffic Lights Aligned</b> — The macOS window controls now sit visually even with Breeze&rsquo;s sidebar button in the top bar.',
-        '<b>Microphone &amp; Camera Work</b> — Breeze now includes the native macOS privacy strings and WebKit media-capture permission handling needed for sites that use navigator.mediaDevices.getUserMedia.',
-        '<b>Per-Site Permission Choices</b> — Camera, microphone, and location requests can be allowed once, always allowed, or blocked, with saved choices managed from Settings → Site Permissions.',
-        '<b>Settings Actually Controls Permissions</b> — The Site Permissions page now writes through to Breeze native settings instead of being display-only.',
-        '<b>Cache Clearing Is Safer</b> — Clear selected data now honors the checkboxes, so clearing cache no longer silently wipes cookies and signs you out unless Cookies &amp; site data is selected.' ] },
-      { v: '3.8.1', icon: 'search-check', title: 'Cleaner Find & Better Page Menus', major: true, items: [
-        '<b>Find Stays Visible</b> — Command-F now opens as a raised overlay with a stronger background, border, and shadow so it does not disappear over bright pages.',
-        '<b>Richer Right-Click Menus</b> — Page menus now include link actions, image actions, selected-text search, Ask Nav about selection, editable-field actions, bookmark, share, find, print, and normal navigation.',
-        '<b>Private Tabs Included</b> — The richer page menu is wired into private tabs too.',
-        '<b>Update Persistence Clarified</b> — Breeze still uses WebKit&rsquo;s persistent default website data store, so normal app updates do not clear cookies, cache, or logins.' ] },
-      { v: '3.8.0', icon: 'bot', title: 'Meet Nav, Breeze Cloud & Images', major: true, items: [
-        '<b>Nav Replaces Breeze AI</b> — The assistant is now Nav, with a dedicated compass-style corner icon while new chat pages keep the Breeze mark.',
-        '<b>Breeze Cloud Included</b> — Nav now works out of the box through Breeze Cloud. No account setup, no service credential stored in the app, and daily fair-use limits keep the shared service reliable.',
-        '<b>Image Generation &amp; Edits</b> — Use the paintbrush button to make images with Breeze Cloud image services at low quality, or attach images and ask Nav to edit them with page/tab context.',
-        '<b>Images in History</b> — Generated images now appear under History → Images, and every image bubble has a download button.',
-        '<b>Softer Image Loading</b> — The image placeholder is now a quieter blurred glow instead of a full-volume rainbow square.' ] },
-      { v: '3.7.6', icon: 'search-check', title: 'Find, Pin Menus & Teal Chrome', major: true, items: [
-        '<b>Find in Page</b> — Command-F opens a native find bar, with Command-G and Shift-Command-G for next and previous matches.',
-        '<b>Full Menus for Pinned Apps</b> — Right-click an open pinned app to get the same tab actions as regular tabs, including Split View, Performance Mode, popups, duplicate, and close.',
-        '<b>Teal by Default</b> — Breeze now defaults to a teal accent that tints the rail, sidebar, bezel, controls, and Breeze logos throughout the app.',
-        '<b>Mono Still Exists</b> — The black/white theme accent is back as its own Settings swatch.' ] },
-      { v: '3.7.5', icon: 'zap', title: 'Safer Cache Clear & Tab Robustness', major: true, items: [
-        '<b>Current-Site Cache Clear</b> — The toolbar trash button now clears cache only for the site you are viewing instead of nuking cookies and signing you out everywhere. Tiny button, no longer a tiny apocalypse.',
-        '<b>More Reliable New-Tab Submits</b> — Pressing Return in the new-chat/new-tab bar now submits decisively, so typed URLs and prompts do not get stranded in a blank tab state.',
-        '<b>Pinned Tabs Recover Better</b> — If a pinned tab ever focuses into a blank WebKit shell, Breeze kicks the saved pin URL again instead of leaving you staring at browser drywall.',
-        '<b>Less Brittle YouTube Handling</b> — Removed Breeze’s custom YouTube adblock layer and stale hardcoded Safari user agent so WebKit can use the current system identity.' ] },
-      { v: '3.7.4', icon: 'bot', title: 'A More Human Breeze', major: true, items: [
-        '<b>More Human Assistant Voice</b> — Breeze AI now defaults to a sharper, warmer, more conversational style: useful first, dry and witty when it fits, absolutely less “support bot in beige pants.”',
-        '<b>New Chat Input Grows</b> — The center Ask bar now expands up to four wrapped lines before scrolling, so longer prompts stay readable instead of clipping awkwardly.',
-        '<b>Still Your Preferences</b> — Your personal AI instructions still apply on top of Breeze’s default personality, so you can tune the vibe without fighting the app.' ] },
-      { v: '3.7.3', icon: 'key-round', title: 'No Prompts, Just Breeze', major: true, items: [
-        '<b>No More Service Key Prompts</b> — Assistant credentials now stay out of normal app settings, so using Nav never triggers a macOS password, Touch ID, or Keychain authorization interruption.',
-        '<b>Rounder Everywhere</b> — Inputs, URL bars, buttons, sidebar tabs, settings controls, assistant controls, and suggestion hovers now share a softer pill-shaped design.',
-        '<b>Suggestions Land in the Right Place</b> — New-tab suggestions open beneath the Ask bar, URL suggestions stay attached to the toolbar, and each menu shrinks to exactly the number of results it contains.',
-        '<b>Still Secure on This Mac</b> — Local app secrets are readable only by your macOS user account and are used only when you ask Nav to help.' ] },
-      { v: '3.7.2', icon: 'zap', title: 'Reliable Downloads, Tabs & Windows', major: true, items: [
-        '<b>Downloads Finish Reliably</b> — Breeze now keeps every download alive from the moment a site starts it until the file finishes, fixing silent failures on JavaScript-heavy sites and right-click downloads.',
-        '<b>Links Open Where You Asked</b> — Command-click and “Open Link in New Tab” open tabs, while “Open Link in New Window” now creates a real window.',
-        '<b>New Windows Are Ready Immediately</b> — File → New Window now opens with a complete new-tab page, including your pins and search, instead of going blank or crashing.',
-        '<b>Chat Reminders No Longer Crash</b> — Reminders scheduled by Breeze AI now appear safely in the sidebar and persist across relaunches while the macOS notification remains scheduled.' ] },
-      { v: '3.7.1', icon: 'zap', title: 'Usage Estimates & Readable Chat', major: true, items: [
-        '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost for transparency. Reset the counter anytime.',
-        '<b>Readable AI Replies in Light Mode</b> — Assistant responses now sit in a clean dark bubble with white text, so they\'re easy to read in light mode (and dark).',
-        '<b>Clearer Key Button</b> — Fixed the "Manage key" button being hard to see on light accents in dark mode.' ] },
-      { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by Breeze Cloud', major: true, items: [
-        '<b>Bring Your Own Key</b> — Breeze AI can run through a user-supplied service credential. Add it in Settings → Breeze AI when that mode is available.',
-        '<b>No More Local Model</b> — The on-device the local AI engine engine and its multi-gigabyte download are gone. Breeze installs smaller and the assistant is far smarter and faster.',
-        '<b>Fully Agentic Browsing</b> — Ask Breeze to open sites, search the web, read the current page, click, type, and set reminders — it drives the browser for you to finish the task.',
-        '<b>Friendly Key Prompts</b> — Use an AI feature without a key and Breeze points you to Settings to add one. No key, no surprise charges.',
-        '<b>Your Key Stays Yours</b> — Stored in the macOS Keychain and used only for assistant requests. Breeze never asks for your keychain password just to open Settings.' ] },
-      { v: '3.6.1', icon: 'bot', title: 'the local AI engine-Only Local AI Selection', major: true, items: [
-        '<b>Stopped Reusing Old the local AI engine Files</b> — Breeze now only reuses the local AI engine model files from Application Support, so an old the local AI engine gguf can no longer get picked up by accident.',
-        '<b>Consistent the local AI engine Copy</b> — The assistant and settings now consistently refer to the local the local AI engine model, which matches what Breeze actually runs.' ] },
-      { v: '3.6.0', icon: 'zap', title: 'Faster Local AI & Redownload Model', major: true, items: [
-        '<b>Snappier AI Assistant</b> — Tuned the on-device agent for the local AI engine so it processes far less text per step and replies noticeably faster.',
-        '<b>Smarter Agent (No More Spinning)</b> — Breeze AI now detects when it’s stuck repeating itself and answers from what it has instead of looping, so multi-step tasks finish quicker.',
-        '<b>Redownload Model Button</b> — Added a Redownload option in Settings → Breeze AI to wipe and reinstall the local the local AI engine model with one click if it ever gets corrupted.' ] },
-      { v: '3.5.9', icon: 'zap', title: 'the local AI engine, Reminder Crash & Link Handoff Fixes', major: true, items: [
-        '<b>Local the local AI engine Upgrade</b> — Upgraded the default local AI engine to the local AI engine for faster, smarter, and fully private local assistance.',
-        '<b>Fixed Reminders Crash</b> — Prevented launch crashes caused by past/near-instant reminder schedules by enforcing safe delay boundaries.',
-        '<b>Seamless External Link Handling</b> — Links opened from external apps like iMessage, Slack, or Mail now correctly and instantly route into your Breeze browser windows.' ] },
-      { v: '3.5.8', icon: 'zap', title: 'AI Sidebar Bleeding Fix & New Tab Suggestions', major: true, items: [
-        '<b>Fixed AI Sidebar UI Bleeding</b> — Fixed a bug where switching away from a fullscreen Breeze Chat tab caused the assistant panel UI to temporarily slide/bleed and display incorrectly on the bottom right corner of the next tab.',
-        '<b>Autocomplete on New Tab</b> — Enabled the autocomplete suggestions dropdown popover on the center search and question input field of the New Tab page.' ] },
-      { v: '3.5.7', icon: 'zap', title: 'Address Input & Autocomplete Hiding Fixes', major: true, items: [
-        '<b>Fixed Address Bar Keyboard Focus</b> — Fixed a bug where Cocoa focus-shifting blocked typing in the address bar on new chat and web pages.',
-        '<b>Instant Suggestions Hide</b> — Autocomplete suggestions dropdown popover now hides immediately as soon as you hit return or click away from the address bar.',
-        '<b>Seamless Navigation Focus</b> — Pressing enter in the address bar now deactivates it and correctly focuses the page\'s webview (or internal settings page), allowing you to immediately start scrolling or typing on the site.' ] },
-      { v: '3.5.6', icon: 'zap', title: 'Autocomplete Dropdown & Address Bar Focus Fixes', major: false, items: [
-        '<b>Autocomplete Suggestions</b> — Added instant dropdown popover hiding on return or click away.',
-        '<b>Navigation Focus</b> — Address bar deactivation and page webview focusing on navigation.' ] },
-      { v: '3.5.5', icon: 'bot', title: 'Agent Actually Agents + Chat-Tab Fix', major: true, items: [
-        '<b>The Agent Browses Again</b> — Asking Breeze to "go to facebook" or "remind me in 10 minutes…" now reliably opens the site and sets the reminder instead of replying "I can\'t access websites." The local model\'s hidden overthinking (fixed in 3.5.4) was causing it to bail before taking the action — verified directly against the model.',
-        '<b>Reminders Set From Chat</b> — "Remind me in 10 minutes to call mom" now consistently creates the reminder. (If nothing fires, allow notifications for Breeze in System Settings → Notifications.)',
-        '<b>Chat Tab No Longer Clips</b> — Leaving a fullscreen chat tab to click another tab no longer leaves the assistant as a clipped strip on the right edge. The chat stays in its own tab; the panel only opens when you ask for it.' ] },
-      { v: '3.5.4', icon: 'zap', title: 'The Real Speed Fix — Local AI No Longer Overthinks', major: true, items: [
-        '<b>the local AI engine Stops Overthinking Every Reply</b> — The local the local AI engine model is a "reasoning" model that secretly wrote a long internal monologue before <i>every</i> answer — even "hey" generated ~113 tokens, ~90 of them hidden thinking, which is why replies took ~10 seconds. Breeze now runs it in fast direct-answer mode, cutting that to ~16 tokens. Chat and agentic steps are dramatically faster.',
-        '<b>Snappier Throughout</b> — Combined with capped generation length and prompt caching, every message and every browser action the AI takes now returns much sooner.' ] },
-      { v: '3.5.3', icon: 'zap', title: 'Instant AI Replies (No More 10-Second "Hi")', major: true, items: [
-        '<b>Way Faster AI With a Page Open</b> — Every message used to deep-scan the entire page (every button, link, and element) before the AI could respond, so even saying "hi" took ~10 seconds on a heavy page like YouTube. Breeze now grabs just the page title and text for context, and only does the full scan when the AI actually needs to click or type. Quick replies are quick again.' ] },
-      { v: '3.5.2', icon: 'bot', title: 'Breeze AI Reads the Page You\'re On', major: true, items: [
-        '<b>"What is this about?" Just Works</b> — Ask Breeze AI about the page, video, or article you\'re viewing and it answers from that page instead of asking which one you mean. The page you\'re actively looking at is now handed to the model as <i>the</i> current page, separate from your other tabs and history.',
-        '<b>No More Blank Answers on Apple Intelligence</b> — On the small on-device model, a long page could overflow the context window and make the AI reply with nothing useful. We now trim page text to fit and seed the answer with the current page, so it stays on-topic.' ] },
-      { v: '3.5.1', icon: 'zap', title: 'Fullscreen Video Fix, Real Downloads & Snappy Local AI', major: true, items: [
-        '<b>Fullscreen Video No Longer Goes Black</b> — Fullscreen on YouTube, Netflix, and other players now plays correctly. The rounded web-area corners were clipping the hardware video overlay to black in fullscreen; we now flatten them while a video is fullscreen and restore them on exit.',
-        '<b>Downloads That Actually Save</b> — "Download" buttons now save files. We now honor the standard download links (including blob: and data: URLs), so generated files (like mockups from shots.so), images, PDFs, and archives land in your Downloads folder instead of silently doing nothing.',
-        '<b>Native File & Media Picker</b> — Implemented the WebKit open panel delegate so that file upload buttons and media attach menus on websites work correctly.',
-        '<b>Fast & Stable Local AI</b> — Fixed a critical context size bug by disabling the buggy llama-server Jinja template wrapper. Prompt evaluation is now snappy and reliable.',
-        '<b>Smarter Context Window</b> — Expanded the context size to 8192 tokens and increased the page text limit, allowing the local model to read long transcript pages and detailed articles without losing context.' ] },
-      { v: '3.5.0', icon: 'zap', title: 'the local AI engine Priority, Live Progress & Link Fixes', major: true, items: [
-        '<b>Local Download Progress Bar</b> — Added a visual progress bar inside Settings showing the local the local AI engine model download percentage.',
-        '<b>Dark Mode Button Fix</b> — Restyled the the local AI engine download button to make sure it is fully visible and high-contrasted in Dark mode.',
-        '<b>the local AI engine Priority Engine</b> — Swapped the default Local AI engine to the local AI engine as the primary model and added direct download actions to Settings.',
-        '<b>Purged Service Credential Settings</b> — Removed older key setup inputs, selectors, and background keychain queries, eliminating the macOS system password prompts in Settings.',
-        '<b>Custom URI Redirect Handoff</b> — Intercepts and opens external URI schemes (like twitter://, mailto:, slack://) natively, preventing page hangs and redirect loops.',
-        '<b>Robust URL Launches</b> — Solved the blank tab issue when opening local file paths or unescaped query links from Finder or other applications.' ] },
-      { v: '3.4.7', icon: 'cpu', title: 'the local AI engine Engine, Contextual History & Sidebar Reminders', major: true, items: [
-        '<b>Upgraded to the local AI engine</b> — Swapped the primary AI engine to the local AI engine for vastly superior reasoning, logic, and browser interaction.',
-        '<b>Persistent Context & Chat History</b> — The agent now fully retains chat history and tab contexts across turns so it never loses track of your follow-up requests.',
-        '<b>Native Sidebar Reminders</b> — Active reminders now display directly in the sidebar, letting you view and cancel them instantly.',
-        '<b>Streamlined Sidebar Footer</b> — Removed the adblock badge and aligned footer icons (Downloads, Saved, History, Theme, Settings) horizontally to make room for reminders and media players.' ] },
-      { v: '3.4.6', icon: 'bot', title: 'The AI Knows When to Stop', major: true, items: [
-        '<b>No more flailing</b> — When Breeze AI isn’t sure what you want, it now asks (“not sure what you mean — want me to search that?”) or just runs a quick web search, instead of clicking around the page hoping something works. Every click and keystroke has to be a deliberate step toward what you actually asked.' ] },
-      { v: '3.4.5', icon: 'bot', title: 'Fullscreen Fix, Smarter Ask Bar & Honest Ad-Blocking', major: true, items: [
-        '<b>Fixed black screen on fullscreen video</b> — Going fullscreen on a video (YouTube and anywhere else) could show a black screen. The rounded-corner clipping behind it is fixed — video now fills the screen properly.',
-        '<b>The Ask bar always asks Breeze</b> — Typing anything that isn’t a web address into the new-tab bar now opens a full-window chat and lets Breeze decide whether to answer or take action, instead of jumping straight to a web search. (Hold ⌘ when you press Return to force a plain search.)',
-        '<b>Now-playing that sticks around</b> — The sidebar mini-player no longer disappears when you pause — it stays put (with a dismiss ✕) until you close it or another track takes over. Works with any site that has audio or video: Spotify, SoundCloud, YouTube, and more.',
-        '<b>Better ad-blocking, and the honest truth about it</b> — Added more rules to block ad trackers and banner/feed ads (YouTube included). But some sites — YouTube especially — now stream video ads from the same place as the video, and Apple’s WebKit doesn’t allow the deep script-level blocking browser extensions use. Settings now explains why; Breeze keeps blocking everything it can.' ] },
-      { v: '3.4.4', icon: 'bot', title: 'Picture-in-Picture, Instant Chat & a Polished Sidebar', major: true, items: [
-        '<b>Picture-in-Picture works again</b> — Video now pops out into a floating window. And it’s automatic: switch tabs or open a new one while you’re watching and the video follows you in PiP so it never stops. Toggle it off anytime in Settings.',
-        '<b>New Chat shortcut (⌘⇧T)</b> — Instantly open a fresh, blank full-window chat and start typing. Unlike the new-tab Ask bar, it goes straight to an independent chat — no guessing between search, navigation, and AI. (New Private Tab moved to ⌥⌘T.)',
-        '<b>Ask bar opens a full chat</b> — Typing a question into the new-tab Ask bar now opens a full-window chat instead of the side panel.',
-        '<b>Redesigned now-playing</b> — The sidebar player is now a proper little media module — album art, title, and transport controls — instead of a tile that looked like a tab.',
-        '<b>Cleaner address bar</b> — The page path is dimmed so the domain stands out at a glance.',
-        '<b>Fixed new-tab input crash</b> — Submitting a query from the new-tab page (e.g. a quick “hey”) could crash the app. Resolved the underlying first-responder reentrancy so any input is safe.' ] },
-      { v: '3.4.0', icon: 'zap', title: 'Startup Window Animation & External Link Handler', major: true, items: [
-        '<b>Slide-up Startup Animation</b> — Added a gorgeous window transition on app startup that fades and slides up smoothly.',
-        '<b>External Link Redirection</b> — Handled links clicked from third-party applications (like Discord/Slack) correctly to focus Breeze and load the clicked URL.',
-        '<b>Keychain Crash Fix</b> — Solved the crash when opening Settings / vault items.' ] },
-      { v: '3.3.0', icon: 'columns', title: 'Multi-Window Syncing & Ephemeral Private Browsing', major: true, items: [
-        '<b>Multi-Window Real-Time Sync</b> — Open separate windows (⌘N) that share the same pins, groups, and tabs. If you view a tab in window B, it is instantly pulled into that window and leaves a placeholder with a "Pull Tab Here" button in window A.',
-        '<b>Ephemeral Private Browsing</b> — Open private windows (⌘⇧N) or private tabs (⌘⇧T) utilizing ephemeral, non-persistent website data stores. Private tabs discard cookies, history, and storage on close, and are marked with a 🕵️ badge.',
-        '<b>Removed OAuth Popup Windows</b> — Replaced separate login windows with a simpler, cleaner inline tab redirection loop.',
-        '<b>Fluid Window Resizing</b> — Resizing windows is now completely seamless, matching the window background color directly to the active theme to avoid rendering glitches.',
-        '<b>Fixed Settings Accent Color Crash</b> — Solved a crash that occurred when opening Settings by safely parsing the device RGB color space.' ] },
-      { v: '3.2.0', icon: 'key-round', title: 'Keychain Storage, Custom Models, Vertical Rail, & Popup Fixes', major: true, items: [
-        '<b>Secure Keychain Storage</b> — Assistant credentials are now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
-        '<b>Custom Service Options</b> — Choose from supported service routes, or type in any compatible route.',
-        '<b>Vertical Sidebar Button Rail</b> — Footer navigation buttons are stacked vertically to free horizontal space so the now-playing player is never truncated.',
-        '<b>Real Popup Windows for OAuth</b> — window.open popups (Google/GitHub/Lovable sign-in) open in a real native window sharing session state, resolving loops and login failures.',
-        '<b>Legible Light Mode Chat</b> — Synced the materials and text rendering so AI replies and selection highlights are clear and high-contrast in light mode.' ] },
-      { v: '3.1.2', icon: 'plug', title: 'Use your own assistant key, working sign-in popups', items: [
-        '<b>Bring your own assistant key</b> — in Settings → AI you can use a personal service credential for stronger multi-step tasks like filling out forms. Your key is stored only on your Mac and calls the selected service directly.',
-        '<b>Sign-in popups work now</b> — “Continue with Google / Apple / GitHub” pop-up windows no longer get blocked, so OAuth logins actually complete.',
-        '<b>Cleaner fullscreen</b> — the gap reserved for the traffic-light buttons is reclaimed in fullscreen, where they only appear when you hover.' ] },
-      { v: '3.1.1', icon: 'wrench', title: 'Agent fixes — cleaner, smarter, finishes the job', items: [
-        '<b>No more numbers all over the page</b> — the AI now tags page elements invisibly, so the green numbered badges no longer clutter your view or linger after it finishes.',
-        '<b>The AI follows through</b> — when you ask it to open or go to a result, it actually clicks through and completes the task instead of just describing what it found.',
-        '<b>Chat docks open automatically</b> — when the AI opens a page or runs a search, the assistant slides open beside it so you see the answer right away.',
-        '<b>Smarter Ask bar</b> — a plain search term goes straight to Google like a normal address bar, while questions get answered directly and only real tasks spin up the agent.' ] },
-      { v: '3.1.0', icon: 'bot', title: 'Intelligent Browser Use — the AI can actually use websites now', major: true, items: [
-        '<b>Vimium-style interactive element tagging</b> — every clickable button, link, and input on the page gets a visible numbered badge. The AI sees and targets these IDs with pinpoint accuracy instead of guessing at text labels.',
-        '<b>The AI actually completes tasks now</b> — ask "pizza near me" and it will search, read results, pick a top option, and tell you about it in the chat. No more "I opened it for you" cop-outs.',
-        '<b>Multi-step page interaction</b> — CLICK and TYPE actions now return the full updated page state after each step, so the AI can chain form fills, button clicks, and navigation seamlessly.',
-        '<b>Auto-dock sidebar on agent tasks</b> — when the AI navigates from a chat tab to a webpage, the assistant sidebar automatically slides open so you never lose the conversation.',
-        '<b>Smarter navigation</b> — the AI no longer invents broken map URLs or guesses at page-internal links. It opens Google, uses the search field, and reads real results like a human would.',
-        '<b>Agent completion snapshots</b> — when the AI finishes a task, it captures a screenshot of the final browser state for your records.' ] },
-      { v: '3.0.9', icon: 'zap', title: 'UI alignment, screen-wide Siri glow, and fullscreen chat tab', items: [
-        '<b>Unified top bar layout</b> — navigation controls, the URL bar, and the AI corner button are now perfectly center-aligned and remain completely static when toggling the sidebar.',
-        '<b>Screen-wide Siri glow</b> — the rainbow glow animation now blurs beautifully around the edges of your entire screen when the AI is active (like Apple Intelligence), with zero visual clipping.',
-        '<b>Fullscreen chat tab</b> — hidden header panel inside the dedicated chat tab to prevent sidebar docking issues, creating a clean web-like chat view.',
-        '<b>Cohesive settings/history tabs</b> — segment buttons on the history page now use the accent color when active, keeping it readable in both light and dark modes.' ] },
-      { v: '3.0.8', icon: 'bot', title: 'Smarter, context-aware AI', major: true, items: [
-        '<b>Fullscreen chat opens as a tab</b> — click the expand button and the assistant becomes a "Breeze Chat" tab you can switch between like any other page.',
-        '<b>AI stops searching for everything</b> — the assistant now answers general knowledge, coding, math, and creative questions directly instead of running a web search every time.',
-        '<b>Deeper task chains</b> — the agentic loop now supports up to 8 chained actions (was 4), so multi-step workflows like "open a site, read it, search for it, set a reminder" work end-to-end.',
-        '<b>Context-aware AI</b> — the assistant now sees your recent browsing history, bookmarks, and all open tabs on every query for richer, more relevant answers.',
-        '<b>Rainbow glow</b> — a spinning rainbow border pulses around the browser window while the AI is actively working.' ] },
-      { v: '3.0.7', icon: 'zap', title: 'Wired up all Browser Settings', items: [
-        'Added Auto Picture-in-Picture logic for videos.',
-        'Wired up "Restore Tabs on Launch" logic so your session is saved automatically.',
-        'Hooked up "Flatten Fullscreen Corners" for better video playback.',
-        'Wired up "Sleep Inactive Tabs" to save memory.',
-        'Ensured Notification and Update Sounds respect their toggles.',
-        'Hooked up the "Show Greeting" toggle on the New Tab page.' ] },
-      { v: '3.0.6', icon: 'zap', title: 'Sidebar UI Refresh', items: [
-        'Redesigned the sidebar layout with the address bar matching the Arc look and feel.',
-        'Moved back, forward, and refresh controls to the top right next to the traffic lights.',
-        'Added a fun expanding "New Tab" button underneath your open tabs.',
-        "Fixed an issue where the Share button wouldn't open the native macOS Share Sheet." ] },
-      { v: '3.0.4', icon: 'zap', title: 'Bug fixes and polish', items: [
-        'Added "Check for Updates..." to the File menu.',
-        'Wired up notifications and reminders so they persist across restarts.',
-        'Fixed an issue where the "Make default browser" button did nothing.',
-        'Made the AI much more reliable at opening web pages for you.' ] },
-      { v: '3.0.2', icon: 'layout-panel-left', title: 'Pages that always fit', items: [
-        'Fixed a layout glitch where some site elements (sticky headers, side rails) could stay pinned to the old width after toggling the sidebar or assistant — pages now re-fit the moment the layout changes.' ] },
-      { v: '3.0.1', icon: 'sparkles', title: 'A smarter, agentic Breeze AI', major: true, items: [
-        'Breeze AI can now <b>do things in the browser</b> — open sites, search the web, read the current page, and answer live questions (weather, prices, news) with real, cited info instead of refusing.',
-        'It <b>never hard-fails</b> on long tasks: if it runs low on context it quietly starts a fresh window with just what it needs and keeps going.',
-        'Chat history moved to the History page (a new “Breeze AI chats” tab) — click any chat to reopen it in the assistant.',
-        'Long URLs now truncate cleanly in the address bar, pages always load at 100% zoom, and auto-update is built in.' ] },
-      { v: '3.0.0', icon: 'shapes', title: 'Breeze goes native', major: true, items: [
-        'Breeze is now a <b>native Mac app built on Apple’s WebKit</b> — no more Chromium. That means DRM video (Netflix &amp; co.), real passkeys, lower memory, and better battery.',
-        'Breeze AI now runs on <b>on-device system intelligence</b> (the on-device intelligence behind Apple Intelligence), with a local the local AI engine model as automatic backup. Nothing leaves your Mac.',
-        '<b>First install note:</b> because Breeze is independently signed (not paid Apple notarization), macOS shows an “unverified” warning the first time. Open <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>“Open Anyway”</b> next to Breeze. You only do this once.' ] },
-      { v: '2.10.1', icon: 'shapes', title: 'Mac only, from here on', major: true, items: [
-        'Breeze is now a <b>macOS-only</b> app (Apple Silicon). The Windows build has been retired so we can focus everything on the best possible Mac experience.',
-        'No change for Mac users — your install keeps auto-updating as always.' ] },
-      { v: '2.9.11', icon: 'bell', title: 'Quieter when you want it', items: [
-        'Added Settings controls for Breeze notification sounds and update sounds, so downloads, reminders, and update prompts can stay quiet.',
-        'Fixed the macOS fullscreen case where the traffic lights could disappear when the sidebar was collapsed.',
-        'Added clearer Windows startup error reporting so launch failures show what went wrong instead of looking like nothing happened.' ] },
-      { v: '2.10.0', icon: 'key-round', title: 'Sign-ins, stuck tabs & crashes', items: [
-        '<b>Passkey lock-outs fixed</b> — Breeze no longer claims a passkey it can\'t actually use, so sites now offer QR / password / other sign-in instead of hanging on a prompt that never appears.',
-        '<b>Fix a stuck, reloading tab</b> — start typing in the address bar and the page stops reloading, so you can correct a broken URL instead of fighting it.',
-        '<b>Crash recovery</b> — a tab whose page crashes now reloads itself instead of going blank or closing.' ] },
-      { v: '2.9.11', icon: 'volume-x', title: 'Mute it all + fullscreen fix', items: [
-        'The "Breeze notification sounds" toggle now also silences the AI reply tone — turning sounds off means <b>all</b> Breeze sounds off.',
-        'macOS: the traffic-light buttons no longer vanish in fullscreen when the sidebar is collapsed.' ] },
-      { v: '2.9.10', icon: 'arrow-down-to-line', title: 'Clearer update prompts', items: [
-        'The first update toast now just says it\'s downloading (no "Restart" before there\'s anything to restart into) and tidies itself away — "Restart" only appears once the update is actually ready.' ] },
-      { v: '2.9.9', icon: 'shield-check', title: 'Stop the idle crash', items: [
-        'Fixed a crash that could hit after the browser sat idle — the AI model was being torn down in a way that didn\'t agree with Apple\'s Metal backend. It now stays warm instead.' ] },
-      { v: '2.9.8', icon: 'unlock', title: 'Lighter touch on reloads', items: [
-        'Removed the "this page reloaded too many times" guard — it was too uptight and got in the way of legit sites. Pages just load freely now.' ] },
-      { v: '2.9.6', major: true, icon: 'shapes', title: 'A changelog with character', items: [
-        'Every update now gets its <b>own unique icon and a bit of motion</b> — no more plain glowing tile (and no more stars).',
-        'Fixed a layout slip that left the featured card mostly empty.' ] },
-      { v: '2.9.4', major: true, icon: 'search-check', title: 'Reads the whole answer', items: [
-        'When searching the web, the assistant now <b>waits for streaming results to finish</b> before reading them — so it stops grabbing half-loaded answers and getting them wrong.',
-        'Smart about it: settles fast once a page stops moving, but gives slow, streaming search engines the time they need.' ] },
-      { v: '2.9.3', major: true, icon: 'refresh-cw', title: 'Clean model switching', items: [
-        'Changing your AI model now <b>restarts Breeze cleanly</b> to load it — and <b>reopens your tabs</b> automatically, so you don\'t lose your place.',
-        'A quick confirm first, so it never restarts on you by surprise.' ] },
-      { v: '2.9.2', major: true, icon: 'zap', title: 'Replies you can count on', items: [
-        '<b>Warms up before you type</b> — the model loads right after download, so it\'s ready the moment you ask. No more spinning on "thinking."',
-        '<b>Never fires into a cold model</b> — if it\'s still warming up, your message waits and sends automatically the instant it\'s ready.',
-        '<b>The full 7B is the default for everyone</b> — the smaller model is now an opt-in for slower machines (with a clear "it\'s weaker at summaries" heads-up).',
-        '<b>Fixed garbled summaries</b> — longer pages no longer overflow and splice errors into the answer.' ] },
-      { v: '2.9.1', major: true, icon: 'book-open', title: 'Find the changelog anytime', items: [
-        '<b>What\'s New in Settings</b> — jump to this page from <b>Settings → Help &amp; FAQ</b> whenever you like, not just after an update.',
-        '<b>A bit of life</b> — the featured update up top now stands out at a glance.' ] },
-      { v: '2.9.0', major: true, icon: 'check-check', title: 'Snappier, calmer, all-the local AI engine', items: [
-        '<b>One brain family, two sizes</b> — both the fast and smart models are now the local AI engine (3B and 7B). Rock-solid at tools, no more stalls.',
-        '<b>No more crash-report popup on quit</b> — ⌘Q, Finder → Quit, and updates now exit cleanly.',
-        '<b>This changelog got fancy</b> — the latest release now gets the spotlight up top. 👋' ] },
-      { v: '2.8.0', major: true, icon: 'newspaper', title: 'This very page', items: [
-        'Updates now open to a <b>changelog page you can revisit</b> — not a popup that vanishes. Visit it anytime by typing <b>/updates</b> or via <b>Help → What\'s New</b>.',
-        'Backfilled the full history so you can see where Breeze started and how far it\'s come.' ] },
-      { v: '2.7.0', major: true, icon: 'cpu', title: 'Pick your AI brain', items: [
-        'Breeze now matches the AI model to your device — a smart <b>the larger local model</b> for powerful Macs, or a fast, light <b>the smaller local model</b> for everything else.',
-        'A friendly picker recommends the best fit for your machine after each big update — your choice, always.',
-        'Switch models anytime in <b>Settings → AI</b>.' ] },
-      { v: '2.6.0', major: true, icon: 'graduation-cap', title: 'A smarter, more capable assistant', items: [
-        'Upgraded the local model for sharper answers and better instruction-following.',
-        '<b>"Go to that site"</b> — tell the assistant to open a page (e.g. "go to winthenight.org and summarize") and it actually opens and reads it.',
-        'The model now downloads quietly at launch, so it\'s ready when you are.',
-        'A soft, deep tone the moment the assistant starts replying.' ] },
-      { v: '2.5.0', major: true, icon: 'maximize', title: 'Fullscreen AI chat', items: [
-        'Ask from any new tab — hit ↵ to chat, ⌘↵ to search the web instead; a real link just goes there.',
-        'The chat opens fullscreen and isolated (no page context), then <b>auto-docks</b> into the sidebar the moment it searches or you open a page.',
-        'Expand or dock the assistant anytime with a button.' ] },
-      { v: '2.4.0', major: true, icon: 'share', title: 'Sharing & a tidier URL bar', items: [
-        'One-click <b>copy link</b> button, plus a <b>share</b> button (native macOS share sheet).',
-        'Fixed the new-tab theme flicker on open.' ] },
-      { v: '2.3.13', icon: 'rocket', title: 'Per-tab Performance Mode', items: [
-        'Right-click any sidebar tab → <b>Performance Mode</b> for smoother cloud gaming and video on that tab (hardware video overlay + no background throttling).' ] },
-      { v: '2.3.9', icon: 'history', title: 'Reopen your tabs', items: [
-        'Breeze can restore the tabs you had open when you quit — ask each time, always, or never.' ] },
-      { v: '2.3.0', major: true, icon: 'bot', title: 'On-device AI, reimagined', items: [
-        'Switched to <b>the local AI engine</b> with agentic web search — the assistant opens a real search, reads the results, and cites sources, all locally.',
-        'Reminders, split-view URL bars, and a more reliable assistant.' ] },
-      { v: '2.2.0', icon: 'bell', title: 'Updates, notifications & passwords', items: [
-        'Manual "Check for Updates", website notifications with per-site control, password capture & autofill, and proper code signing.' ] },
-      { v: '2.1.0', major: true, icon: 'columns', title: 'Split screen & a real dashboard', items: [
-        'Split view with a draggable divider, drag-to-reorder tabs, collapsible tab groups, a tabbed Settings dashboard, and AI chat history.' ] },
-      { v: '2.0.0', major: true, icon: 'lightbulb', title: 'Breeze grows a brain', items: [
-        'The big one: a private, on-device AI assistant with personality, page-reading, and reminders — plus first-run onboarding, safe-quit, and storage auto-heal.' ] },
-      { v: '1.5.0', icon: 'download', title: 'Imports & a publishable build', items: [
-        'Import from Chrome, Arc, Dia, and Safari; hardened ad-blocking; the first shareable build of Breeze.' ] },
+      { v: '3.x', icon: 'cpu', title: 'Picking Up Speed', major: true, items: [
+        '<b>Native Mac Foundation</b> — Breeze was rebuilt as a Swift/AppKit/WKWebView Mac app for Apple Silicon.',
+        '<b>WebKit Instead of Chromium</b> — The browser moved onto Apple’s system web engine for better Mac integration, lower overhead, and native media behavior.',
+        '<b>Native Browser Core</b> — Tabs, sidebar, history, bookmarks, downloads, settings, private windows, and the updater became native app features.',
+        '<b>Nav Takes Shape</b> — The assistant evolved into Nav, with page context, browser actions, image generation, history, and richer app integration.',
+        '<b>Full Breakdown</b> — <a href="https://github.com/Froydinger/breezebrowser-live/releases" target="_blank">See GitHub releases</a> for every v3 patch, experiment, and fix.' ] },
+      { v: '2.x', icon: 'columns', title: 'Gaining Traction', major: true, items: [
+        '<b>Browser Shape Takes Form</b> — Breeze’s sidebar-first browsing model, pinned apps, splits, tab organization, and dashboard ideas matured.',
+        '<b>Assistant Experiments</b> — Early AI/browser assistant workflows explored page reading, web search, reminders, and fullscreen chat.',
+        '<b>Privacy Becomes Core</b> — Ad blocking, local-first positioning, and calmer browser messaging became part of the product identity.',
+        '<b>Public Mac Builds</b> — Breeze became a downloadable app with releases, update prompts, and a real product site.',
+        '<b>Full Breakdown</b> — <a href="https://github.com/Froydinger/breezebrowser-live/releases" target="_blank">See GitHub releases</a> for the detailed v2 history.' ] },
+      { v: '1.x', icon: 'download', title: 'Off the Line', major: true, items: [
+        '<b>The First Breeze</b> — The original prototype explored a calmer, more personal browser for Mac.',
+        '<b>Custom Browser UI</b> — Early navigation, tabs, address/search flow, imports, and app-shell experiments set the foundation.',
+        '<b>Mac-First Direction</b> — The idea started here: make the browser feel native, focused, and less noisy.',
+        '<b>Full Breakdown</b> — <a href="https://github.com/Froydinger/breezebrowser-live/releases" target="_blank">See GitHub releases</a> for the early build history.' ] },
     ];
 
     const log = document.getElementById('log');
