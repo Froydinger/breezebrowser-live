@@ -276,7 +276,7 @@
         '<b>Update Persistence Clarified</b> — Breeze still uses WebKit&rsquo;s persistent default website data store, so normal app updates do not clear cookies, cache, or logins.' ] },
       { v: '3.8.0', icon: 'bot', title: 'Meet Nav, Breeze Cloud & Images', major: true, items: [
         '<b>Nav Replaces Breeze AI</b> — The assistant is now Nav, with a dedicated compass-style corner icon while new chat pages keep the Breeze mark.',
-        '<b>Breeze Cloud Included</b> — Nav now works out of the box through the Breeze Cloud Worker using Breeze Cloud. No provider key setup setup, no AI provider key stored in the app, and daily fair-use limits protect the shared cloud key.',
+        '<b>Breeze Cloud Included</b> — Nav now works out of the box through Breeze Cloud. No account setup, no service credential stored in the app, and daily fair-use limits keep the shared service reliable.',
         '<b>Image Generation &amp; Edits</b> — Use the paintbrush button to make images with Breeze Cloud image services at low quality, or attach images and ask Nav to edit them with page/tab context.',
         '<b>Images in History</b> — Generated images now appear under History → Images, and every image bubble has a download button.',
         '<b>Softer Image Loading</b> — The image placeholder is now a quieter blurred glow instead of a full-volume rainbow square.' ] },
@@ -295,25 +295,25 @@
         '<b>New Chat Input Grows</b> — The center Ask bar now expands up to four wrapped lines before scrolling, so longer prompts stay readable instead of clipping awkwardly.',
         '<b>Still Your Preferences</b> — Your personal AI instructions still apply on top of Breeze’s default personality, so you can tune the vibe without fighting the app.' ] },
       { v: '3.7.3', icon: 'key-round', title: 'No Prompts, Just Breeze', major: true, items: [
-        '<b>No More AI provider Key Prompts</b> — Your provider credential now lives in Breeze\'s owner-only local storage, so using the assistant never triggers a macOS password, Touch ID, or Keychain authorization interruption.',
+        '<b>No More Service Key Prompts</b> — Assistant credentials now stay out of normal app settings, so using Nav never triggers a macOS password, Touch ID, or Keychain authorization interruption.',
         '<b>Rounder Everywhere</b> — Inputs, URL bars, buttons, sidebar tabs, settings controls, assistant controls, and suggestion hovers now share a softer pill-shaped design.',
         '<b>Suggestions Land in the Right Place</b> — New-tab suggestions open beneath the Ask bar, URL suggestions stay attached to the toolbar, and each menu shrinks to exactly the number of results it contains.',
-        '<b>Still Secure on This Mac</b> — Breeze stores the key in a file readable only by your macOS user account and sends it only to AI provider when you use Breeze AI.' ] },
+        '<b>Still Secure on This Mac</b> — Local app secrets are readable only by your macOS user account and are used only when you ask Nav to help.' ] },
       { v: '3.7.2', icon: 'zap', title: 'Reliable Downloads, Tabs & Windows', major: true, items: [
         '<b>Downloads Finish Reliably</b> — Breeze now keeps every download alive from the moment a site starts it until the file finishes, fixing silent failures on JavaScript-heavy sites and right-click downloads.',
         '<b>Links Open Where You Asked</b> — Command-click and “Open Link in New Tab” open tabs, while “Open Link in New Window” now creates a real window.',
         '<b>New Windows Are Ready Immediately</b> — File → New Window now opens with a complete new-tab page, including your pins and search, instead of going blank or crashing.',
         '<b>Chat Reminders No Longer Crash</b> — Reminders scheduled by Breeze AI now appear safely in the sidebar and persist across relaunches while the macOS notification remains scheduled.' ] },
       { v: '3.7.1', icon: 'zap', title: 'Usage Estimates & Readable Chat', major: true, items: [
-        '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost at provider pricing, with a link to your AI provider dashboard for exact charges. Reset the counter anytime.',
+        '<b>Estimated AI Usage &amp; Cost</b> — Settings → Breeze AI now shows the tokens you\'ve used and an estimated cost for transparency. Reset the counter anytime.',
         '<b>Readable AI Replies in Light Mode</b> — Assistant responses now sit in a clean dark bubble with white text, so they\'re easy to read in light mode (and dark).',
         '<b>Clearer Key Button</b> — Fixed the "Manage key" button being hard to see on light accents in dark mode.' ] },
-      { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by Breeze Cloud (provider key setup)', major: true, items: [
-        '<b>Bring Your Own Key</b> — Breeze AI now runs on AI provider\'s Breeze Cloud using your own provider credential. Add it in Settings → Breeze AI; there\'s a link to create one in seconds at platform.openai.com.',
+      { v: '3.7.0', icon: 'bot', title: 'Breeze AI, Now Powered by Breeze Cloud', major: true, items: [
+        '<b>Bring Your Own Key</b> — Breeze AI can run through a user-supplied service credential. Add it in Settings → Breeze AI when that mode is available.',
         '<b>No More Local Model</b> — The on-device the local AI engine engine and its multi-gigabyte download are gone. Breeze installs smaller and the assistant is far smarter and faster.',
         '<b>Fully Agentic Browsing</b> — Ask Breeze to open sites, search the web, read the current page, click, type, and set reminders — it drives the browser for you to finish the task.',
         '<b>Friendly Key Prompts</b> — Use an AI feature without a key and Breeze points you to Settings to add one. No key, no surprise charges.',
-        '<b>Your Key Stays Yours</b> — Stored in the macOS Keychain and sent only to AI provider. Breeze never asks for your keychain password just to open Settings.' ] },
+        '<b>Your Key Stays Yours</b> — Stored in the macOS Keychain and used only for assistant requests. Breeze never asks for your keychain password just to open Settings.' ] },
       { v: '3.6.1', icon: 'bot', title: 'the local AI engine-Only Local AI Selection', major: true, items: [
         '<b>Stopped Reusing Old the local AI engine Files</b> — Breeze now only reuses the local AI engine model files from Application Support, so an old the local AI engine gguf can no longer get picked up by accident.',
         '<b>Consistent the local AI engine Copy</b> — The assistant and settings now consistently refer to the local the local AI engine model, which matches what Breeze actually runs.' ] },
@@ -357,7 +357,7 @@
         '<b>Local Download Progress Bar</b> — Added a visual progress bar inside Settings showing the local the local AI engine model download percentage.',
         '<b>Dark Mode Button Fix</b> — Restyled the the local AI engine download button to make sure it is fully visible and high-contrasted in Dark mode.',
         '<b>the local AI engine Priority Engine</b> — Swapped the default Local AI engine to the local AI engine as the primary model and added direct download actions to Settings.',
-        '<b>Purged AI Provider Settings</b> — Removed all AI provider key setup inputs, selectors, and background keychain queries, eliminating the macOS system password prompts in Settings.',
+        '<b>Purged Service Credential Settings</b> — Removed older key setup inputs, selectors, and background keychain queries, eliminating the macOS system password prompts in Settings.',
         '<b>Custom URI Redirect Handoff</b> — Intercepts and opens external URI schemes (like twitter://, mailto:, slack://) natively, preventing page hangs and redirect loops.',
         '<b>Robust URL Launches</b> — Solved the blank tab issue when opening local file paths or unescaped query links from Finder or other applications.' ] },
       { v: '3.4.7', icon: 'cpu', title: 'the local AI engine Engine, Contextual History & Sidebar Reminders', major: true, items: [
@@ -390,13 +390,13 @@
         '<b>Fluid Window Resizing</b> — Resizing windows is now completely seamless, matching the window background color directly to the active theme to avoid rendering glitches.',
         '<b>Fixed Settings Accent Color Crash</b> — Solved a crash that occurred when opening Settings by safely parsing the device RGB color space.' ] },
       { v: '3.2.0', icon: 'key-round', title: 'Keychain Storage, Custom Models, Vertical Rail, & Popup Fixes', major: true, items: [
-        '<b>Secure Keychain Storage</b> — Your AI provider credential is now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
-        '<b>Custom AI Provider Options</b> — Choose from the supported AI provider options, or type in any compatible provider route.',
+        '<b>Secure Keychain Storage</b> — Assistant credentials are now securely stored in the macOS Keychain instead of the settings JSON. Existing keys are migrated automatically on launch.',
+        '<b>Custom Service Options</b> — Choose from supported service routes, or type in any compatible route.',
         '<b>Vertical Sidebar Button Rail</b> — Footer navigation buttons are stacked vertically to free horizontal space so the now-playing player is never truncated.',
         '<b>Real Popup Windows for OAuth</b> — window.open popups (Google/GitHub/Lovable sign-in) open in a real native window sharing session state, resolving loops and login failures.',
         '<b>Legible Light Mode Chat</b> — Synced the materials and text rendering so AI replies and selection highlights are clear and high-contrast in light mode.' ] },
-      { v: '3.1.2', icon: 'plug', title: 'Use your own AI provider key, working sign-in popups', items: [
-        '<b>Bring your own AI provider key</b> — in Settings → AI you can switch Breeze AI to AI provider for stronger multi-step tasks like filling out forms. Choose from three cheap, capable models. Your key is stored only on your Mac and calls AI provider directly — there is no Breeze server, and you pay AI provider for your own usage.',
+      { v: '3.1.2', icon: 'plug', title: 'Use your own assistant key, working sign-in popups', items: [
+        '<b>Bring your own assistant key</b> — in Settings → AI you can use a personal service credential for stronger multi-step tasks like filling out forms. Your key is stored only on your Mac and calls the selected service directly.',
         '<b>Sign-in popups work now</b> — “Continue with Google / Apple / GitHub” pop-up windows no longer get blocked, so OAuth logins actually complete.',
         '<b>Cleaner fullscreen</b> — the gap reserved for the traffic-light buttons is reclaimed in fullscreen, where they only appear when you hover.' ] },
       { v: '3.1.1', icon: 'wrench', title: 'Agent fixes — cleaner, smarter, finishes the job', items: [
