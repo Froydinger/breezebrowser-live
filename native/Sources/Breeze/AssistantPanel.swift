@@ -37,7 +37,14 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private let headerLogo = NSImageView()
     private let emptyLogo = NSImageView()
     private var emptyChipViews: [(NSView, NSTextField)] = []
-    private var messageTextViews: [SelectableMessageTextView] = []
+    private struct MessageBubbleRecord {
+        weak var textView: SelectableMessageTextView?
+        weak var textWidthConstraint: NSLayoutConstraint?
+        weak var bubbleWidthConstraint: NSLayoutConstraint?
+        let attributedText: NSAttributedString
+        let isUser: Bool
+    }
+    private var messageBubbles: [MessageBubbleRecord] = []
     private var imageMode = false
     // chat state
     private var chatId = Date().timeIntervalSince1970
@@ -332,7 +339,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         chatId = Date().timeIntervalSince1970
         messages = []
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        messageTextViews.removeAll()
+        messageBubbles.removeAll()
         empty.isHidden = false
         setMode(history: false)
     }
@@ -340,7 +347,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         chatId = id
         messages = Store.shared.chatMessages(id: id)
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        messageTextViews.removeAll()
+        messageBubbles.removeAll()
         empty.isHidden = !messages.isEmpty
         for m in messages {
             if m["role"] == "image", let path = m["path"], let img = NSImage(contentsOfFile: path) {
@@ -416,46 +423,69 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let p = Theme.shared.palette
         // AI replies always sit in a near-black bubble with white text, so they stay
         // readable in light OR dark mode (avoids low-contrast text on a light panel).
-        let aiBubble = NSColor(srgbRed: 0.08, green: 0.085, blue: 0.10, alpha: 0.92)
-        let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = user ? 13 : 16
+        let aiBubble = NSColor(srgbRed: 0.075, green: 0.078, blue: 0.09, alpha: 0.96)
+        let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = user ? 22 : 24
         let userBubble = p.accent.usingColorSpace(.deviceRGB) ?? p.accent
         card.layer?.backgroundColor = (user ? userBubble : aiBubble).cgColor
         card.layer?.borderWidth = user ? 0 : 1
         card.layer?.borderColor = NSColor.white.withAlphaComponent(p.isDark ? 0.08 : 0.12).cgColor
         card.layer?.shadowColor = NSColor.black.cgColor
-        card.layer?.shadowOpacity = user ? 0.10 : 0.18
-        card.layer?.shadowRadius = user ? 8 : 18
-        card.layer?.shadowOffset = CGSize(width: 0, height: user ? 2 : 8)
+        card.layer?.shadowOpacity = user ? 0.04 : 0.10
+        card.layer?.shadowRadius = user ? 4 : 9
+        card.layer?.shadowOffset = CGSize(width: 0, height: user ? 1 : 3)
         card.translatesAutoresizingMaskIntoConstraints = false
         card.setContentHuggingPriority(.required, for: .horizontal)
+        card.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let bubblePadding = NSEdgeInsets(top: user ? 10 : 13, left: user ? 16 : 17, bottom: user ? 10 : 13, right: user ? 16 : 17)
         let label = SelectableMessageTextView(maxWidth: messageMaxWidth)
-        messageTextViews.append(label)
+        let attributed: NSAttributedString
         if user {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 14),
                 .foregroundColor: onAccentText(p.accent)
             ]
-            label.attributedString = NSAttributedString(string: text, attributes: attrs)
+            attributed = NSAttributedString(string: text, attributes: attrs)
         } else {
             label.textColor = .white
-            label.attributedString = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
+            attributed = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
         }
+        label.attributedString = attributed
         card.addSubview(label)
-        label.pin(to: card, insets: NSEdgeInsets(top: user ? 8 : 12, left: user ? 12 : 14, bottom: user ? 8 : 12, right: user ? 12 : 14))
+        let metrics = measuredBubbleMetrics(attributed, maxTextWidth: messageMaxWidth, insets: bubblePadding, isUser: user)
+        let labelWidth = label.widthAnchor.constraint(equalToConstant: metrics.textWidth)
+        let bubbleWidth = card.widthAnchor.constraint(equalToConstant: metrics.bubbleWidth)
+        NSLayoutConstraint.activate([labelWidth, bubbleWidth])
+        label.updateMaxWidth(metrics.textWidth)
+        label.pin(to: card, insets: bubblePadding)
+        messageBubbles.append(MessageBubbleRecord(textView: label, textWidthConstraint: labelWidth, bubbleWidthConstraint: bubbleWidth, attributedText: attributed, isUser: user))
 
-        let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: user ? [spacer, card] : [card, spacer])
-        row.orientation = .horizontal; row.spacing = 0
+        let row = NSView()
         row.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(card)
         messagesStack.addArrangedSubview(row)
-        row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor).isActive = true
+        NSLayoutConstraint.activate([
+            row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor),
+            card.topAnchor.constraint(equalTo: row.topAnchor),
+            card.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            card.widthAnchor.constraint(lessThanOrEqualTo: row.widthAnchor)
+        ])
+        if user {
+            NSLayoutConstraint.activate([
+                card.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+                card.leadingAnchor.constraint(greaterThanOrEqualTo: row.leadingAnchor)
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                card.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+                card.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor)
+            ])
+        }
         scrollToBottom()
     }
 
     func clear() {
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        messageTextViews.removeAll()
+        messageBubbles.removeAll()
         empty.isHidden = false
     }
     func setStatus(_ s: String?) {
@@ -544,13 +574,33 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     private func messageColumnWidth(fullscreen: Bool) -> CGFloat {
         let available = max(260, bounds.width - (fullscreen ? 180 : 36))
-        return fullscreen ? min(900, max(600, available)) : min(360, max(240, available))
+        return fullscreen ? min(760, max(500, available)) : min(360, max(240, available))
     }
 
     private func refreshExistingMessageWidths() {
-        for view in messageTextViews {
-            view.updateMaxWidth(messageMaxWidth)
+        for record in messageBubbles {
+            let insets = NSEdgeInsets(top: record.isUser ? 10 : 13, left: record.isUser ? 16 : 17, bottom: record.isUser ? 10 : 13, right: record.isUser ? 16 : 17)
+            let metrics = measuredBubbleMetrics(record.attributedText, maxTextWidth: messageMaxWidth, insets: insets, isUser: record.isUser)
+            record.textWidthConstraint?.constant = metrics.textWidth
+            record.bubbleWidthConstraint?.constant = metrics.bubbleWidth
+            record.textView?.updateMaxWidth(metrics.textWidth)
         }
+    }
+
+    private func measuredBubbleMetrics(_ attr: NSAttributedString, maxTextWidth: CGFloat, insets: NSEdgeInsets, isUser: Bool) -> (textWidth: CGFloat, bubbleWidth: CGFloat) {
+        let minWidth: CGFloat = isUser ? 18 : 34
+        let maxWidth = max(80, maxTextWidth)
+        let singleLine = attr.boundingRect(
+            with: NSSize(width: 10_000, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let target = min(maxWidth, max(minWidth, ceil(singleLine.width) + 4))
+        let wrapped = attr.boundingRect(
+            with: NSSize(width: target, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        let textWidth = min(maxWidth, max(minWidth, ceil(min(singleLine.width, wrapped.width)) + 4))
+        return (textWidth, textWidth + insets.left + insets.right)
     }
 
     private func renderHistory() {

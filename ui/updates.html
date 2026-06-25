@@ -203,6 +203,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.8', icon: 'shapes', title: 'Nav Bubble Polish', major: true, items: [
+        '<b>Rounder Nav Bubbles</b> — Chat bubbles now size to the message instead of turning short prompts into giant bars.',
+        '<b>Fullscreen Wrapping Fixed</b> — Long Nav replies wrap inside the bubble instead of clipping off the right edge.',
+        '<b>Cleaner Chat Shape</b> — User and Nav messages use softer, more native-feeling rounded bubbles across sidebar and fullscreen chat.' ] },
       { v: '4.0.7', icon: 'shield-check', title: 'Download & Browser Polish', major: true, items: [
         '<b>Google Drive Large Downloads</b> — Large Google Drive files now download instead of opening a failed plug-in page.',
         '<b>Tab Close Button Fix</b> — Tab close buttons are now more reliable across Macs, while Command-W and right-click close continue to work as expected.',
