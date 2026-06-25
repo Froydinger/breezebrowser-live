@@ -549,12 +549,12 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     private func updateMessageWidths(fullscreen: Bool? = nil) {
         let isFullscreen = fullscreen ?? headerView.isHidden
-        messageMaxWidth = messageColumnWidth(fullscreen: isFullscreen) - (isFullscreen ? 40 : 28)
+        messageMaxWidth = max(120, messageColumnWidth(fullscreen: isFullscreen) - (isFullscreen ? 64 : 28))
     }
 
     private func messageColumnWidth(fullscreen: Bool) -> CGFloat {
-        let available = max(260, bounds.width - (fullscreen ? 180 : 36))
-        return fullscreen ? min(760, max(500, available)) : min(360, max(240, available))
+        let available = max(220, bounds.width - (fullscreen ? 150 : 36))
+        return fullscreen ? min(760, available) : min(360, max(240, available))
     }
 
     private func refreshExistingMessageWidths() {

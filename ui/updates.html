@@ -203,6 +203,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.1.1', icon: 'download', title: 'Update Recovery Hotfix', major: false, items: [
+        '<b>4.x Updates Restored</b> — Check for Updates now sees current native Breeze releases instead of looking only at the old v3 channel.',
+        '<b>Manual Install Required Once</b> — If you are already on a 4.x build, install this update from the website once; future updates will work from inside Breeze again.',
+        '<b>Fullscreen Nav Wrapping</b> — Fullscreen chat bubbles now stay inside the visible column instead of stretching off the edge.' ] },
       { v: '4.1.0', icon: 'shapes', title: 'Cruise Control', major: true, items: [
         '<b>Nav Chat Rebuilt</b> — Message bubbles now measure and draw themselves, so short replies stay pill-shaped and long replies wrap without clipping.',
         '<b>PiP Behaves</b> — Closing Picture-in-Picture just closes PiP, while returning to the source tab is handled separately.',

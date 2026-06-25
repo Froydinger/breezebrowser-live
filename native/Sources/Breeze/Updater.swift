@@ -1,8 +1,7 @@
 // Native auto-updater (the Sparkle-equivalent for the hand-built app).
 //
-// Checks GitHub Releases for the newest **v3.x** tag (the native channel — kept
-// separate from the Electron 2.x "latest" so existing Electron users are never
-// pushed a native build). When a newer release with a .zip asset is found, it
+// Checks GitHub Releases for the newest native release tag. When a newer release
+// with a .zip asset is found, it
 // downloads it, verifies the code signature, swaps the app bundle in place, and
 // relaunches. Runs on launch, every 4 hours, and from Breeze → Check for Updates.
 
@@ -41,14 +40,17 @@ final class Updater {
                 if manual { DispatchQueue.main.async { self.alertUpToDate(failed: true) } }
                 return
             }
-            // newest v3.x, non-draft, non-prerelease, with a .zip asset
+            // newest native release, non-draft, non-prerelease, with a .zip asset
             var best: (ver: String, zip: String)?
             for rel in arr {
                 guard (rel["draft"] as? Bool) != true, (rel["prerelease"] as? Bool) != true,
-                      let tag = rel["tag_name"] as? String, tag.hasPrefix("v3.") else { continue }
-                let ver = String(tag.dropFirst())
+                      let tag = rel["tag_name"] as? String,
+                      let ver = Self.nativeVersion(from: tag) else { continue }
                 let assets = rel["assets"] as? [[String: Any]] ?? []
-                guard let zip = assets.first(where: { ($0["name"] as? String)?.hasSuffix(".zip") == true })?["browser_download_url"] as? String
+                guard let zip = assets.first(where: { asset in
+                    guard let name = asset["name"] as? String else { return false }
+                    return name == "Breeze-arm64.zip" || name == "Breeze-\(ver)-arm64.zip"
+                })?["browser_download_url"] as? String
                 else { continue }
                 if best == nil || Self.isNewer(ver, than: best!.ver) { best = (ver, zip) }
             }
@@ -152,7 +154,15 @@ final class Updater {
         do { try p.run(); p.waitUntilExit(); return p.terminationStatus } catch { return -1 }
     }
 
-    /// Semantic-ish compare: "3.0.10" > "3.0.9".
+    static func nativeVersion(from tag: String) -> String? {
+        guard tag.hasPrefix("v") else { return nil }
+        let ver = String(tag.dropFirst())
+        let parts = ver.split(separator: ".").compactMap { Int($0) }
+        guard parts.count >= 2, parts[0] >= 3 else { return nil }
+        return ver
+    }
+
+    /// Semantic-ish compare: "4.0.10" > "4.0.9".
     static func isNewer(_ a: String, than b: String) -> Bool {
         let pa = a.split(separator: ".").map { Int($0) ?? 0 }
         let pb = b.split(separator: ".").map { Int($0) ?? 0 }
