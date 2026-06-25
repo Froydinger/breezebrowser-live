@@ -51,6 +51,7 @@ mkdir -p "$APP/Contents/Resources/ui"
 cp -R ../ui/. "$APP/Contents/Resources/ui/" 2>/dev/null || true
 # Bundle the EasyList adblock rules
 cp easylist.json "$APP/Contents/Resources/easylist.json" 2>/dev/null || true
+cp "READ THIS FIRST.txt" "$OUT_DIR/READ THIS FIRST.txt" 2>/dev/null || true
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -59,8 +60,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>4.0.6</string>
-  <key>CFBundleShortVersionString</key><string>4.0.6</string>
+  <key>CFBundleVersion</key><string>4.0.7</string>
+  <key>CFBundleShortVersionString</key><string>4.0.7</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>

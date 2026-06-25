@@ -1,0 +1,14 @@
+READ THIS FIRST
+Breeze is currently unsigned while developer signing is being finalized.
+To open Breeze on macOS:
+1. Drag Breeze into your Applications folder.
+2. Try to open Breeze.
+3. If macOS blocks it, open System Settings.
+4. Go to Privacy & Security.
+5. Scroll down until you see a message that Breeze was blocked.
+6. Click Allow Anyway.
+7. Open Breeze again.
+8. If prompted, click Open.
+This is temporary until Breeze is signed and notarized with an Apple Developer account.
+Breeze is open source:
+https://github.com/Froydinger/breezebrowser-live

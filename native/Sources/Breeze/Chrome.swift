@@ -63,7 +63,7 @@ final class TabRowView: NSView, NSDraggingSource {
     var menuProvider: (() -> [MenuEntry])?     // controller builds the full menu
     private let faviconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
-    private let close = HoverButton(symbol: "xmark", size: 20, point: 9)
+    private let close = HoverButton(symbol: "xmark", size: 24, point: 10)
     private let perfBadge = NSTextField(labelWithString: "🚀")
     private let privateBadge = NSTextField(labelWithString: "🕵️")
     private var titleTrailingToBadges: NSLayoutConstraint!
@@ -97,7 +97,8 @@ final class TabRowView: NSView, NSDraggingSource {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         close.onTap = { [weak self] in self?.onClose?() }
-        close.alphaValue = 0
+        close.alphaValue = active ? 0.9 : 0
+        close.toolTip = "Close Tab"
         perfBadge.font = .systemFont(ofSize: 11)
         perfBadge.translatesAutoresizingMaskIntoConstraints = false
         perfBadge.isHidden = !perf
@@ -124,7 +125,7 @@ final class TabRowView: NSView, NSDraggingSource {
             privateBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
             perfBadge.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
             perfBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
-            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         titleTrailingToBadges.isActive = false
@@ -187,13 +188,31 @@ final class TabRowView: NSView, NSDraggingSource {
         applyTheme()
     }
     override func mouseExited(with e: NSEvent) {
-        hovering = false; close.animator().alphaValue = 0
+        hovering = false; close.animator().alphaValue = active ? 0.9 : 0
         titleTrailingToBadges.isActive = false
         titleTrailingToEdge.isActive = true
         if !perfBadge.isHidden { perfBadge.animator().alphaValue = 1 }
         applyTheme()
     }
     @objc private func clicked() { onSelect?() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let closePoint = close.convert(point, from: self)
+        if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
+            return close
+        }
+        return super.hitTest(point)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let closePoint = close.convert(point, from: self)
+        if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
+            onClose?()
+            return
+        }
+        super.mouseDown(with: event)
+    }
 
     override func mouseDragged(with event: NSEvent) {
         guard let dragPayload else { return }

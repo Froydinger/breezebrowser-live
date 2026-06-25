@@ -433,6 +433,7 @@ final class SelectableMessageTextView: NSTextView {
         textContainer?.lineFragmentPadding = 0
         textContainer?.widthTracksTextView = false
         textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
+        textContainer?.lineBreakMode = .byWordWrapping
         isVerticallyResizable = true
         isHorizontallyResizable = false
     }
@@ -445,6 +446,12 @@ final class SelectableMessageTextView: NSTextView {
             textStorage?.setAttributedString(newValue)
             invalidateIntrinsicContentSize()
         }
+    }
+
+    func updateMaxWidth(_ width: CGFloat) {
+        maxWidth = max(1, width)
+        textContainer?.containerSize = NSSize(width: maxWidth, height: .greatestFiniteMagnitude)
+        invalidateIntrinsicContentSize()
     }
 
     override var intrinsicContentSize: NSSize {

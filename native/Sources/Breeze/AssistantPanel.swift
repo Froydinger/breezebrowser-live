@@ -37,6 +37,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private let headerLogo = NSImageView()
     private let emptyLogo = NSImageView()
     private var emptyChipViews: [(NSView, NSTextField)] = []
+    private var messageTextViews: [SelectableMessageTextView] = []
     private var imageMode = false
     // chat state
     private var chatId = Date().timeIntervalSince1970
@@ -331,6 +332,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         chatId = Date().timeIntervalSince1970
         messages = []
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        messageTextViews.removeAll()
         empty.isHidden = false
         setMode(history: false)
     }
@@ -338,6 +340,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         chatId = id
         messages = Store.shared.chatMessages(id: id)
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        messageTextViews.removeAll()
         empty.isHidden = !messages.isEmpty
         for m in messages {
             if m["role"] == "image", let path = m["path"], let img = NSImage(contentsOfFile: path) {
@@ -413,13 +416,20 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let p = Theme.shared.palette
         // AI replies always sit in a near-black bubble with white text, so they stay
         // readable in light OR dark mode (avoids low-contrast text on a light panel).
-        let aiBubble = NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1)
-        let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = 13
+        let aiBubble = NSColor(srgbRed: 0.08, green: 0.085, blue: 0.10, alpha: 0.92)
+        let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = user ? 13 : 16
         let userBubble = p.accent.usingColorSpace(.deviceRGB) ?? p.accent
         card.layer?.backgroundColor = (user ? userBubble : aiBubble).cgColor
+        card.layer?.borderWidth = user ? 0 : 1
+        card.layer?.borderColor = NSColor.white.withAlphaComponent(p.isDark ? 0.08 : 0.12).cgColor
+        card.layer?.shadowColor = NSColor.black.cgColor
+        card.layer?.shadowOpacity = user ? 0.10 : 0.18
+        card.layer?.shadowRadius = user ? 8 : 18
+        card.layer?.shadowOffset = CGSize(width: 0, height: user ? 2 : 8)
         card.translatesAutoresizingMaskIntoConstraints = false
         card.setContentHuggingPriority(.required, for: .horizontal)
         let label = SelectableMessageTextView(maxWidth: messageMaxWidth)
+        messageTextViews.append(label)
         if user {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 14),
@@ -431,7 +441,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             label.attributedString = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
         }
         card.addSubview(label)
-        label.pin(to: card, insets: NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12))
+        label.pin(to: card, insets: NSEdgeInsets(top: user ? 8 : 12, left: user ? 12 : 14, bottom: user ? 8 : 12, right: user ? 12 : 14))
 
         let spacer = NSView(); spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -445,6 +455,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     func clear() {
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        messageTextViews.removeAll()
         empty.isHidden = false
     }
     func setStatus(_ s: String?) {
@@ -495,8 +506,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         historyTopToHeaderC.isActive = !on
         historyTopToPanelC.isActive = on
         headerLeadingC.constant = (on && clearLights) ? 82 : 14
-        // wider reading column for messages when fullscreen
-        messageMaxWidth = on ? 600 : 250
+        updateMessageWidths(fullscreen: on)
 
         messagesWidthC.isActive = false
         inputWidthC.isActive = false
@@ -505,11 +515,12 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         historyWidthC.isActive = false
 
         if on {
-            messagesWidthC = messagesStack.widthAnchor.constraint(equalToConstant: 600)
-            inputWidthC = inputWrap.widthAnchor.constraint(equalToConstant: 600)
-            statusWidthC = status.widthAnchor.constraint(equalToConstant: 600)
-            contextWidthC = contextScroll.widthAnchor.constraint(equalToConstant: 600)
-            historyWidthC = historyView.widthAnchor.constraint(equalToConstant: 600)
+            let column = messageColumnWidth(fullscreen: true)
+            messagesWidthC = messagesStack.widthAnchor.constraint(equalToConstant: column)
+            inputWidthC = inputWrap.widthAnchor.constraint(equalToConstant: min(680, column))
+            statusWidthC = status.widthAnchor.constraint(equalToConstant: min(680, column))
+            contextWidthC = contextScroll.widthAnchor.constraint(equalToConstant: min(680, column))
+            historyWidthC = historyView.widthAnchor.constraint(equalToConstant: column)
         } else {
             messagesWidthC = messagesStack.widthAnchor.constraint(equalTo: scroll.documentView!.widthAnchor, constant: -16)
             inputWidthC = inputWrap.widthAnchor.constraint(equalTo: widthAnchor, constant: -24)
@@ -523,6 +534,23 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         statusWidthC.isActive = true
         contextWidthC.isActive = true
         historyWidthC.isActive = true
+        refreshExistingMessageWidths()
+    }
+
+    private func updateMessageWidths(fullscreen: Bool? = nil) {
+        let isFullscreen = fullscreen ?? headerView.isHidden
+        messageMaxWidth = messageColumnWidth(fullscreen: isFullscreen) - (isFullscreen ? 40 : 28)
+    }
+
+    private func messageColumnWidth(fullscreen: Bool) -> CGFloat {
+        let available = max(260, bounds.width - (fullscreen ? 180 : 36))
+        return fullscreen ? min(900, max(600, available)) : min(360, max(240, available))
+    }
+
+    private func refreshExistingMessageWidths() {
+        for view in messageTextViews {
+            view.updateMaxWidth(messageMaxWidth)
+        }
     }
 
     private func renderHistory() {
@@ -675,7 +703,11 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             let f = NSFont(descriptor: desc, size: 14) ?? .systemFont(ofSize: 14)
             attr.addAttribute(.font, value: f, range: range)
         }
-        let para = NSMutableParagraphStyle(); para.paragraphSpacing = 5; para.lineSpacing = 1.5
+        let para = NSMutableParagraphStyle()
+        para.paragraphSpacing = 7
+        para.lineSpacing = 2
+        para.lineBreakMode = .byWordWrapping
+        para.allowsDefaultTighteningForTruncation = false
         attr.addAttribute(.paragraphStyle, value: para, range: full)
         return attr
     }
@@ -706,6 +738,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     override func layout() {
         super.layout()
+        updateMessageWidths()
+        refreshExistingMessageWidths()
         syncBackgroundLayers()
     }
 

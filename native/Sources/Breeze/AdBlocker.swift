@@ -28,7 +28,8 @@ final class AdBlocker {
     }
 
     private func compileRuleLists(_ done: @escaping () -> Void) {
-        let mode = Store.shared.string("adblockMode") == "extreme" ? "extreme" : "normal"
+        let rawMode = Store.shared.string("adblockMode")
+        let mode = (rawMode == "advanced" || rawMode == "extreme") ? "advanced" : "on"
         let exceptions = (Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []).sorted().joined(separator: ",")
         let cacheKey = "\(mode)|\(exceptions)"
         identifier = "breeze-adblock-\(mode)-\(stableHash(cacheKey))"
@@ -81,7 +82,7 @@ final class AdBlocker {
         for pattern in blockPatterns {
             arr.append(["trigger": trigger(pattern), "action": ["type": "block"]])
         }
-        guard mode == "extreme" else {
+        guard mode == "advanced" else {
             guard let data = try? JSONSerialization.data(withJSONObject: arr),
                   let out = String(data: data, encoding: .utf8) else { return baseJSON }
             return out
@@ -141,6 +142,7 @@ final class AdBlocker {
 
     func apply(to controller: WKUserContentController) {
         guard Store.shared.settings["adblockEnabled"] as? Bool ?? true else { return }
+        guard Store.shared.string("adblockMode") != "off" else { return }
         ruleLists.forEach { controller.add($0) }
     }
 

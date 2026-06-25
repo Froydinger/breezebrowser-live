@@ -203,6 +203,14 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.7', icon: 'shield-check', title: 'Download & Browser Polish', major: true, items: [
+        '<b>Google Drive Large Downloads</b> — Large Google Drive files now download instead of opening a failed plug-in page.',
+        '<b>Tab Close Button Fix</b> — Tab close buttons are now more reliable across Macs, while Command-W and right-click close continue to work as expected.',
+        '<b>Install Instructions Included</b> — The download now includes a READ THIS FIRST file with temporary macOS install steps while Breeze developer signing is being finalized.',
+        '<b>Smarter Native Ad Blocking</b> — Breeze now uses a simpler Off, On, and Advanced blocking model. On mode is safer and smarter by default, while Advanced adds stronger filtering for users who want extra blocking and do not mind occasional site breakage.',
+        '<b>Better Apple Autofill Access</b> — Right-click menus in supported login fields now better preserve native Apple password and passkey autofill options when WebKit makes them available.',
+        '<b>Better Media Downloads</b> — Download links and right-click media downloads now save images, videos, and direct media files instead of opening failed media pages.',
+        '<b>Cleaner Nav Bubbles</b> — Fullscreen Nav chats now wrap long replies correctly, with calmer bubbles that scale across sidebar and fullscreen chat.' ] },
       { v: '4.0.6', icon: 'sparkles', title: 'A Living What’s New', major: true, items: [
         '<b>Lander-Inspired Release Notes</b> — What’s New now uses the same airy editorial design language as the Breeze site.',
         '<b>Living Update Screen</b> — Soft looping shimmer, floating marks, and ambient motion make the page feel alive when you revisit it.',

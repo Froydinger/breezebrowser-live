@@ -2,7 +2,7 @@
 
 Breeze is a fast native macOS browser built with Swift, AppKit, and WKWebView. Nav, its built-in assistant, talks to Breeze Cloud for chat plus image generation/editing without exposing provider credentials in the app.
 
-Current release: **4.0.6** for Apple Silicon Macs.
+Current release: **4.0.7** for Apple Silicon Macs.
 
 ## Run it
 

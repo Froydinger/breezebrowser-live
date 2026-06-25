@@ -100,23 +100,61 @@ let breezeLinkMenuJS = """
   }
   function closestImage(node) {
     while (node && node !== document.documentElement) {
-      if ((node.tagName || '').toLowerCase() === 'img' && node.currentSrc) return node;
+      if ((node.tagName || '').toLowerCase() === 'img' && (node.currentSrc || node.src)) return node;
       node = node.parentElement;
     }
     return null;
+  }
+  function cleanURL(value) {
+    value = String(value || '').trim();
+    if (!value || value === 'about:blank') return '';
+    try { return new URL(value, location.href).href; } catch (e) { return ''; }
+  }
+  function mediaURLFromLink(link) {
+    var href = cleanURL(link && link.href);
+    if (!href) return '';
+    return /\\.(png|jpe?g|webp|gif|svg|avif|bmp|tiff?|mp4|m4v|mov|webm|mp3|m4a|wav|ogg)(\\?|#|$)/i.test(href) ? href : '';
+  }
+  function closestMedia(node) {
+    var cur = node;
+    while (cur && cur !== document.documentElement) {
+      var tag = (cur.tagName || '').toLowerCase();
+      if (tag === 'img') return { kind: 'image', url: cleanURL(cur.currentSrc || cur.src) };
+      if (tag === 'video') return { kind: 'video', url: cleanURL(cur.currentSrc || cur.src || (cur.querySelector('source[src]') || {}).src), poster: cleanURL(cur.poster) };
+      if (tag === 'audio') return { kind: 'audio', url: cleanURL(cur.currentSrc || cur.src || (cur.querySelector('source[src]') || {}).src) };
+      if (tag === 'source' && cur.parentElement) {
+        var parentTag = (cur.parentElement.tagName || '').toLowerCase();
+        if (parentTag === 'video' || parentTag === 'audio') return { kind: parentTag, url: cleanURL(cur.src) };
+      }
+      var bg = '';
+      try { bg = getComputedStyle(cur).backgroundImage || ''; } catch (e) {}
+      var m = bg.match(/url\\((['"]?)(.*?)\\1\\)/);
+      if (m && m[2] && !m[2].startsWith('data:')) return { kind: 'image', url: cleanURL(m[2]) };
+      cur = cur.parentElement;
+    }
+    return { kind: '', url: '' };
   }
   document.addEventListener('contextmenu', function (event) {
     var node = event.target;
     var link = node && node.closest ? node.closest('a[href]') : null;
     var image = closestImage(node);
     var editable = closestEditable(node);
+    if (editable) return; // preserve WebKit's native edit/autofill/password menu.
+    var media = closestMedia(node);
+    var linkMedia = mediaURLFromLink(link);
+    if (!media.url && linkMedia) {
+      media = { kind: /\\.(mp4|m4v|mov|webm)(\\?|#|$)/i.test(linkMedia) ? 'video' : (/\\.(mp3|m4a|wav|ogg)(\\?|#|$)/i.test(linkMedia) ? 'audio' : 'image'), url: linkMedia };
+    }
     var selection = '';
     try { selection = String(window.getSelection ? window.getSelection().toString() : '').trim(); } catch (e) {}
     event.preventDefault();
     try {
       window.webkit.messageHandlers.breezeLinkMenu.postMessage({
         url: link ? link.href : '',
-        image: image ? image.currentSrc : '',
+        image: media.kind === 'image' ? (media.url || (image ? cleanURL(image.currentSrc || image.src) : '')) : '',
+        media: media.kind !== 'image' ? (media.url || '') : '',
+        mediaKind: media.kind || '',
+        poster: media.poster || '',
         filename: link ? (link.getAttribute('download') || '') : '',
         selection: selection,
         editable: !!editable,

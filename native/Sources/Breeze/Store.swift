@@ -35,7 +35,7 @@ final class Store {
         "urlBarPosition": "top",
         "userName": "",
         "adblockEnabled": true,
-        "adblockMode": "normal",
+        "adblockMode": "on",
         "adblockSiteExceptions": [String](),
         "notificationSounds": true,
         "updateSounds": true,

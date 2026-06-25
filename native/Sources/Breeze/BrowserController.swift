@@ -54,6 +54,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
     var contextLinkURL: URL?
     var contextImageURL: URL?
+    var contextMediaURL: URL?
+    var contextMediaKind = ""
     var contextPageURL: URL?
     var contextPageTitle = ""
     var contextSelectedText = ""
@@ -525,7 +527,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let clearc = HoverButton(symbol: "trash", size: 22, point: 11)
         clearc.onTap = { [weak self] in self?.clearCurrentSiteCache() }
         bookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
-        adblockModeBtn.toolTip = "Turn off Extreme blocking for this site"
+        adblockModeBtn.toolTip = "Turn off Advanced blocking for this site"
         adblockModeBtn.onTap = { [weak self] in self?.allowCurrentSiteInExtremeAdblock() }
         let share = HoverButton(symbol: "square.and.arrow.up", size: 22, point: 12)
         share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
@@ -3202,6 +3204,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             decisionHandler(.cancel)
             return
         }
+        if isDownloadIntentURL(url) || isLikelyFileURL(url) {
+            if #available(macOS 11.3, *) {
+                decisionHandler(.download)
+            } else {
+                startExplicitDownload(url, in: w)
+                decisionHandler(.cancel)
+            }
+            return
+        }
         // `<a download>`, blob:/data: download links, and right-click "Download
         // Linked File" set shouldPerformDownload. WebKit won't save the file
         // unless we answer .download here — otherwise it just navigates and the
@@ -3216,6 +3227,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // route undisplayable responses to a download
     func webView(_ w: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if shouldDownloadResponse(navigationResponse.response) {
+            decisionHandler(.download)
+            return
+        }
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
     }
     func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
@@ -3263,14 +3278,77 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         broadcastDownloads()
     }
 
+    func isGoogleDriveConfirmedDownload(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        let path = url.path.lowercased()
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let items = comps?.queryItems ?? []
+        let hasConfirm = items.contains { $0.name.lowercased() == "confirm" && !($0.value ?? "").isEmpty }
+        let exportDownload = items.contains { $0.name.lowercased() == "export" && ($0.value ?? "").lowercased() == "download" }
+        if host == "drive.usercontent.google.com" && path.contains("/download") { return true }
+        if host.hasSuffix("drive.google.com") && path == "/uc" && (hasConfirm || exportDownload) { return true }
+        if host.hasSuffix("googleusercontent.com") && path.contains("/download") && hasConfirm { return true }
+        return false
+    }
+
+    func isDownloadIntentURL(_ url: URL) -> Bool {
+        if isGoogleDriveConfirmedDownload(url) { return true }
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+        let path = comps.path.lowercased()
+        let host = comps.host?.lowercased() ?? ""
+        let items = comps.queryItems ?? []
+        if path.split(separator: "/").contains(where: { $0 == "download" }) { return true }
+        if items.contains(where: { ["download", "dl"].contains($0.name.lowercased()) }) { return true }
+        if items.contains(where: { $0.name.lowercased() == "response-content-disposition" }) { return true }
+        if host.contains("pexels.com") && (path.contains("/download") || items.contains(where: { $0.name.lowercased().contains("download") })) { return true }
+        return false
+    }
+
+    func isLikelyFileURL(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return [
+            "zip", "dmg", "pkg", "tar", "gz", "rar", "7z",
+            "mp4", "m4v", "mov", "webm", "mp3", "m4a", "wav", "ogg",
+            "png", "jpg", "jpeg", "webp", "gif", "svg", "avif",
+            "doc", "docx", "xls", "xlsx", "ppt", "pptx"
+        ].contains(ext)
+    }
+
+    func shouldDownloadResponse(_ response: URLResponse) -> Bool {
+        if let url = response.url, isGoogleDriveConfirmedDownload(url) { return true }
+        guard let http = response as? HTTPURLResponse else { return false }
+        let headers = http.allHeaderFields.reduce(into: [String: String]()) { out, pair in
+            out[String(describing: pair.key).lowercased()] = String(describing: pair.value).lowercased()
+        }
+        if headers["content-disposition"]?.contains("attachment") == true { return true }
+        if headers["content-type"]?.contains("application/octet-stream") == true { return true }
+        return false
+    }
+
+    func startExplicitDownload(_ url: URL, in webView: WKWebView) {
+        if #available(macOS 11.3, *) {
+            webView.startDownload(using: URLRequest(url: url)) { [weak self] download in
+                guard let self else { return }
+                self.activeDownloads[ObjectIdentifier(download)] = download
+                download.delegate = self
+                self.broadcastDownloads()
+                self.syncChrome()
+            }
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     func showLinkMenu(url: URL) {
         contextLinkURL = url
         showPageMenu(link: url, image: nil, pageURL: current?.webView.url, pageTitle: current?.title ?? "", selection: "", editable: false)
     }
 
-    func showPageMenu(link: URL?, image: URL?, pageURL: URL?, pageTitle: String, selection: String, editable: Bool) {
+    func showPageMenu(link: URL?, image: URL?, media: URL? = nil, mediaKind: String = "", pageURL: URL?, pageTitle: String, selection: String, editable: Bool) {
         contextLinkURL = link
         contextImageURL = image
+        contextMediaURL = media
+        contextMediaKind = mediaKind
         contextPageURL = pageURL
         contextPageTitle = pageTitle
         contextSelectedText = selection
@@ -3293,6 +3371,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             menu.addTargetedItem("Open Image in New Tab", #selector(openContextImageInNewTab), self)
             menu.addTargetedItem("Download Image", #selector(downloadContextImage), self)
             menu.addTargetedItem("Copy Image Address", #selector(copyContextImageAddress), self)
+            menu.addItem(.separator())
+        }
+
+        if media != nil {
+            let label: String
+            if mediaKind == "video" { label = "Video" }
+            else if mediaKind == "audio" { label = "Audio" }
+            else { label = "Media" }
+            menu.addTargetedItem("Open \(label) in New Tab", #selector(openContextMediaInNewTab), self)
+            menu.addTargetedItem("Download \(label)", #selector(downloadContextMedia), self)
+            menu.addTargetedItem("Copy \(label) Address", #selector(copyContextMediaAddress), self)
             menu.addItem(.separator())
         }
 
@@ -3343,11 +3432,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func downloadContextLink() {
         guard let url = contextLinkURL, let webView = current?.webView else { return }
-        webView.startDownload(using: URLRequest(url: url)) { [weak self] download in
-            guard let self else { return }
-            self.activeDownloads[ObjectIdentifier(download)] = download
-            download.delegate = self
-        }
+        startExplicitDownload(url, in: webView)
     }
 
     @objc func copyContextLink() {
@@ -3363,15 +3448,27 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func downloadContextImage() {
         guard let url = contextImageURL, let webView = current?.webView else { return }
-        webView.startDownload(using: URLRequest(url: url)) { [weak self] download in
-            guard let self else { return }
-            self.activeDownloads[ObjectIdentifier(download)] = download
-            download.delegate = self
-        }
+        startExplicitDownload(url, in: webView)
     }
 
     @objc func copyContextImageAddress() {
         guard let value = contextImageURL?.absoluteString else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    @objc func openContextMediaInNewTab() {
+        guard let url = contextMediaURL else { return }
+        openTab(url: url, from: current, autoGroupSameSite: false)
+    }
+
+    @objc func downloadContextMedia() {
+        guard let url = contextMediaURL, let webView = current?.webView else { return }
+        startExplicitDownload(url, in: webView)
+    }
+
+    @objc func copyContextMediaAddress() {
+        guard let value = contextMediaURL?.absoluteString else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
     }
@@ -3564,11 +3661,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
            let body = message.body as? [String: Any] {
             let link = (body["url"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
             let image = (body["image"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            let media = (body["media"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            let mediaKind = body["mediaKind"] as? String ?? ""
             let page = (body["pageURL"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
             let title = body["pageTitle"] as? String ?? ""
             let selection = body["selection"] as? String ?? ""
             let editable = body["editable"] as? Bool ?? false
-            showPageMenu(link: link, image: image, pageURL: page, pageTitle: title, selection: selection, editable: editable)
+            showPageMenu(link: link, image: image, media: media, mediaKind: mediaKind, pageURL: page, pageTitle: title, selection: selection, editable: editable)
             return
         }
         if message.name == "breezeMedia" {
@@ -3741,7 +3840,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func updateAdblockModeButton() {
-        let extreme = Store.shared.string("adblockMode") == "extreme" && (Store.shared.settings["adblockEnabled"] as? Bool ?? true)
+        let mode = Store.shared.string("adblockMode")
+        let extreme = (mode == "advanced" || mode == "extreme") && (Store.shared.settings["adblockEnabled"] as? Bool ?? true)
         let host = currentHost()
         let exceptions = Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []
         let disabledHere = host.map { h in exceptions.contains { h == $0 || h.hasSuffix("." + $0) } } ?? false
@@ -3831,6 +3931,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // a reload or follow-up main-frame load can proceed normally.
         if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
         guard let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? w.url else { return }
+        if isDownloadIntentURL(failing) || isLikelyFileURL(failing) {
+            startExplicitDownload(failing, in: w)
+            if w.canGoBack { w.goBack() }
+            return
+        }
         let escapedURL = failing.absoluteString.htmlEscaped
         let escapedMessage = error.localizedDescription.htmlEscaped
         let retryURL = failing.absoluteString.jsEscaped
@@ -3858,6 +3963,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
                  for a: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let t = tabs.first(where: { $0.webView === w }), blockedPopups.contains(t.id) { return nil }
+        if let url = a.request.url {
+            if isDownloadIntentURL(url) || isLikelyFileURL(url) || a.shouldPerformDownload {
+                startExplicitDownload(url, in: w)
+                return nil
+            }
+        }
         
         cfg.websiteDataStore = w.configuration.websiteDataStore
         let isPrivateTab = tabs.first(where: { $0.webView === w })?.isPrivate ?? false
