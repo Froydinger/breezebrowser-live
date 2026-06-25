@@ -1040,7 +1040,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if isWeb { e.append(.item("Duplicate Tab", { [weak self] in self?.openTab(url: url!) })) }
         else { e.append(.disabled("Duplicate Tab")) }
         // Sleep Tab (Electron: web && not sleeping && not active)
-        if isWeb && !t.sleeping && t.id != current?.id {
+        if canSleepTab(t) {
             e.append(.item("Sleep Tab", { [weak self] in self?.sleepTab(t) }))
         }
         e.append(.separator)
@@ -1063,6 +1063,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             e.append(.check("Allow Popups", !blockedPopups.contains(t.id), { [weak self] in self?.togglePopups(t) }))
         }
         e.append(.separator)
+        if tabs.count > 1 {
+            e.append(.item("Close Other Tabs", { [weak self] in self?.closeOtherTabs(keeping: t) }))
+        } else {
+            e.append(.disabled("Close Other Tabs"))
+        }
         e.append(.item("Close Tab", { [weak self] in self?.closeTab(t) }))
         return e
     }
@@ -1364,6 +1369,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
+    func closeOtherTabs(keeping keeper: Tab) {
+        guard tabs.contains(where: { $0.id == keeper.id }) else { return }
+        let victims = tabs.filter { $0.id != keeper.id }
+        guard !victims.isEmpty else { return }
+        for tab in victims { closeTab(tab) }
+        if let idx = tabs.firstIndex(where: { $0.id == keeper.id }) {
+            select(idx)
+        }
+    }
+
     /// When leaving a tab that's playing a video, pop it into Picture-in-Picture so
     /// it keeps playing (otherwise WebKit pauses it once the web view leaves the
     /// window). Gated by the autoPip setting. Must be called BEFORE the active tab
@@ -1385,8 +1400,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Tab sleeping --------------------------------------------------
 
+    func canSleepTab(_ t: Tab) -> Bool {
+        if t.sleeping || t.isNewTab || t.id == current?.id { return false }
+        if t.pinUrl != nil && Store.shared.settings["keepPinnedAppsAwake"] as? Bool != false { return false }
+        return true
+    }
+
     func sleepTab(_ t: Tab) {
-        guard !t.sleeping, !t.isNewTab, t.id != current?.id else { return }
+        guard canSleepTab(t) else { return }
         t.sleptURL = t.webView.url?.absoluteString
         t.sleeping = true
         t.webView.loadHTMLString("", baseURL: nil)   // discard the page to free memory
@@ -1404,7 +1425,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let hours = (Store.shared.settings["tabSleepHours"] as? NSNumber)?.doubleValue ?? 0
         guard hours > 0 else { return }                 // 0 = never
         let cutoff = Date().addingTimeInterval(-hours * 3600)
-        for t in tabs where t.id != current?.id && !t.sleeping && !t.isNewTab && t.lastActive < cutoff {
+        for t in tabs where canSleepTab(t) && t.lastActive < cutoff {
             sleepTab(t)
         }
     }

@@ -148,6 +148,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.5', icon: 'zap', title: 'Tab Cleanup & Refresh Polish', major: true, items: [
+        '<b>Close Other Tabs</b> — Keep the selected tab open while closing every other open tab, including open pinned app tabs while leaving the pins themselves in place.',
+        '<b>Pinned Apps Stay Awake</b> — A new Settings toggle keeps pinned app tabs from being put to sleep by default, with control for users who want different behavior.',
+        '<b>Cleaner Refresh Spin</b> — The reload icon now rotates around its own center for a smoother, more native-feeling refresh animation.' ] },
       { v: '4.0.4', icon: 'panel-left', title: 'Sidebar Drag & Shortcut Polish', major: true, items: [
         '<b>Drag the Sidebar Around</b> — Reorder pinned apps, tabs, and tab folders directly in the sidebar, including moving tabs between folders.',
         '<b>Split Tabs Stay Together</b> — Dragging split-view tabs preserves the split relationship while letting you rearrange their place in the list.',

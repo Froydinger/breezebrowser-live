@@ -40,6 +40,7 @@ final class Store {
         "notificationSounds": true,
         "updateSounds": true,
         "autoPip": true,
+        "keepPinnedAppsAwake": true,
         "restoreTabs": false,
         "webNotifications": true,
         "tabSleepHours": 1,

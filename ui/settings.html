@@ -468,6 +468,16 @@
         </div>
         <div class="row">
           <div>
+            <div class="row-label">Keep pinned apps awake</div>
+            <div class="row-hint">Pinned app tabs stay loaded instead of being put to sleep</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="keepPinnedAppsAwake" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
             <div class="row-label">Reopen tabs on launch</div>
             <div class="row-hint">Restore the pages you had open when you quit</div>
           </div>
@@ -824,6 +834,7 @@
         b.classList.toggle('on', b.dataset.v === (settings.pinSize || 'large')));
       document.getElementById('tabSleepHours').value = String(settings.tabSleepHours ?? 4);
       document.getElementById('autoPip').checked = settings.autoPip !== false;
+      document.getElementById('keepPinnedAppsAwake').checked = settings.keepPinnedAppsAwake !== false;
       document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
       document.getElementById('flattenFullscreenCorners').checked = settings.flattenFullscreenCorners !== false;
       // AI fields: don't clobber while the user is actively typing in them
@@ -906,6 +917,7 @@
       b.addEventListener('click', () => set('pinSize', b.dataset.v)));
     document.getElementById('tabSleepHours').addEventListener('change', (e) => set('tabSleepHours', Number(e.target.value)));
     document.getElementById('autoPip').addEventListener('change', (e) => set('autoPip', e.target.checked));
+    document.getElementById('keepPinnedAppsAwake').addEventListener('change', (e) => set('keepPinnedAppsAwake', e.target.checked));
     document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
     document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));

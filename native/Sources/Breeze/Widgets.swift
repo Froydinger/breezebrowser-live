@@ -101,20 +101,23 @@ final class HoverButton: NSButton {
     @objc private func tapped() { onTap?() }
 
     func spinGlyph() {
-        guard let currentImage = image else { return }
-        let spinner = NSImageView(image: currentImage)
-        spinner.imageScaling = .scaleProportionallyDown
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        spinner.wantsLayer = true
-        image = nil
-        addSubview(spinner)
-        NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
-            spinner.widthAnchor.constraint(equalToConstant: max(pointSize + 5, 18)),
-            spinner.heightAnchor.constraint(equalToConstant: max(pointSize + 5, 18)),
-        ])
+        guard let currentImage = image, let hostLayer = layer else { return }
+        hostLayer.sublayers?.removeAll { $0.name == "breezeReloadSpinner" }
+        subviews.filter { $0.identifier?.rawValue == "breezeReloadSpinner" }.forEach { $0.removeFromSuperview() }
         layoutSubtreeIfNeeded()
+        let side = max(pointSize + 5, 18)
+        var proposed = CGRect(origin: .zero, size: CGSize(width: side, height: side))
+        guard let cgImage = currentImage.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else { return }
+        image = nil
+        let spinner = CALayer()
+        spinner.name = "breezeReloadSpinner"
+        spinner.contents = cgImage
+        spinner.contentsGravity = .resizeAspect
+        spinner.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        spinner.bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        spinner.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        spinner.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        hostLayer.addSublayer(spinner)
         let animation = CABasicAnimation(keyPath: "transform.rotation.z")
         animation.fromValue = 0
         animation.toValue = CGFloat.pi * 2
@@ -122,10 +125,10 @@ final class HoverButton: NSButton {
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self, weak spinner] in
-            spinner?.removeFromSuperview()
+            spinner?.removeFromSuperlayer()
             self?.applyTheme()
         }
-        spinner.layer?.add(animation, forKey: "breezeReloadSpin")
+        spinner.add(animation, forKey: "breezeReloadSpin")
         CATransaction.commit()
     }
 }
