@@ -104,6 +104,17 @@
     .rel-icon svg { width: 13px; height: 13px; stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .past-head { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
       color: var(--soft); margin: 0 0 22px 2px; }
+    .older-releases { margin-top: 8px; }
+    .older-releases summary {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      cursor: pointer; list-style: none; padding: 13px 16px; border-radius: 16px;
+      background: var(--card); border: 1px solid var(--line); color: var(--text);
+      font-size: 14px; font-weight: 700; margin-bottom: 24px;
+    }
+    .older-releases summary::-webkit-details-marker { display: none; }
+    .older-releases summary::after { content: '+'; color: var(--accent); font-size: 20px; line-height: 1; }
+    .older-releases[open] summary::after { content: '-'; }
+    .older-releases summary span { color: var(--soft); font-size: 12px; }
   </style>
 </head>
 <body>
@@ -479,14 +490,29 @@
     head.textContent = 'The road here';
     log.appendChild(head);
 
-    for (const r of past) {
+    function relElement(r) {
       const el = document.createElement('div');
       el.className = 'rel' + (r.major ? '' : ' minor');
       el.innerHTML =
         `<div class="ver"><span class="rel-icon">${ic(r.icon)}</span><b>v${r.v}</b>${r.major ? '<span class="tag">Major</span>' : ''}</div>` +
         `<h3>${r.title}</h3>` +
         `<ul>${r.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
-      log.appendChild(el);
+      return el;
+    }
+
+    const visiblePast = past.slice(0, 5);
+    const olderPast = past.slice(5);
+    for (const r of visiblePast) {
+      log.appendChild(relElement(r));
+    }
+    if (olderPast.length) {
+      const older = document.createElement('details');
+      older.className = 'older-releases';
+      older.innerHTML = `<summary>Older releases <span>${olderPast.length} more</span></summary>`;
+      for (const r of olderPast) {
+        older.appendChild(relElement(r));
+      }
+      log.appendChild(older);
     }
 
     // Theme live updates
