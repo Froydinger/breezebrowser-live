@@ -13,108 +13,152 @@
   </script>
   <style>
     :root {
-      --bg: #f2f0ed; --card: rgba(255,255,255,0.7); --text: #23232a;
-      --soft: rgba(35,35,42,0.55); --accent: #3aa6b9; --line: rgba(0,0,0,0.08);
+      --bg: #f9f7f4; --bg-alt: #ffffff; --card: rgba(255,255,255,0.88); --text: #202026;
+      --soft: rgba(32,32,38,0.72); --faint: rgba(32,32,38,0.42); --accent: #3aa6b9;
+      --accent-strong: #25879a; --line: rgba(0,0,0,0.09); --shadow: 0 22px 70px rgba(24,34,38,0.12);
       --ease: cubic-bezier(0.22,1,0.36,1);
     }
     html.dark {
-      --bg: #16161a; --card: rgba(255,255,255,0.05); --text: #ececf0;
-      --soft: rgba(236,236,240,0.5); --line: rgba(255,255,255,0.1);
+      --bg: #151618; --bg-alt: #1c1d21; --card: rgba(255,255,255,0.07); --text: #ececf0;
+      --soft: rgba(236,236,240,0.62); --faint: rgba(236,236,240,0.34); --line: rgba(255,255,255,0.1);
+      --shadow: 0 22px 70px rgba(0,0,0,0.28);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: var(--bg); color: var(--text); min-height: 100vh;
+      background:
+        radial-gradient(circle at 84% 6%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 34rem),
+        linear-gradient(180deg, var(--bg-alt) 0%, var(--bg) 38%, var(--bg-alt) 100%);
+      color: var(--text); min-height: 100vh;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      padding: 56px 24px 80px; transition: background 0.3s var(--ease);
+      padding: 54px 24px 86px; transition: background 0.3s var(--ease);
+      -webkit-font-smoothing: antialiased;
     }
-    .wrap { max-width: 680px; margin: 0 auto; }
-    header { text-align: center; margin-bottom: 44px; animation: rise 0.5s var(--ease); }
-    header img { width: 60px; height: 60px; border-radius: 15px;
-      filter: drop-shadow(0 8px 26px color-mix(in srgb, var(--accent) 40%, transparent)); margin-bottom: 16px; }
-    header h1 { font-size: 30px; font-weight: 750; letter-spacing: -0.8px; }
-    header p { color: var(--soft); font-size: 15px; margin-top: 8px; }
-    .now { display: inline-block; margin-top: 14px; font-size: 12.5px; font-weight: 600;
-      color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent);
-      padding: 5px 12px; border-radius: 99px; }
-    .rel { position: relative; padding: 0 0 30px 26px; border-left: 2px solid var(--line); }
-    .rel:last-child { border-left-color: transparent; padding-bottom: 0; }
-    .rel::before { content: ''; position: absolute; left: -7px; top: 4px; width: 12px; height: 12px;
-      border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--bg); }
-    .rel.minor::before { background: var(--soft); width: 9px; height: 9px; left: -5.5px; }
-    .ver { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
-    .ver b { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
-    .ver .tag { font-size: 11px; font-weight: 700; color: #fff; background: var(--accent);
-      padding: 2px 8px; border-radius: 99px; }
-    .rel h3 { font-size: 15.5px; font-weight: 650; margin-bottom: 10px; }
-    ul { list-style: none; display: flex; flex-direction: column; gap: 7px; }
-    li { font-size: 13.5px; line-height: 1.55; color: var(--soft); padding-left: 18px; position: relative; }
-    li::before { content: '–'; position: absolute; left: 2px; color: var(--accent); }
+    .wrap { width: min(880px, 100%); margin: 0 auto; }
+    header { position: relative; margin-bottom: 42px; animation: rise 0.56s var(--ease); }
+    header::before {
+      content: ''; position: absolute; width: 180px; height: 180px; right: 4%; top: -20px;
+      border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent), transparent 68%);
+      transform: scale(0.7); opacity: 0; animation: bloom 0.8s var(--ease) 0.15s forwards, halo-drift 9s ease-in-out 1s infinite alternate; pointer-events: none;
+    }
+    header img { width: 46px; height: 46px; border-radius: 50%;
+      filter: drop-shadow(0 10px 24px color-mix(in srgb, var(--accent) 35%, transparent)); margin-bottom: 24px;
+      animation: mark-pop 0.62s var(--ease) 0.08s backwards, mark-float 5.6s ease-in-out 1s infinite; }
+    header h1 {
+      max-width: 720px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(46px, 8vw, 76px);
+      font-weight: 400;
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+    header p { color: var(--soft); font-size: 17px; line-height: 1.65; max-width: 680px; margin-top: 18px; }
+    .now { display: inline-flex; align-items: center; gap: 8px; margin-top: 22px; font-size: 12px; font-weight: 800;
+      letter-spacing: 0.09em; text-transform: uppercase;
+      color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent);
+      padding: 7px 12px; border-radius: 99px; }
+    .now::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+    .rel {
+      position: relative; display: grid; grid-template-columns: 116px 1fr; gap: 28px;
+      padding: 30px 0; border-top: 1px solid var(--line); animation: rise 0.5s var(--ease) backwards;
+    }
+    .rel:nth-of-type(2) { animation-delay: 0.04s; }
+    .rel:nth-of-type(3) { animation-delay: 0.08s; }
+    .rel::before { content: none; }
+    .ver { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; color: var(--accent); }
+    .ver b { font-size: 13px; font-weight: 800; letter-spacing: 0.02em; }
+    .ver .tag { font-size: 10px; font-weight: 800; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+      padding: 3px 8px; border-radius: 99px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .rel h3 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(24px, 4.4vw, 36px);
+      font-weight: 400; line-height: 1.12; letter-spacing: 0; margin-bottom: 14px;
+    }
+    ul { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+    li { font-size: 14.5px; line-height: 1.58; color: var(--soft); padding-left: 18px; position: relative; }
+    li::before { content: ''; position: absolute; left: 1px; top: 0.75em; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
     li b { color: var(--text); font-weight: 600; }
     @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    @keyframes bloom { to { opacity: 1; transform: scale(1); } }
+    @keyframes mark-pop { from { opacity: 0; transform: translateY(8px) scale(0.82) rotate(-8deg); } to { opacity: 1; transform: none; } }
+    @keyframes mark-float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
+    @keyframes halo-drift { from { transform: translate(0,0) scale(1); } to { transform: translate(-22px,18px) scale(1.08); } }
 
     /* Hero card for the newest release */
     .hero {
       position: relative; overflow: hidden;
-      border-radius: 22px; padding: 30px 30px 26px; margin-bottom: 44px;
-      color: #fff;
-      background: linear-gradient(120deg, #3aa6b9, #7c5bfa, #b65bfa, #5b9dfa, #3aa6b9);
-      background-size: 300% 300%;
-      box-shadow: 0 24px 60px -18px color-mix(in srgb, var(--accent) 70%, transparent);
-      animation: hero-pop 0.6s var(--ease), hero-flow 14s ease-in-out infinite;
+      border-radius: 18px; padding: 28px 30px 30px; margin-bottom: 48px;
+      color: var(--text); background: var(--card); border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      animation: hero-pop 0.6s var(--ease) 0.06s backwards, hero-breathe 8s ease-in-out 1.2s infinite;
     }
     @keyframes hero-pop { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
-    /* gentle gradient drift + a one-time shine sweep — fun, but cheap (one element) */
-    @keyframes hero-flow { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+    @keyframes hero-breathe { 0%, 100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 28px 84px color-mix(in srgb, var(--accent) 18%, transparent); } }
     .hero::after {
       content: ''; position: absolute; inset: 0; pointer-events: none;
-      background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.35) 50%, transparent 65%);
-      transform: translateX(-120%); animation: hero-shine 1.5s var(--ease) 0.4s 1 forwards;
+      background: linear-gradient(105deg, transparent 34%, rgba(255,255,255,0.34) 50%, transparent 66%);
+      transform: translateX(-120%); animation: hero-shine 6.5s var(--ease) 0.4s infinite;
     }
-    @keyframes hero-shine { to { transform: translateX(120%); } }
-    .hero-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(8px); z-index: 0; }
-    .hero-orb.o1 { width: 220px; height: 220px; top: -90px; right: -60px; background: radial-gradient(circle, rgba(255,255,255,0.35), transparent 70%); animation: orb-drift-a 11s ease-in-out infinite alternate; }
-    .hero-orb.o2 { width: 160px; height: 160px; bottom: -80px; left: -40px; background: radial-gradient(circle, rgba(255,255,255,0.22), transparent 70%); animation: orb-drift-b 13s ease-in-out infinite alternate; }
-    @keyframes orb-drift-a { from { transform: translate(0,0); } to { transform: translate(-30px, 24px); } }
-    @keyframes orb-drift-b { from { transform: translate(0,0); } to { transform: translate(26px, -20px); } }
+    @keyframes hero-shine { 0%, 58% { transform: translateX(-120%); } 82%, 100% { transform: translateX(120%); } }
+    .hero-orb { position: absolute; border-radius: 50%; pointer-events: none; z-index: 0; opacity: 0; animation: orb-in 0.9s var(--ease) 0.18s forwards, orb-drift 7s ease-in-out 1s infinite alternate; }
+    .hero-orb.o1 { width: 210px; height: 210px; top: -96px; right: -68px; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent), transparent 68%); }
+    .hero-orb.o2 { width: 130px; height: 130px; bottom: -58px; left: -30px; background: radial-gradient(circle, color-mix(in srgb, #ffffff 90%, var(--accent)), transparent 70%); animation-direction: alternate-reverse; }
+    @keyframes orb-in { from { opacity: 0; transform: scale(0.74); } to { opacity: 1; transform: scale(1); } }
+    @keyframes orb-drift { from { translate: 0 0; } to { translate: -18px 14px; } }
     /* content sits above the orbs — scoped so the orbs stay absolutely placed */
     .hero-icon, .hero-pill, .hero-title, .hero-list { position: relative; z-index: 1; }
     .hero-icon {
-      width: 62px; height: 62px; border-radius: 17px; margin-bottom: 18px;
+      width: 58px; height: 58px; border-radius: 16px; margin-bottom: 18px;
       display: grid; place-items: center;
-      background: rgba(255,255,255,0.2); backdrop-filter: blur(8px);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
-      animation: icon-pop 0.7s var(--ease) 0.15s backwards, icon-bob 3.4s ease-in-out 1.1s infinite;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      box-shadow: 0 16px 34px color-mix(in srgb, var(--accent) 26%, transparent);
+      animation: icon-pop 0.7s var(--ease) 0.15s backwards, icon-bob 4.2s ease-in-out 1.1s infinite;
     }
     .hero-icon svg { width: 33px; height: 33px; stroke: #fff; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     @keyframes icon-pop { 0% { opacity: 0; transform: scale(0.4) rotate(-12deg); } 60% { transform: scale(1.12) rotate(5deg); } 100% { opacity: 1; transform: none; } }
     @keyframes icon-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
     .hero-pill {
-      display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.2px;
-      background: rgba(255,255,255,0.22); padding: 5px 12px; border-radius: 99px; margin-bottom: 14px;
-      backdrop-filter: blur(6px);
+      display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+      padding: 6px 12px; border-radius: 99px; margin-bottom: 14px;
     }
-    .hero-title { font-size: 26px; font-weight: 760; letter-spacing: -0.6px; margin-bottom: 16px; }
+    .hero-title {
+      max-width: 640px; font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(30px, 5.2vw, 46px); line-height: 1.04; font-weight: 400; letter-spacing: 0; margin-bottom: 18px;
+    }
     .hero-list { display: flex; flex-direction: column; gap: 10px; }
-    .hero-list li { font-size: 14px; line-height: 1.55; color: rgba(255,255,255,0.92); padding-left: 18px; position: relative; }
-    .hero-list li::before { content: '→'; position: absolute; left: 0; color: #fff; }
-    .hero-list li b { color: #fff; font-weight: 700; }
+    .hero-list li { font-size: 14.5px; line-height: 1.58; color: var(--soft); padding-left: 18px; position: relative; }
+    .hero-list li::before { content: ''; position: absolute; left: 1px; top: 0.75em; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+    .hero-list li b { color: var(--text); font-weight: 700; }
     /* small icon chip on each past release */
-    .rel-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px;
-      background: color-mix(in srgb, var(--accent) 14%, transparent); flex-shrink: 0; }
+    .rel-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 9px;
+      background: color-mix(in srgb, var(--accent) 12%, transparent); flex-shrink: 0; }
     .rel-icon svg { width: 13px; height: 13px; stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
-    .past-head { font-size: 13px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
-      color: var(--soft); margin: 0 0 22px 2px; }
-    .older-releases { margin-top: 8px; }
+    .past-head { font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--accent); margin: 0 0 12px 2px; }
+    .older-releases { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 20px; }
     .older-releases summary {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      cursor: pointer; list-style: none; padding: 13px 16px; border-radius: 16px;
+      cursor: pointer; list-style: none; padding: 14px 18px; border-radius: 999px;
       background: var(--card); border: 1px solid var(--line); color: var(--text);
-      font-size: 14px; font-weight: 700; margin-bottom: 24px;
+      font-size: 14px; font-weight: 750; margin-bottom: 24px; box-shadow: var(--shadow);
     }
     .older-releases summary::-webkit-details-marker { display: none; }
     .older-releases summary::after { content: '+'; color: var(--accent); font-size: 20px; line-height: 1; }
     .older-releases[open] summary::after { content: '-'; }
     .older-releases summary span { color: var(--soft); font-size: 12px; }
+    @media (max-width: 620px) {
+      body { padding: 36px 18px 64px; }
+      .rel { grid-template-columns: 1fr; gap: 8px; padding: 26px 0; }
+      .ver { flex-direction: row; align-items: center; }
+      header h1 { font-size: clamp(40px, 14vw, 58px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -122,7 +166,7 @@
     <header>
       <img src="icon.png" alt="" draggable="false" />
       <h1>What's new in Breeze</h1>
-      <p>Where we started, and how far we've come — all on-device, all private.</p>
+      <p>Where we started, and how far we've come.</p>
       <div class="now" id="now">You're on the latest</div>
     </header>
     <div id="log"></div>
@@ -159,6 +203,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.0.6', icon: 'sparkles', title: 'A Living What’s New', major: true, items: [
+        '<b>Lander-Inspired Release Notes</b> — What’s New now uses the same airy editorial design language as the Breeze site.',
+        '<b>Living Update Screen</b> — Soft looping shimmer, floating marks, and ambient motion make the page feel alive when you revisit it.',
+        '<b>Less Scrolling</b> — Recent updates stay visible, while older releases collapse behind an Older Releases section.' ] },
       { v: '4.0.5', icon: 'zap', title: 'Tab Cleanup & Refresh Polish', major: true, items: [
         '<b>Close Other Tabs</b> — Keep the selected tab open while closing every other open tab, including open pinned app tabs while leaving the pins themselves in place.',
         '<b>Pinned Apps Stay Awake</b> — A new Settings toggle keeps pinned app tabs from being put to sleep by default, with control for users who want different behavior.',
@@ -495,8 +543,8 @@
       el.className = 'rel' + (r.major ? '' : ' minor');
       el.innerHTML =
         `<div class="ver"><span class="rel-icon">${ic(r.icon)}</span><b>v${r.v}</b>${r.major ? '<span class="tag">Major</span>' : ''}</div>` +
-        `<h3>${r.title}</h3>` +
-        `<ul>${r.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+        `<div class="rel-copy"><h3>${r.title}</h3>` +
+        `<ul>${r.items.map((i) => `<li>${i}</li>`).join('')}</ul></div>`;
       return el;
     }
 
