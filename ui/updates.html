@@ -203,6 +203,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.0.1', icon: 'check-check', title: 'Tasks, Steadied', major: false, items: [
+        '<b>Nav Fixed</b> — Resolved a regression that could make Nav reply with just “Done.” — it answers normally again.',
+        '<b>Links Open Right</b> — Links meant to open in a new tab (<code>target="_blank"</code>) now reliably do, instead of sometimes doing nothing.',
+        '<b>Better Favicons</b> — Site icons now try DuckDuckGo and the site itself before falling back, so logos that used to show a blank globe (e.g. Lovable) appear correctly.' ] },
       { v: '5.0.0', icon: 'rocket', title: 'Tasks', major: true, items: [
         '<b>Meet Tasks</b> — Type <code>/</code> in Nav, a new tab, or the address bar to pop a menu of one-keystroke superpowers. Pick one, add your prompt — like <code>/research the best ebikes</code> — and Nav takes it from there.',
         '<b>Four to Start</b> — <code>/research</code> reads several sources into a sourced summary, <code>/summarize</code> TL;DRs the page you\'re on, <code>/factcheck</code> verifies a claim against multiple sources, and <code>/youtube</code> runs Creator Tools on a video.',

@@ -349,7 +349,10 @@ struct TabGroup {
     var collapsed: Bool = false
 }
 
-/// Shared favicon fetch + cache (Google s2 service, like the Electron app).
+/// Shared favicon fetch + cache. Tries DuckDuckGo's icon service first — it 404s on
+/// a real miss, so we can tell when it failed and fall through. Google's s2 service
+/// always returns *something* (a generic globe) even when it can't find the real
+/// icon, which is why sites like Lovable showed a placeholder; it's the last resort.
 final class Favicons {
     static let shared = Favicons()
     private var cache: [String: NSImage] = [:]
@@ -357,11 +360,25 @@ final class Favicons {
     func image(for host: String, _ done: @escaping (NSImage?) -> Void) {
         guard !host.isEmpty else { done(nil); return }
         if let img = cache[host] { done(img); return }
-        guard let u = URL(string: "https://www.google.com/s2/favicons?domain=\(host)&sz=64")
-        else { done(nil); return }
-        URLSession.shared.dataTask(with: u) { [weak self] d, _, _ in
-            guard let d, let img = NSImage(data: d) else { DispatchQueue.main.async { done(nil) }; return }
-            DispatchQueue.main.async { self?.cache[host] = img; done(img) }
+        let sources = [
+            "https://icons.duckduckgo.com/ip3/\(host).ico",
+            "https://\(host)/favicon.ico",
+            "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
+        ]
+        fetch(host: host, sources: sources, index: 0, done: done)
+    }
+
+    private func fetch(host: String, sources: [String], index: Int, done: @escaping (NSImage?) -> Void) {
+        guard index < sources.count, let u = URL(string: sources[index]) else {
+            DispatchQueue.main.async { done(nil) }; return
+        }
+        URLSession.shared.dataTask(with: u) { [weak self] d, resp, _ in
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200, let d, !d.isEmpty, let img = NSImage(data: d), img.size.width >= 8 {
+                DispatchQueue.main.async { self?.cache[host] = img; done(img) }
+            } else {
+                self?.fetch(host: host, sources: sources, index: index + 1, done: done)
+            }
         }.resume()
     }
 }

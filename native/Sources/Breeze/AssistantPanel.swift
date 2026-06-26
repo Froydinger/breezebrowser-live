@@ -11,6 +11,8 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private let sendBtn = HoverButton(symbol: "arrow.up.circle.fill", size: 30, point: 20)
     private let attachBtn = HoverButton(symbol: "paperclip", size: 28, point: 15)
     private let creatorBtn = HoverButton(symbol: "play.rectangle.fill", size: 28, point: 14)
+    /// Floating "new chat" button shown only in fullscreen (the header is hidden there).
+    private let fsNewChatBtn = HoverButton(symbol: "square.and.pencil", size: 32, point: 15)
     var onAttach: (() -> Void)?
     var onSend: ((String) -> Void)?
     var onCreatorTools: (() -> Void)?
@@ -18,9 +20,6 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     var onSlashTasks: ((String) -> Void)?
     /// Fires when the "/" context ends, so the controller can hide the palette.
     var onSlashTasksEnd: (() -> Void)?
-    /// Fires when the user taps the button while Nav is working — the AI kill switch.
-    var onStop: (() -> Void)?
-    private var working = false
     var onClose: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onAtMention: (() -> Void)?
@@ -145,10 +144,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         contextDoc.addSubview(contextRow)
         contextScroll.documentView = contextDoc
         contextScroll.isHidden = true
-        sendBtn.onTap = { [weak self] in
-            guard let self else { return }
-            if self.working { self.onStop?() } else { self.send() }
-        }
+        sendBtn.onTap = { [weak self] in self?.send() }
         attachBtn.onTap = { [weak self] in self?.onAttach?() }
         inputWrap.addSubview(attachBtn); inputWrap.addSubview(input); inputWrap.addSubview(sendBtn)
 
@@ -157,6 +153,16 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         status.isHidden = true
 
         addSubview(header); addSubview(scroll); addSubview(empty); addSubview(historyView); addSubview(status); addSubview(contextScroll); addSubview(inputWrap)
+
+        // Fullscreen-only new-chat button, floating top-right (header is hidden there).
+        fsNewChatBtn.toolTip = "New chat"
+        fsNewChatBtn.isHidden = true
+        fsNewChatBtn.onTap = { [weak self] in self?.onNewChat?() }
+        addSubview(fsNewChatBtn)
+        NSLayoutConstraint.activate([
+            fsNewChatBtn.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            fsNewChatBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+        ])
         self.inputWrap = inputWrap
 
         messagesWidthC = messagesStack.widthAnchor.constraint(equalTo: doc.widthAnchor, constant: -16)
@@ -597,15 +603,6 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     /// (and any saved state) don't need to change.
     func setImageMode(_ on: Bool) {}
 
-    /// Toggle the send button into a stop button (the global AI kill switch) while
-    /// Nav is working, so a tap cancels the in-flight request.
-    func setWorking(_ on: Bool) {
-        working = on
-        sendBtn.symbol = on ? "stop.circle.fill" : "arrow.up.circle.fill"
-        sendBtn.isOn = on
-        sendBtn.toolTip = on ? "Stop" : nil
-    }
-
     // typing "@" opens the tab picker; "/" at the start opens the Task palette.
     func controlTextDidChange(_ obj: Notification) {
         let v = input.stringValue
@@ -642,6 +639,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     /// only when the panel reaches the window's left edge (sidebar hidden).
     func setFullscreen(_ on: Bool, clearLights: Bool = false) {
         headerView.isHidden = on
+        fsNewChatBtn.isHidden = !on   // header (with its new-chat button) is hidden in fullscreen
         scrollTopToHeaderC.isActive = !on
         scrollTopToPanelC.isActive = on
         historyTopToHeaderC.isActive = !on

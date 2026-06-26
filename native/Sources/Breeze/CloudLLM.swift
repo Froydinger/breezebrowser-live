@@ -31,10 +31,6 @@ final class CloudLLM: NSObject {
     func resetChat() {}
     func shutdown() {}
 
-    /// The in-flight chat turn, so Nav has a global kill switch.
-    private var currentTask: Task<Void, Never>?
-    func cancel() { currentTask?.cancel(); currentTask = nil }
-
     private func setStatus(_ s: String) {
         lastStatus = s
         if Thread.isMainThread { onStatus?(s) }
@@ -56,9 +52,8 @@ final class CloudLLM: NSObject {
         }
 
         let turnID = UUID().uuidString
-        currentTask = Task {
+        Task {
             do {
-                try Task.checkCancellation()
                 var turnHistory: [[String: String]] = [
                     ["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))]
                 ]

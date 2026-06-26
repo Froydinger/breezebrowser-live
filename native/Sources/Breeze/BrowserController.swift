@@ -286,7 +286,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         assistant.onSlashTasks = { [weak self] token in self?.aiSlashTasks(token) }
         assistant.onSlashTasksEnd = { [weak self] in self?.suggestionsPopover.hide() }
-        assistant.onStop = { [weak self] in self?.cancelAI() }
         assistant.onClose = { [weak self] in self?.setAssistant(false) }
         assistant.onNewChat = { [weak self] in self?.newChat() }
         assistant.onAtMention = { [weak self] in self?.aiAtMention() }
@@ -1974,6 +1973,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         if !assistantOpen { setAssistant(true) }
         assistant.setImageMode(false)
+        pendingCreatorVideoTab = current   // summary will open split next to this video
         let title = current?.title.isEmpty == false ? current!.title : "this YouTube page"
         sendToAI("""
         Creator Tools beta: analyze the current YouTube page for a creator.
@@ -1999,24 +1999,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// "Research, wrapped." page even if the keyword heuristic wouldn't catch it.
     var forceResearchSummary = false
 
-    /// True between hitting the kill switch and the request unwinding, so the
-    /// late completion doesn't print a "Sorry — cancelled" bubble.
-    var aiCancelled = false
-    /// Bumped each send; a completion whose turn no longer matches is stale (e.g.
-    /// the user cancelled and sent again) and is dropped.
-    var aiTurn = 0
-
-    /// The global AI kill switch — cancels the in-flight Nav request immediately.
-    func cancelAI() {
-        aiCancelled = true
-        llm.cancel()
-        hideRainbowGlow()
-        assistant.hideTaskLoader()
-        assistant.setWorking(false)
-        assistant.setStatus(nil)
-        assistant.setInputEnabled(true)
-        assistant.focusInput()
-    }
+    /// The YouTube tab a Creator Tools run was launched from. When the analysis comes
+    /// back, the summary opens in a split right next to the video.
+    weak var pendingCreatorVideoTab: Tab?
 
     /// Pop the themed Task palette above the Nav input, filtered by what's typed
     /// after "/". Reuses our custom suggestions popover (not a system menu) so it
@@ -2057,6 +2042,29 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         default:
             if !prompt.isEmpty { sendToAI(prompt) }
         }
+    }
+
+    /// Write the Creator Tools breakdown to a tab-hosted page and open it in a split
+    /// next to the video — summary in one pane, the YouTube video in the other.
+    func openCreatorSummarySplit(answer: String, video: Tab, chips: [String]) {
+        let q = video.title.isEmpty ? "This YouTube video" : video.title
+        guard tabs.contains(where: { $0 === video }),
+              let url = writeResearchSummaryPage(query: q, answer: answer,
+                                                 pill: "Nav Creator Tools",
+                                                 heading: "Creator breakdown.") else {
+            assistant.addAI(answer, chips: chips)   // fall back to a normal chat reply
+            return
+        }
+        let summary = Tab(); summary.isNewTab = false; summary.isChatTab = false
+        summary.title = "Creator breakdown"
+        wire(summary)
+        tabs.append(summary)
+        active = tabs.count - 1
+        summary.webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        // Pair the summary (now current) with the video as a split.
+        if !video.isNewTab && !video.isChatTab { enterSplit(video) } else { showActive() }
+        refreshSidebar()
+        assistant.addAI("Opened your Creator Tools breakdown in a split next to the video.", chips: chips)
     }
 
     func newChat() {
@@ -2121,10 +2129,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let working = text.range(of: "research", options: .caseInsensitive) != nil ? "Researching…" : "Thinking…"
         assistant.setStatus(working)
         assistant.showTaskLoader(working)
-        assistant.setWorking(true)
-        aiCancelled = false
-        aiTurn += 1
-        let myTurn = aiTurn
         showRainbowGlow()
 
         Task { [weak self] in
@@ -2134,17 +2138,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let history = Store.shared.settings["aiUseChatHistory"] as? Bool != false ? self.assistant.messages : []
             let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
                 guard let self else { return }
-                guard myTurn == self.aiTurn else { return }   // stale turn → drop
                 self.ailog("model returned")
                 self.hideRainbowGlow()
                 self.assistant.hideTaskLoader()
-                self.assistant.setWorking(false)
                 self.assistant.setStatus(nil); self.assistant.setInputEnabled(true); self.assistant.focusInput()
-                if self.aiCancelled { self.aiCancelled = false; return }   // user hit the kill switch
                 switch r {
                 case .success(let (answer, toolChips)):
                     let chips = labels + toolChips
                     let textAns = answer.isEmpty ? "…" : answer
+                    // Creator Tools → open the breakdown in a split next to the video.
+                    if let video = self.pendingCreatorVideoTab {
+                        self.pendingCreatorVideoTab = nil
+                        if textAns.count > 120 {
+                            self.openCreatorSummarySplit(answer: textAns, video: video, chips: chips)
+                            self.broadcastToInternalPages()
+                            self.saveAgentSnapshotAndWalkthrough(query: text, answer: textAns)
+                            return
+                        }
+                    }
                     let openedSummary = self.openResearchSummaryIfNeeded(query: text, answer: textAns, chips: toolChips)
                     if openedSummary {
                         self.assistant.addAI("I opened your research summary. It has the main takeaways and sources from what I found.", chips: chips)
@@ -2192,11 +2203,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return true
     }
 
-    func writeResearchSummaryPage(query: String, answer: String) -> URL? {
+    func writeResearchSummaryPage(query: String, answer: String,
+                                  pill: String = "Nav Research Summary",
+                                  heading: String = "Research, wrapped.") -> URL? {
         let dir = Store.shared.supportDirectory.appendingPathComponent("Research Summaries", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("research-\(Int(Date().timeIntervalSince1970)).html")
-        let html = researchSummaryHTML(query: query, answer: answer, links: extractLinks(from: answer))
+        let html = researchSummaryHTML(query: query, answer: answer, links: extractLinks(from: answer), pill: pill, heading: heading)
         do {
             try html.write(to: url, atomically: true, encoding: .utf8)
             return url
@@ -2275,7 +2288,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return "data:image/png;base64," + d.base64EncodedString()
     }
 
-    func researchSummaryHTML(query: String, answer: String, links: [(String, String)]) -> String {
+    func researchSummaryHTML(query: String, answer: String, links: [(String, String)],
+                             pill: String = "Nav Research Summary",
+                             heading: String = "Research, wrapped.") -> String {
         let body = markdownToResearchHTML(answer)
         let linkCards = links.map { label, url in
             "<a class=\"source\" href=\"\(url.htmlEscaped)\"><span>\(label.htmlEscaped)</span><small>\((URL(string: url)?.host ?? url).htmlEscaped)</small></a>"
@@ -2298,7 +2313,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         .summary h1{font-size:30px}.summary h2{font-size:20px;margin:28px 0 10px}.summary p,.summary li{font-size:15.5px;line-height:1.62;color:var(--text)}.summary ul{padding-left:20px}.summary a{color:var(--accent);font-weight:700}
         .sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:26px}.source{display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-radius:16px;background:color-mix(in srgb,var(--accent) 9%,transparent);text-decoration:none;border:1px solid color-mix(in srgb,var(--accent) 18%,transparent)}.source span{color:var(--text);font-weight:750}.source small{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-        </style></head><body><div class="wrap"><header>\(mark)<div class="pill">Nav Research Summary</div><h1>Research, wrapped.</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
+        </style></head><body><div class="wrap"><header>\(mark)<div class="pill">\(pill.htmlEscaped)</div><h1>\(heading.htmlEscaped)</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
         """
     }
 
@@ -3575,6 +3590,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // download silently never happens (the "can't download anything" bug).
         if #available(macOS 11.3, *), navigationAction.shouldPerformDownload {
             decisionHandler(.download)
+            return
+        }
+        // A clicked link aimed at a new window (target="_blank") has no target frame.
+        // WebKit's createWebView path doesn't reliably fire for these, so some such
+        // links would silently do nothing — open them in a new tab ourselves.
+        if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame == nil,
+           scheme == "http" || scheme == "https" {
+            let dest = httpsUpgraded(url)
+            if let source = tabs.first(where: { $0.webView === w }) {
+                openTab(url: dest, from: source, autoGroupSameSite: true)
+            } else {
+                openTab(url: dest)
+            }
+            decisionHandler(.cancel)
             return
         }
         decisionHandler(.allow)
