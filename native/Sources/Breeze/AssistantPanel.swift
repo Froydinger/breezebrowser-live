@@ -11,8 +11,10 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private let sendBtn = HoverButton(symbol: "arrow.up.circle.fill", size: 30, point: 20)
     private let attachBtn = HoverButton(symbol: "paperclip", size: 28, point: 15)
     private let imageBtn = HoverButton(symbol: "paintbrush", size: 28, point: 15)
+    private let creatorBtn = HoverButton(symbol: "sparkles", size: 28, point: 14)
     var onAttach: (() -> Void)?
     var onSend: ((String) -> Void)?
+    var onCreatorTools: (() -> Void)?
     var onClose: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onAtMention: (() -> Void)?
@@ -66,12 +68,15 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         // not as an in-panel overlay.
         let fs = HoverButton(symbol: "arrow.up.left.and.arrow.down.right", size: 28, point: 13)
         fs.onTap = { [weak self] in self?.onToggleFullscreen?() }
+        creatorBtn.toolTip = "Creator Tools"
+        creatorBtn.isHidden = true
+        creatorBtn.onTap = { [weak self] in self?.onCreatorTools?() }
         let newChat = HoverButton(symbol: "square.and.pencil", size: 28, point: 14)
         newChat.onTap = { [weak self] in self?.onNewChat?() }
         let close = HoverButton(symbol: "xmark", size: 28, point: 13)
         close.onTap = { [weak self] in self?.onClose?() }
         let hspacer = NSView(); hspacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let header = NSStackView(views: [headerLogo, title, hspacer, fs, newChat, close])
+        let header = NSStackView(views: [headerLogo, title, hspacer, creatorBtn, fs, newChat, close])
         header.spacing = 8; header.alignment = .centerY
         header.translatesAutoresizingMaskIntoConstraints = false
         self.headerView = header
@@ -768,6 +773,10 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     func focusInput() { window?.makeFirstResponder(input) }
 
+    func setCreatorToolsAvailable(_ available: Bool) {
+        creatorBtn.isHidden = !available
+    }
+
     override func layout() {
         super.layout()
         updateMessageWidths()
@@ -815,6 +824,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         status.textColor = p.textSoft
         headerLogo.image = navLogo()
         emptyLogo.image = navLogo()
+        creatorBtn.applyTheme()
         emptyTitle?.textColor = p.text
         emptySub?.textColor = p.textSoft
         emptyChipViews.forEach { styleEmptyChip($0.0, label: $0.1) }

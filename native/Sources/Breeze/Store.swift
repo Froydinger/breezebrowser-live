@@ -58,6 +58,7 @@ final class Store {
         "aiUsageOutput": 0,
         "aiUsageSince": 0,
         "aiCloudClientId": "",
+        "pluginCreatorTools": false,
         "lastSeenVersion": "",
         "permissions": [String: Any](),
         "reminders": [Any]()

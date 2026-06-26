@@ -82,6 +82,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var titleObs: [UUID: NSKeyValueObservation] = [:]
     var urlObs: [UUID: NSKeyValueObservation] = [:]
     var popupWindows: [UUID: NSWindow] = [:]
+    var popupDownloadCandidates: Set<UUID> = []
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
 
     // chrome
@@ -285,6 +286,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
         assistant.onToggleFullscreen = { [weak self] in self?.toggleAssistantFullscreen() }
         assistant.onAttach = { [weak self] in self?.aiAttachImage() }
+        assistant.onCreatorTools = { [weak self] in self?.runCreatorTools() }
         assistant.onDownloadImagePath = { [weak self] path in self?.downloadAIImage(path: path) }
         remindersView.onCancelReminder = { [weak self] id in
             self?.deleteReminderById(id)
@@ -1430,6 +1432,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private func tearDownClosedTab(_ t: Tab, blankPage: Bool = true) {
         titleObs[t.id] = nil
         urlObs[t.id] = nil
+        popupDownloadCandidates.remove(t.id)
         aiNavWaiters.removeValue(forKey: t.id)?.resume()
         if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
         t.webView.stopLoading()
@@ -1786,6 +1789,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
         updateAdblockModeButton()
+        updateCreatorToolsAvailability()
         // keep split panes' address bars and nav buttons current
         if let t = current, let partnerId = t.splitPartnerId, let s = tabs.first(where: { $0.id == partnerId }) {
             let isCurrentOnRight = t.splitIsRight
@@ -1893,6 +1897,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if open {
             assistant.setMode(history: false)   // always a normal chat; history is a button overlay
             updateAIContextPills()
+            updateCreatorToolsAvailability()
             assistant.focusInput()
             prepareAIStatus()
         }
@@ -1908,6 +1913,48 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.setInputEnabled(true, placeholder: "Nav is not configured in this build…")
             assistant.setModelStatus("Nav is not configured in this build.")
         }
+    }
+
+    private func currentCreatorToolsURL() -> URL? {
+        guard Store.shared.bool("pluginCreatorTools"),
+              let tab = current,
+              !tab.isNewTab,
+              !tab.isChatTab,
+              let url = tab.webView.url,
+              let host = url.host?.lowercased() else { return nil }
+        guard host == "youtu.be" || host.hasSuffix("youtube.com") else { return nil }
+        return url
+    }
+
+    func updateCreatorToolsAvailability() {
+        assistant.setCreatorToolsAvailable(currentCreatorToolsURL() != nil)
+    }
+
+    func runCreatorTools() {
+        guard let url = currentCreatorToolsURL() else {
+            NSSound.beep()
+            updateCreatorToolsAvailability()
+            return
+        }
+        if !assistantOpen { setAssistant(true) }
+        assistant.setImageMode(false)
+        let title = current?.title.isEmpty == false ? current!.title : "this YouTube page"
+        sendToAI("""
+        Creator Tools beta: analyze the current YouTube page for a creator.
+
+        Page: \(title)
+        URL: \(url.absoluteString)
+
+        Use only the page context Breeze provides unless live browsing is clearly necessary. Keep it practical and concise. If this looks like YouTube Studio or the user's own channel/video, focus on actionable improvements they can make. If it looks like another channel, treat it as public competitive/creative research.
+
+        Cover:
+        - Packaging read: title, thumbnail, hook, promise, audience, and format
+        - What is likely working
+        - What may be hurting clicks or retention
+        - 5 stronger title or angle options
+        - 3 thumbnail direction ideas
+        - 3 next-video ideas inspired by the page
+        """)
     }
 
     func newChat() {
@@ -3366,12 +3413,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
     }
     func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        activeDownloads[ObjectIdentifier(download)] = download
-        download.delegate = self
+        trackDownload(download, from: w)
     }
     func webView(_ w: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        trackDownload(download, from: w)
+    }
+
+    private func trackDownload(_ download: WKDownload, from webView: WKWebView) {
         activeDownloads[ObjectIdentifier(download)] = download
         download.delegate = self
+        if let tab = tabs.first(where: { $0.webView === webView }),
+           popupDownloadCandidates.contains(tab.id) {
+            DispatchQueue.main.async { [weak self, weak tab] in
+                guard let self, let tab, self.tabs.contains(where: { $0.id == tab.id }) else { return }
+                self.closeTab(tab)
+            }
+        }
     }
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse,
@@ -3975,6 +4032,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         broadcastToInternalPages()
         newTab.applyTheme()
+        if changedKey == nil || changedKey == "pluginCreatorTools" {
+            updateCreatorToolsAvailability()
+        }
         if changedKey == nil || changedKey == "clock24" || changedKey == "showGreeting" || changedKey == "userName" {
             newTab.tick()
         }
@@ -4126,6 +4186,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
         w.magnification = tabs.first(where: { $0.webView === w })?.pageZoom ?? 1.0
+        if let tab = tabs.first(where: { $0.webView === w }),
+           popupDownloadCandidates.contains(tab.id),
+           let url = w.url,
+           !isDownloadIntentURL(url),
+           !isLikelyFileURL(url) {
+            popupDownloadCandidates.remove(tab.id)
+        }
         syncChrome()
         if isInternal(w) { injectBridgeState(into: w) }
     }
@@ -4145,6 +4212,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let t = Tab(configuration: cfg, isPrivate: isPrivateTab)
         t.isNewTab = false
         wire(t)
+        popupDownloadCandidates.insert(t.id)
         
         tabs.append(t)
         active = tabs.count - 1

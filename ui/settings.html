@@ -312,6 +312,7 @@
       <button data-nav="ai">Nav</button>
       <button data-nav="reminders">Reminders</button>
       <button data-nav="search">Search</button>
+      <button data-nav="plugins">Plugins</button>
       <button data-nav="performance">Performance</button>
       <button data-nav="notifications">Notifications</button>
       <button data-nav="privacy">Privacy</button>
@@ -436,6 +437,22 @@
             <option value="ask">Ask Nav</option>
             <option value="search">Search the web</option>
           </select>
+        </div>
+      </div>
+    </section>
+
+    <section data-tab="plugins">
+      <h2>Plugins <span class="badge">Beta</span></h2>
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="row-label">Creator Tools</div>
+            <div class="row-hint">Adds a YouTube-only Creator button in Nav for title, thumbnail, channel, and packaging feedback. Runs only when you click it.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="pluginCreatorTools" />
+            <span class="knob"></span>
+          </label>
         </div>
       </div>
     </section>
@@ -811,6 +828,7 @@
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
       document.getElementById('newTabInputMode').value = settings.newTabInputMode || 'ask';
+      document.getElementById('pluginCreatorTools').checked = !!settings.pluginCreatorTools;
       const adMode = settings.adblockEnabled === false || settings.adblockMode === 'off'
         ? 'off'
         : ((settings.adblockMode === 'advanced' || settings.adblockMode === 'extreme') ? 'advanced' : 'on');
@@ -895,6 +913,7 @@
     document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
     document.getElementById('newTabInputMode').addEventListener('change', (e) => set('newTabInputMode', e.target.value));
+    document.getElementById('pluginCreatorTools').addEventListener('change', (e) => set('pluginCreatorTools', e.target.checked));
     document.getElementById('adblockModeSelect').addEventListener('change', (e) => {
       const mode = e.target.value;
       set('adblockEnabled', mode !== 'off');

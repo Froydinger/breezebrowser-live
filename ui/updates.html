@@ -203,6 +203,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '4.1.4', icon: 'shapes', title: 'Creator Tools Beta', major: false, items: [
+        '<b>Plugins Beta</b> — Settings now has a Plugins beta section for lightweight, optional Breeze features.',
+        '<b>Creator Tools</b> — Enable Creator Tools to add a YouTube-only Creator button in Nav for title, thumbnail, channel, and packaging feedback.',
+        '<b>Lightweight by Design</b> — Creator Tools stays off by default and only runs when you click it on a YouTube page.',
+        '<b>YouTube Studio Downloads</b> — Thumbnail downloads that open a temporary tab now hand off to the download manager instead of disappearing during cleanup.' ] },
       { v: '4.1.3', icon: 'check-check', title: 'Tab Close Cleanup', major: false, items: [
         '<b>Sidebar Close Buttons</b> — Tab close buttons in the sidebar now get a cleaner click path, so the X reliably closes the tab instead of selecting the row.',
         '<b>Closed Tabs Let Go</b> — Closing tabs now tears down their WebViews more explicitly so page work, media, and pending navigation do not linger longer than needed.',
