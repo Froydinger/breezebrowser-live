@@ -2813,8 +2813,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.setStatus("Searching the web…")
         if let u = URL(string: searchURL(for: query)) { t.webView.load(URLRequest(url: u)) }
         await waitForLoad(t)
-        try? await Task.sleep(nanoseconds: 700_000_000)   // let results render
-        let text = await readText(of: t)
+        // Spectra (our default engine) paints results slower than Google. Give the
+        // page up to ~5s to actually render before scraping — poll so a fast engine
+        // still returns quickly, but a slow search isn't mistaken for "no results."
+        var text = ""
+        let deadline = Date().addingTimeInterval(5.0)
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            text = await readText(of: t)
+            if text.count > 400 { break }   // results have rendered
+        }
+        if text.isEmpty { text = await readText(of: t) }
         assistant.setStatus("Thinking…")
         return "Web search results for \"\(query)\":\n\n" + text
     }

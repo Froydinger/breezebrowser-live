@@ -203,9 +203,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
-      { v: '4.1.6', icon: 'lock', title: 'Secure by Default', major: false, items: [
+      { v: '4.1.6', icon: 'lock', title: 'Secure & Steady', major: false, items: [
         '<b>Auto HTTPS</b> — Typing, pasting, or clicking a plain <code>http://</code> link now upgrades to <code>https://</code> automatically, so legitimate sites that don\'t redirect themselves no longer dead-end on a connection error.',
-        '<b>Stays Out of the Way</b> — Local and dev addresses (localhost, loopback, <code>.local</code>, and raw IPs) keep using http, and sites that genuinely need http won\'t get stuck in a loop.' ] },
+        '<b>Stays Out of the Way</b> — Local and dev addresses (localhost, loopback, <code>.local</code>, and raw IPs) keep using http, and sites that genuinely need http won\'t get stuck in a loop.',
+        '<b>Nav waits for search</b> — Nav now gives Spectra search results time to load before reading them, so answers no longer come up short when a search takes a beat longer than Google would.' ] },
       { v: '4.1.5', icon: 'sparkles', title: 'Spectra Search Arrives', major: true, items: [
         '<b>Spectra Search</b> — Breeze now treats Spectra as a first-class search engine with the new spectrasearch.online endpoint.',
         '<b>Search Everywhere</b> — Spectra now works from New Tab, the address bar, and the full-window Nav chat search path.',
