@@ -1635,7 +1635,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         loadPreparedURL(u, in: t, focus: true)
     }
 
-    func loadPreparedURL(_ url: URL, in t: Tab, focus: Bool) {
+    /// Auto-upgrade plain `http://` to `https://` so legitimate sites that don't
+    /// redirect themselves don't dead-end on a connection error. Local/dev hosts
+    /// (localhost, loopback, *.local, bare IPv4 literals) keep http — they often
+    /// have no TLS. Applied to user-initiated navigations only, never to server
+    /// redirects, so a site that genuinely downgrades https→http can't loop.
+    func httpsUpgraded(_ url: URL) -> URL {
+        guard url.scheme?.lowercased() == "http" else { return url }
+        let host = (url.host ?? "").lowercased()
+        if host.isEmpty || host == "localhost" || host.hasSuffix(".local")
+            || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1"
+            || host.range(of: "^\\d{1,3}(\\.\\d{1,3}){3}$", options: .regularExpression) != nil {
+            return url
+        }
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        comps.scheme = "https"
+        return comps.url ?? url
+    }
+
+    func loadPreparedURL(_ rawURL: URL, in t: Tab, focus: Bool) {
+        let url = httpsUpgraded(rawURL)
         t.isNewTab = false
         t.isChatTab = false
         t.sleeping = false
@@ -2765,7 +2784,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @MainActor func aiOpenURL(_ url: String) async -> String {
         var s = url.trimmingCharacters(in: .whitespaces)
         if !s.contains("://") { s = "https://" + s }
-        guard let u = URL(string: s), u.host != nil else { return "Couldn't open \"\(url)\" — that doesn't look like a valid web address." }
+        guard let u0 = URL(string: s), u0.host != nil else { return "Couldn't open \"\(url)\" — that doesn't look like a valid web address." }
+        let u = httpsUpgraded(u0)
         let t: Tab
         if let cur = current {
             cur.isNewTab = false
@@ -3382,6 +3402,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             openTab(url: url, from: source, autoGroupSameSite: true)
             decisionHandler(.cancel)
             return
+        }
+        // Upgrade a clicked plain-http link to https (same policy as the address
+        // bar). Scoped to .linkActivated so server-issued downgrade redirects
+        // (navigationType .other) are never touched and can't loop.
+        if navigationAction.navigationType == .linkActivated, scheme == "http" {
+            let upgraded = httpsUpgraded(url)
+            if upgraded != url {
+                w.load(URLRequest(url: upgraded))
+                decisionHandler(.cancel)
+                return
+            }
         }
         if isDownloadIntentURL(url) || isLikelyFileURL(url) {
             if #available(macOS 11.3, *) {
