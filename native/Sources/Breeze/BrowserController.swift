@@ -4049,8 +4049,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func searchURL(for query: String) -> String {
         let e = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         switch Store.shared.string("searchEngine") {
+        case "spectra":    return "https://spectrasearch.online/search?q=\(e)"
         case "duckduckgo": return "https://duckduckgo.com/?q=\(e)"
         case "bing":       return "https://www.bing.com/search?q=\(e)"
+        case "brave":      return "https://search.brave.com/search?q=\(e)"
         default:           return "https://www.google.com/search?q=\(e)"
         }
     }
@@ -4375,7 +4377,7 @@ extension BrowserController: AddressSuggestionsDelegate {
             newTab.updateFieldHeight()
         }
         if forceGoogleSearch {
-            navigate(googleSearchURL(for: text))
+            navigate(searchURL(for: text))
             return
         }
         submitQuery(text, isCmdEnter: isCmd)
