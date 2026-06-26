@@ -41,14 +41,14 @@ struct Palette {
     )
 
     static let dark = Palette(
-        bg: srgb(22, 22, 26),
-        bgTop: srgb(26, 26, 32),
-        bgBottom: srgb(18, 18, 22),
+        bg: srgb(14, 15, 19),
+        bgTop: srgb(18, 19, 25),
+        bgBottom: srgb(10, 11, 15),
         text: srgb(236, 236, 240),
-        textSoft: srgb(236, 236, 240, 0.5),
-        surface: NSColor(white: 1, alpha: 0.06),
-        surfaceHover: NSColor(white: 1, alpha: 0.10),
-        surfaceActive: NSColor(white: 1, alpha: 0.14),
+        textSoft: srgb(236, 236, 240, 0.56),
+        surface: NSColor(white: 1, alpha: 0.055),
+        surfaceHover: NSColor(white: 1, alpha: 0.095),
+        surfaceActive: NSColor(white: 1, alpha: 0.13),
         accent: srgb(58, 166, 185),        // default teal, close to the Breeze mark
         isDark: true
     )
@@ -61,24 +61,11 @@ final class Theme {
     private(set) var mode: ThemeMode = .system
 
     static let defaultAccent = "#3aa6b9"
-    static let monoAccent = "mono"
-
     static func hex(_ s: String) -> NSColor? {
         var h = s.trimmingCharacters(in: .whitespaces)
         if h.hasPrefix("#") { h.removeFirst() }
         guard h.count == 6, let v = Int(h, radix: 16) else { return nil }
         return srgb((v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-    }
-
-    /// True when the user picked a non-default accent.
-    var isCustomAccent: Bool {
-        let a = Store.shared.string("accent").lowercased()
-        return !a.isEmpty && a != Theme.defaultAccent && a != Theme.monoAccent
-    }
-    var customAccent: NSColor? {
-        let a = Store.shared.string("accent").lowercased()
-        if a == Theme.monoAccent { return basePalette.isDark ? srgb(245, 245, 247) : srgb(28, 28, 32) }
-        return isCustomAccent ? Theme.hex(Store.shared.string("accent")) : nil
     }
 
     private var basePalette: Palette {
@@ -92,7 +79,6 @@ final class Theme {
     }
 
     var palette: Palette {
-        if let c = customAccent { return basePalette.withAccent(c) }
         return basePalette
     }
 

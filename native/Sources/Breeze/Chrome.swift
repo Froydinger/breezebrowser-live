@@ -129,7 +129,6 @@ final class TabRowView: NSView, NSDraggingSource {
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         titleTrailingToBadges.isActive = false
-        addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(clicked)))
         registerForDraggedTypes([breezeSidebarDragType])
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
@@ -194,8 +193,6 @@ final class TabRowView: NSView, NSDraggingSource {
         if !perfBadge.isHidden { perfBadge.animator().alphaValue = 1 }
         applyTheme()
     }
-    @objc private func clicked() { onSelect?() }
-
     override func hitTest(_ point: NSPoint) -> NSView? {
         let closePoint = close.convert(point, from: self)
         if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
@@ -212,6 +209,20 @@ final class TabRowView: NSView, NSDraggingSource {
             return
         }
         super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let closePoint = close.convert(point, from: self)
+        if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
+            onClose?()
+            return
+        }
+        if bounds.contains(point) {
+            onSelect?()
+            return
+        }
+        super.mouseUp(with: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -326,7 +337,7 @@ final class SplitPane: NSView {
         content.addSubview(view); view.pin(to: content)
     }
     func setURL(_ s: String) {
-        if window?.firstResponder !== address.currentEditor() { address.stringValue = s }
+        if !isEditingTextField(address) { address.stringValue = s }
     }
     @objc private func submit() { onNavigate?(address.stringValue) }
     @objc func applyTheme() {

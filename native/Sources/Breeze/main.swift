@@ -7,8 +7,10 @@ import CoreServices
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var browsers: [BrowserController] = []
     var keyMonitor: Any?
+    private var savedOpenTabsForTermination = false
+    private var closedWindowIds = Set<ObjectIdentifier>()
     var activeBrowser: BrowserController? {
-        browsers.first { $0.window.isKeyWindow } ?? browsers.first
+        browsers.first { isUsable($0) && $0.window.isKeyWindow } ?? browsers.first { isUsable($0) }
     }
     func applicationDidFinishLaunching(_ n: Notification) {
         LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
@@ -79,20 +81,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func windowClosed(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
-            browsers.removeAll { $0.window === win }
+            closedWindowIds.insert(ObjectIdentifier(win))
         }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        .terminateNow
+        saveRestorableOpenTabs()
+        savedOpenTabsForTermination = true
+        return .terminateNow
     }
     func applicationWillTerminate(_ n: Notification) {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-        if let b = activeBrowser {
-            Store.shared.openTabs = b.tabs.compactMap { $0.webView.url?.absoluteString }
-            Store.shared.saveOpenTabs()
+        if !savedOpenTabsForTermination {
+            saveRestorableOpenTabs()
+        }
+        for b in browsers {
             b.llm.shutdown()
         }
+    }
+
+    private func saveRestorableOpenTabs() {
+        Store.shared.openTabs = browsers.filter(isUsable).flatMap { b in
+            b.tabs.compactMap { t in
+                guard !t.isNewTab, !t.isChatTab, !t.isPrivate else { return nil }
+                return t.webView.url?.absoluteString
+            }
+        }
+        Store.shared.saveOpenTabs()
+    }
+
+    private func isUsable(_ browser: BrowserController) -> Bool {
+        !closedWindowIds.contains(ObjectIdentifier(browser.window)) && browser.window.isVisible
     }
     @objc func newWindow() {
         let b = BrowserController(initialContent: .newTab)

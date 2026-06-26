@@ -87,10 +87,7 @@ final class Store {
            let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             for (k, v) in saved { s[k] = v }
         }
-        let accent = (s["accent"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if accent.isEmpty || accent == "#fff" || accent == "#ffffff" || accent == "white" {
-            s["accent"] = Store.defaults["accent"]
-        }
+        s["accent"] = Store.defaults["accent"]
         settings = s
 
         if let data = try? Data(contentsOf: pinsURL),

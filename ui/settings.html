@@ -383,17 +383,6 @@
             <button data-v="large">Large</button>
           </div>
         </div>
-        <div class="row">
-          <div><div class="row-label">Accent color</div></div>
-          <div class="swatches" id="swatches">
-            <button class="swatch" data-v="#3aa6b9" title="Default teal" style="background:#3aa6b9"></button>
-            <button class="swatch" data-v="#e5604c" style="background:#e5604c"></button>
-            <button class="swatch" data-v="#34a853" style="background:#34a853"></button>
-            <button class="swatch" data-v="#b65cd6" style="background:#b65cd6"></button>
-            <button class="swatch" data-v="#e8a13c" style="background:#e8a13c"></button>
-            <button class="swatch" data-v="mono" title="Black / white" style="background:var(--text)"></button>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -815,12 +804,9 @@
 
     function render() {
       document.documentElement.classList.toggle('dark', effective === 'dark');
-      if (settings.accent) document.documentElement.style.setProperty('--accent', settings.accent);
-      tintBreezeLogos();
+      document.documentElement.style.setProperty('--accent', '#3aa6b9');
       document.querySelectorAll('#theme-seg button').forEach((b) =>
         b.classList.toggle('on', b.dataset.v === (settings.theme || 'light')));
-      document.querySelectorAll('.swatch').forEach((b) =>
-        b.classList.toggle('on', b.dataset.v === (settings.rawAccent || settings.accent)));
       document.getElementById('clock24').checked = !!settings.clock24;
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
       document.getElementById('searchEngine').value = settings.searchEngine || 'google';
@@ -905,8 +891,6 @@
 
     document.querySelectorAll('#theme-seg button').forEach((b) =>
       b.addEventListener('click', () => set('theme', b.dataset.v)));
-    document.querySelectorAll('.swatch').forEach((b) =>
-      b.addEventListener('click', () => set('accent', b.dataset.v)));
     document.getElementById('clock24').addEventListener('change', (e) => set('clock24', e.target.checked));
     document.getElementById('showGreeting').addEventListener('change', (e) => set('showGreeting', e.target.checked));
     document.getElementById('searchEngine').addEventListener('change', (e) => set('searchEngine', e.target.value));
@@ -1121,7 +1105,7 @@
       const btn = document.getElementById('make-default');
       btn.textContent = isDef ? 'Default ✓' : 'Make default';
       btn.disabled = isDef;
-      if (isDef) btn.style.opacity = '0.6';
+      btn.style.opacity = isDef ? '0.6' : '1';
     }
     refreshDefault();
     document.getElementById('make-default').addEventListener('click', () => {

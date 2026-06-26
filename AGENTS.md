@@ -41,7 +41,7 @@ Skip any step only if the user explicitly says so.
 |---|---|
 | `BrowserController.swift` | Core: tabs, sidebar, top bar, split view, assistant wiring, AI tools |
 | `Agent.swift` | Shared agentic loop (OPEN/SEARCH/READ/REMIND protocol) |
-| `OpenAILLM.swift` | Only AI backend: OpenAI gpt-5.4-mini via the user's own key (BYOK) |
+| `CloudLLM.swift` | Only AI backend: Breeze Cloud Worker configured at build time |
 | `AssistantPanel.swift` | AI chat panel (pure AppKit) |
 | `Models.swift` | Tab, Pin, sharedConfig, Favicons |
 | `Store.swift` | Settings/pins/history/bookmarks/chats (JSON persistence) |
@@ -53,15 +53,22 @@ Skip any step only if the user explicitly says so.
 
 ## AI architecture
 
-- One backend only: OpenAI `gpt-5.4-mini` via the user's OWN API key (BYOK),
-  stored in an owner-only local file (`Keychain.swift`, account `openaiKey`). No local
-  model, no bundled runtime, no model picker, no fallbacks. Gated to gpt-5.4-mini.
-- Key storage never presents macOS authorization UI. The non-secret
-  `aiKeyConnected` flag mirrors key presence; pre-3.7.3 Keychain values are
-  migrated only when macOS can return them silently, otherwise the user re-enters
-  the key once in Settings.
-- No key → friendly "add your key in Settings" warning (with a platform.openai.com
-  link via the `openExternal` bridge), never a silent failure.
+- One backend only: Breeze Cloud via `CloudLLM.swift`. Provider routing lives
+  server-side. Do NOT add a local model, BYOK setup, bundled runtime, model
+  picker, or fallback backend.
+- Every Breeze/BreezeTest build that will be tested, shipped, zipped, or released
+  must embed `BREEZE_CLOUD_AI_BASE_URL` and `BREEZE_CLOUD_CLIENT_TOKEN` in
+  `Info.plist`. The local token is read from
+  `cloudflare/breeze-chat-worker/.breeze-client-token`.
+- Build pattern:
+  ```
+  TOKEN=$(tr -d '\n\r' < cloudflare/breeze-chat-worker/.breeze-client-token)
+  cd native
+  BREEZE_CLOUD_AI_BASE_URL="https://breeze-chat.jakefroydinger.workers.dev" \
+  BREEZE_CLOUD_CLIENT_TOKEN="$TOKEN" ./build.sh
+  ```
+- A build without those plist keys shows "Nav is not configured in this build"
+  and must not ship.
 - Text protocol: OPEN/SEARCH/READ/CLICK/TYPE/REMIND actions. Up to 8 chained steps.
 - Context includes: current tab content, @-mentioned tabs, recent browsing history,
   bookmarks, all open tabs, and attached images (via Vision OCR).

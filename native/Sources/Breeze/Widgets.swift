@@ -46,6 +46,11 @@ func tintedSymbol(_ name: String, point: CGFloat, weight: NSFont.Weight, color: 
     return img
 }
 
+func isEditingTextField(_ field: NSTextField) -> Bool {
+    guard let editor = field.window?.firstResponder as? NSTextView else { return false }
+    return (editor.delegate as AnyObject?) === field
+}
+
 /// A 30×30 (configurable) icon button with hover background — the `.nav-btn` look.
 final class HoverButton: NSButton {
     var diameter: CGFloat = 30

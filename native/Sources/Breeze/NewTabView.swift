@@ -16,10 +16,7 @@ func breezeBaseLogo() -> NSImage? {
 
 func breezeLogo() -> NSImage? {
     guard let base = breezeBaseLogo() else { return nil }
-    let rawAccent = Store.shared.string("accent").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    if rawAccent == Theme.monoAccent { return themedLogo(base) }
-    if rawAccent.isEmpty || rawAccent == Theme.defaultAccent { return base }
-    return navTintedLogo(base, color: Theme.shared.palette.accent)
+    return base
 }
 
 func themedLogo(_ base: NSImage) -> NSImage {
@@ -109,18 +106,13 @@ private func hue(of color: NSColor) -> CGFloat {
 
 func navLogo() -> NSImage? {
     let accent = Theme.shared.palette.accent
-    let rawAccent = Store.shared.string("accent").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let tint = rawAccent == Theme.monoAccent ? accent : (accent.blended(withFraction: 0.36, of: .black) ?? accent)
+    let tint = accent.blended(withFraction: 0.36, of: .black) ?? accent
     if let img = Bundle.main.image(forResource: "nav-icon") {
-        if rawAccent == Theme.monoAccent { return themedLogo(img, color: tint) }
-        if rawAccent.isEmpty || rawAccent == Theme.defaultAccent { return img }
-        return navTintedLogo(img, color: tint)
+        return img
     }
     for p in ["../nav-icon.png", "nav-icon.png", "../ui/nav-icon.png"] {
         if let img = NSImage(contentsOfFile: p) {
-            if rawAccent == Theme.monoAccent { return themedLogo(img, color: tint) }
-            if rawAccent.isEmpty || rawAccent == Theme.defaultAccent { return img }
-            return navTintedLogo(img, color: tint)
+            return img
         }
     }
     let size = NSSize(width: 256, height: 256)

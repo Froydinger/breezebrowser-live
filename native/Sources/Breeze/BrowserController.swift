@@ -59,7 +59,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var active = 0 {
         willSet {
             if newValue != active {
-                if window.firstResponder === address.currentEditor() {
+                if isEditingTextField(address) {
                     window.makeFirstResponder(nil)
                 }
             }
@@ -1427,15 +1427,37 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    private func tearDownClosedTab(_ t: Tab, blankPage: Bool = true) {
+        titleObs[t.id] = nil
+        urlObs[t.id] = nil
+        aiNavWaiters.removeValue(forKey: t.id)?.resume()
+        if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
+        t.webView.stopLoading()
+        t.webView.navigationDelegate = nil
+        t.webView.uiDelegate = nil
+        t.webView.removeFromSuperview()
+        if blankPage {
+            t.webView.loadHTMLString("", baseURL: nil)
+        }
+    }
+
+    private func persistOpenTabsSnapshot() {
+        Store.shared.openTabs = tabs.compactMap { tab in
+            guard !tab.isNewTab, !tab.isChatTab else { return nil }
+            return tab.webView.url?.absoluteString
+        }
+        Store.shared.saveOpenTabs()
+    }
+
     func closeTab(_ t: Tab) {
         guard let i = tabs.firstIndex(where: { $0.id == t.id }) else { return }
-        titleObs[t.id] = nil; urlObs[t.id] = nil
-        if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
         if let partnerId = t.splitPartnerId, let partner = tabs.first(where: { $0.id == partnerId }) {
             partner.splitPartnerId = nil
             partner.splitIsRight = false
         }
-        t.webView.removeFromSuperview(); tabs.remove(at: i)
+        tearDownClosedTab(t)
+        tabs.remove(at: i)
+        persistOpenTabsSnapshot()
         if tabs.isEmpty { openNewTab(); return }
         active = min(active, tabs.count - 1); showActive(); refreshSidebar(); updateNowPlaying()
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
@@ -1565,10 +1587,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func closeOthers(keep t: Tab) {
         for other in tabs where other.id != t.id {
-            titleObs[other.id] = nil; urlObs[other.id] = nil
-            other.webView.removeFromSuperview()
+            tearDownClosedTab(other)
         }
-        tabs = [t]; active = 0; showActive(); renderTabs()
+        t.splitPartnerId = nil
+        t.splitIsRight = false
+        tabs = [t]
+        active = 0
+        showActive()
+        renderTabs()
+        updateNowPlaying()
+        persistOpenTabsSnapshot()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
     func copyLink(_ t: Tab) {
@@ -1753,7 +1782,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard let wv = current?.webView else { return }
         back.isEnabled = wv.canGoBack; forward.isEnabled = wv.canGoForward
         let urlStr = (current?.isNewTab ?? false) ? "" : displayURL(wv)
-        if window.firstResponder !== address.currentEditor() { address.attributedStringValue = styledAddress(urlStr) }
+        if !isEditingTextField(address) { address.attributedStringValue = styledAddress(urlStr) }
         let bookmarked = (current?.isNewTab ?? true) ? false : Store.shared.isBookmarked(wv.url?.absoluteString ?? "")
         bookmarkBtn.symbol = bookmarked ? "bookmark.fill" : "bookmark"
         updateAdblockModeButton()
@@ -3720,17 +3749,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
-    /// The accent the HTML pages should use. Default is teal; custom settings
-    /// override it.
+    /// Breeze uses one stable teal accent; old saved custom accents are ignored.
     func effectiveAccentHex() -> String {
-        let accent = Store.shared.string("accent").lowercased()
-        if accent == Theme.monoAccent { return effectiveTheme() == "dark" ? "#f5f5f7" : "#1c1c20" }
-        return accent.isEmpty ? Theme.defaultAccent : accent
+        return Theme.defaultAccent
     }
-    func isCustomAccentSetting() -> Bool {
-        let a = Store.shared.string("accent").lowercased()
-        return !a.isEmpty && a != Theme.defaultAccent && a != Theme.monoAccent
-    }
+
     func onAccentTextHex() -> String {
         guard let color = Theme.hex(effectiveAccentHex()) else { return "#ffffff" }
         let c = color.usingColorSpace(.deviceRGB) ?? color
@@ -3742,8 +3765,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private func bridgeStateJS() -> String {
         let theme = effectiveTheme()
         var settings = Store.shared.settings
-        settings["rawAccent"] = Store.shared.string("accent")
-        settings["accent"] = effectiveAccentHex()      // HTML follows the chrome accent
+        settings["rawAccent"] = Theme.defaultAccent
+        settings["accent"] = Theme.defaultAccent
         settings["aiCloudEnabled"] = llm.usingCloud
         settings["aiKeyConnected"] = llm.ready
         let settingsJSON = Store.json(settings)
@@ -3757,26 +3780,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
           s.id='bz-accent-fix';
           s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
-        (function(){
-          var accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'\(effectiveAccentHex())';
-          function rgb(hex){hex=hex.replace('#','');if(hex.length!==6)return null;var n=parseInt(hex,16);return [(n>>16)&255,(n>>8)&255,n&255];}
-          var c=rgb(accent); if(!c)return;
-          document.querySelectorAll('img[src$="icon.png"],img[data-breeze-logo-src]').forEach(function(img){
-            var original=img.getAttribute('data-breeze-logo-src')||img.getAttribute('src');
-            img.setAttribute('data-breeze-logo-src',original);
-            var source=new Image();
-            source.onload=function(){
-              try{
-                var canvas=document.createElement('canvas'); canvas.width=source.naturalWidth||source.width; canvas.height=source.naturalHeight||source.height;
-                var ctx=canvas.getContext('2d'); ctx.drawImage(source,0,0,canvas.width,canvas.height);
-                var d=ctx.getImageData(0,0,canvas.width,canvas.height), p=d.data;
-                for(var i=0;i<p.length;i+=4){var lum=(0.299*p[i]+0.587*p[i+1]+0.114*p[i+2])/255;p[i]=c[0]*lum;p[i+1]=c[1]*lum;p[i+2]=c[2]*lum;}
-                ctx.putImageData(d,0,0); img.src=canvas.toDataURL('image/png');
-              }catch(e){}
-            };
-            source.src=original;
-          });
-        })();
         """
     }
 
@@ -3824,8 +3827,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         switch method {
         case "setSetting":
-            if let key = args["key"] as? String { Store.shared.settings[key] = args["value"]; Store.shared.saveSettings() }
-            applySettingsChange()
+            if let key = args["key"] as? String {
+                if key == "accent" {
+                    Store.shared.settings["accent"] = Theme.defaultAccent
+                } else {
+                    Store.shared.settings[key] = args["value"]
+                }
+                Store.shared.saveSettings()
+                applySettingsChange(changedKey: key)
+            }
         case "setSitePermission":
             if let origin = args["origin"] as? String,
                let permission = args["permission"] as? String {
@@ -3916,9 +3926,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "makeDefaultBrowser":
             if let bid = Bundle.main.bundleIdentifier {
                 LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
-                LSSetDefaultHandlerForURLScheme("http" as CFString, bid as CFString)
-                LSSetDefaultHandlerForURLScheme("https" as CFString, bid as CFString)
+                _ = LSSetDefaultHandlerForURLScheme("http" as CFString, bid as CFString)
+                _ = LSSetDefaultHandlerForURLScheme("https" as CFString, bid as CFString)
                 resolve(isDefaultBrowser() ? "true" : "false")
+            } else {
+                resolve("false")
             }
         case "isDefaultBrowser":
             resolve(isDefaultBrowser() ? "true" : "false")
@@ -3933,11 +3945,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     private func isDefaultBrowser() -> Bool {
         guard let bid = Bundle.main.bundleIdentifier else { return false }
-        let httpApp = URL(string: "http://example.com").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
-        let httpsApp = URL(string: "https://example.com").flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0) }
-        let httpId = httpApp.flatMap { Bundle(url: $0)?.bundleIdentifier }
-        let httpsId = httpsApp.flatMap { Bundle(url: $0)?.bundleIdentifier }
-        return httpId == bid && httpsId == bid
+        let http = LSCopyDefaultHandlerForURLScheme("http" as CFString)?.takeRetainedValue() as String?
+        let https = LSCopyDefaultHandlerForURLScheme("https" as CFString)?.takeRetainedValue() as String?
+        return http == bid && https == bid
     }
 
     /// Chat ids are JS numbers (a Double timestamp); accept Double/Int/String.
@@ -3948,19 +3958,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return nil
     }
 
-    func applySettingsChange() {
+    func applySettingsChange(changedKey: String? = nil) {
         applyThemeFromSettings()                  // posts Theme.didChange → chrome restyles
-        pinSize = PinSize(rawValue: Store.shared.string("pinSize")) ?? .large
-        renderPins()
-        applyChromeTheme()
-        if Store.shared.settings["adblockEnabled"] as? Bool ?? true {
-            AdBlocker.shared.rebuild()
-        } else {
-            AdBlocker.shared.remove(from: sharedConfig.userContentController)
+        if changedKey == nil || changedKey == "pinSize" {
+            pinSize = PinSize(rawValue: Store.shared.string("pinSize")) ?? .large
+            renderPins()
         }
-        updateAdblockModeButton()
+        applyChromeTheme()
+        if changedKey == nil || changedKey == "adblockEnabled" || changedKey == "adblockMode" {
+            if Store.shared.settings["adblockEnabled"] as? Bool ?? true {
+                AdBlocker.shared.rebuild()
+            } else {
+                AdBlocker.shared.remove(from: sharedConfig.userContentController)
+            }
+            updateAdblockModeButton()
+        }
         broadcastToInternalPages()
-        newTab.applyTheme(); newTab.tick()
+        newTab.applyTheme()
+        if changedKey == nil || changedKey == "clock24" || changedKey == "showGreeting" || changedKey == "userName" {
+            newTab.tick()
+        }
     }
 
     func shareCurrentPage(from view: NSView?) {
