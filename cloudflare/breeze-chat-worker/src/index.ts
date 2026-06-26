@@ -1,5 +1,6 @@
 interface Env {
-  AI_PROVIDER_API_KEY: string;
+  AI_PROVIDER_API_KEY?: string;
+  OPENAI_API_KEY?: string;        // legacy secret; used as a fallback for the key
   AI_CHAT_ENDPOINT: string;
   AI_IMAGE_GENERATION_ENDPOINT: string;
   AI_IMAGE_EDIT_ENDPOINT: string;
@@ -177,7 +178,7 @@ async function proxyChat(req: Request, env: Env) {
   let providerModel: string;
   try {
     endpoint = requiredEnv(env.AI_CHAT_ENDPOINT, "AI_CHAT_ENDPOINT");
-    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY, "AI_PROVIDER_API_KEY");
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY || env.OPENAI_API_KEY, "AI_PROVIDER_API_KEY");
     providerModel = requiredEnv(env.AI_CHAT_MODEL, "AI_CHAT_MODEL");
   } catch {
     return json({ error: "provider_not_configured" }, 500);
@@ -220,7 +221,7 @@ async function proxyImageGeneration(req: Request, env: Env) {
   let providerModel: string;
   try {
     endpoint = requiredEnv(env.AI_IMAGE_GENERATION_ENDPOINT, "AI_IMAGE_GENERATION_ENDPOINT");
-    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY, "AI_PROVIDER_API_KEY");
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY || env.OPENAI_API_KEY, "AI_PROVIDER_API_KEY");
     providerModel = requiredEnv(env.AI_IMAGE_MODEL, "AI_IMAGE_MODEL");
   } catch {
     return json({ error: "provider_not_configured" }, 500);
@@ -268,7 +269,7 @@ async function proxyImageEdit(req: Request, env: Env) {
   let providerModel: string;
   try {
     endpoint = requiredEnv(env.AI_IMAGE_EDIT_ENDPOINT, "AI_IMAGE_EDIT_ENDPOINT");
-    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY, "AI_PROVIDER_API_KEY");
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY || env.OPENAI_API_KEY, "AI_PROVIDER_API_KEY");
     providerModel = requiredEnv(env.AI_IMAGE_MODEL, "AI_IMAGE_MODEL");
   } catch {
     return json({ error: "provider_not_configured" }, 500);
