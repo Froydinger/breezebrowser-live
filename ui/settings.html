@@ -130,6 +130,9 @@
 
     .row-label { font-size: 14px; }
     .row-hint { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+    .section-intro { font-size: 13px; color: var(--text-soft); line-height: 1.55; margin: 0 0 14px; max-width: 620px; }
+    .section-intro + .card { margin-bottom: 14px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: var(--accent); color: #fff; padding: 1px 6px; border-radius: 6px; }
     .key-link { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
     .key-link:hover { text-decoration: underline; }
 
@@ -312,7 +315,7 @@
       <button data-nav="ai">Nav</button>
       <button data-nav="reminders">Reminders</button>
       <button data-nav="search">Search</button>
-      <button data-nav="plugins">Plugins</button>
+      <button data-nav="plugins">Tasks</button>
       <button data-nav="performance">Performance</button>
       <button data-nav="notifications">Notifications</button>
       <button data-nav="privacy">Privacy</button>
@@ -442,12 +445,31 @@
     </section>
 
     <section data-tab="plugins">
-      <h2>Plugins <span class="badge">Beta</span></h2>
+      <h2>Tasks</h2>
+      <p class="section-intro">Tasks are one-keystroke Nav superpowers. Type <code>/</code> in Nav, a new tab, or the address bar to see them, then <code>/research electric cars</code> to run one. Here's what Nav can do:</p>
       <div class="card">
         <div class="row">
           <div>
-            <div class="row-label">Creator Tools</div>
-            <div class="row-hint">Adds a YouTube-only Creator button in Nav for title, thumbnail, channel, and packaging feedback. Runs only when you click it.</div>
+            <div class="row-label">/research</div>
+            <div class="row-hint">Digs through several sources and writes a sourced summary on its own "Research, wrapped." page.</div>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">/summarize</div>
+            <div class="row-hint">TL;DR the page or video you're on — a one-line takeaway, then the key points.</div>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">/factcheck</div>
+            <div class="row-hint">Verifies a claim against multiple sources and calls it true, false, or mixed.</div>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">/youtube — Creator Tools</div>
+            <div class="row-hint">Analyzes the YouTube video you're on: title, thumbnail, packaging, and next-video ideas.</div>
           </div>
           <label class="toggle">
             <input type="checkbox" id="pluginCreatorTools" />
@@ -455,6 +477,7 @@
           </label>
         </div>
       </div>
+      <p class="section-intro">The toggle adds a one-click Creator Tools button to the Nav header whenever you're on a YouTube page. <code>/youtube</code> works either way.</p>
     </section>
 
     <section data-tab="performance">
@@ -725,6 +748,10 @@
           <p>Press <b>⌘E</b> to open it. It's powered by <b>Breeze Cloud</b> through Breeze Cloud. Ask it to "summarize this page," open a site, look something up on the web, make an image, or set a reminder, and it drives the browser to get it done.</p>
         </details>
         <details>
+          <summary>Run a Task with <code>/</code></summary>
+          <p>Type <code>/</code> in Nav, a new tab, or the address bar to open the <b>Tasks</b> menu — one-keystroke Nav superpowers. <code>/research</code> reads several sources into a sourced summary, <code>/summarize</code> TL;DRs the page you're on, <code>/factcheck</code> verifies a claim, and <code>/youtube</code> runs Creator Tools on a video. Pick one and add your prompt, e.g. <code>/research the best ebikes</code>. See the <b>Tasks</b> tab for the full list.</p>
+        </details>
+        <details>
           <summary>Use the AI on selected text</summary>
           <p>Open the assistant (⌘E), then highlight any text on the page. It appears as a chip above the input and becomes the focus of your next question. Hit the magnifier on the chip to web-search that exact text instead.</p>
         </details>
@@ -742,7 +769,7 @@
         </details>
         <details>
           <summary>Shortcuts cheat-sheet</summary>
-          <p><b>⌘T</b> new tab · <b>⇧⌘T</b> new chat · <b>⌥⌘T</b> private tab · <b>⇧⌘N</b> private window · <b>⌘W</b> close tab · <b>⌘L</b> address bar · <b>Shift-Enter</b> force web search from the address/new-tab field · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⇧⌘G</b> previous match · <b>⌘R</b> reload · <b>⌘[</b> back · <b>⌘]</b> forward · <b>⌘S</b> sidebar · <b>⌘E</b> Nav · <b>⇧⌘D</b> cycle theme · <b>⌘Y</b> history · <b>⌥⌘B</b> bookmarks · <b>⇧⌘J</b> downloads.</p>
+          <p><b>⌘T</b> new tab · <b>⇧⌘T</b> new chat · <b>⌥⌘T</b> private tab · <b>⇧⌘N</b> private window · <b>⌘W</b> close tab · <b>⌘L</b> address bar · <b>/</b> open the Tasks menu (in Nav, a new tab, or the address bar) · <b>Shift-Enter</b> force web search from the address/new-tab field · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⇧⌘G</b> previous match · <b>⌘R</b> reload · <b>⌘[</b> back · <b>⌘]</b> forward · <b>⌘S</b> sidebar · <b>⌘E</b> Nav · <b>⇧⌘D</b> cycle theme · <b>⌘Y</b> history · <b>⌥⌘B</b> bookmarks · <b>⇧⌘J</b> downloads.</p>
         </details>
         <details>
           <summary>A site looks broken</summary>

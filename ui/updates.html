@@ -203,84 +203,19 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
-      { v: '4.1.6', icon: 'lock', title: 'Secure & Steady', major: false, items: [
-        '<b>Auto HTTPS</b> — Typing, pasting, or clicking a plain <code>http://</code> link now upgrades to <code>https://</code> automatically, so legitimate sites that don\'t redirect themselves no longer dead-end on a connection error.',
-        '<b>Stays Out of the Way</b> — Local and dev addresses (localhost, loopback, <code>.local</code>, and raw IPs) keep using http, and sites that genuinely need http won\'t get stuck in a loop.',
-        '<b>Nav waits for search</b> — Nav now gives Spectra search results time to load before reading them, so answers no longer come up short when a search takes a beat longer than Google would.' ] },
-      { v: '4.1.5', icon: 'sparkles', title: 'Spectra Search Arrives', major: true, items: [
-        '<b>Spectra Search</b> — Breeze now treats Spectra as a first-class search engine with the new spectrasearch.online endpoint.',
-        '<b>Search Everywhere</b> — Spectra now works from New Tab, the address bar, and the full-window Nav chat search path.',
-        '<b>Your Choice Sticks</b> — Shift-Enter and search-mode flows now respect your selected search engine instead of falling back to Google.',
-        '<b>Search Engine Polish</b> — Brave now also works consistently from native search paths, matching the Settings option.' ] },
-      { v: '4.1.4', icon: 'shapes', title: 'Creator Tools Beta', major: false, items: [
-        '<b>Plugins Beta</b> — Settings now has a Plugins beta section for lightweight, optional Breeze features.',
-        '<b>Creator Tools</b> — Enable Creator Tools to add a YouTube-only Creator button in Nav for title, thumbnail, channel, and packaging feedback.',
-        '<b>Lightweight by Design</b> — Creator Tools stays off by default and only runs when you click it on a YouTube page.',
-        '<b>YouTube Studio Downloads</b> — Thumbnail downloads that open a temporary tab now hand off to the download manager instead of disappearing during cleanup.' ] },
-      { v: '4.1.3', icon: 'check-check', title: 'Tab Close Cleanup', major: false, items: [
-        '<b>Sidebar Close Buttons</b> — Tab close buttons in the sidebar now get a cleaner click path, so the X reliably closes the tab instead of selecting the row.',
-        '<b>Closed Tabs Let Go</b> — Closing tabs now tears down their WebViews more explicitly so page work, media, and pending navigation do not linger longer than needed.',
-        '<b>Multi-Window Close Fixed</b> — Closing a window with the red traffic light no longer quits the rest of Breeze.',
-        '<b>Faster Theme Changes</b> — Breeze now sticks to its teal accent and avoids the expensive color retinting path that could make tabs and settings lag after changing themes.',
-        '<b>Darker Dark Mode</b> — Dark mode has a deeper, richer base while keeping Breeze’s teal identity intact.' ] },
-      { v: '4.1.2', icon: 'key-round', title: 'Shortcut & Settings Polish', major: false, items: [
-        '<b>Fullscreen Nav Fixed</b> — Moving Nav from the sidebar into fullscreen now reopens the chat layout cleanly so bubbles stay inside the page.',
-        '<b>New Tab Input Choice</b> — Settings now lets you choose whether plain new-tab text asks Nav or searches the web.',
-        '<b>Shortcut Cleanup</b> — New Tab no longer shows incorrect inline shortcut hints; its Shortcuts link opens the accurate Settings cheat sheet.',
-        '<b>Default Browser Registration</b> — Breeze now registers itself more reliably with macOS for HTTP and HTTPS default-browser selection.' ] },
-      { v: '4.1.1', icon: 'download', title: 'Update Recovery Hotfix', major: false, items: [
-        '<b>4.x Updates Restored</b> — Check for Updates now sees current native Breeze releases instead of looking only at the old v3 channel.',
-        '<b>Manual Install Required Once</b> — If you are already on a 4.x build, install this update from the website once; future updates will work from inside Breeze again.',
-        '<b>Fullscreen Nav Wrapping</b> — Fullscreen chat bubbles now stay inside the visible column instead of stretching off the edge.' ] },
-      { v: '4.1.0', icon: 'shapes', title: 'Cruise Control', major: true, items: [
-        '<b>Nav Chat Rebuilt</b> — Message bubbles now measure and draw themselves, so short replies stay pill-shaped and long replies wrap without clipping.',
-        '<b>PiP Behaves</b> — Closing Picture-in-Picture just closes PiP, while returning to the source tab is handled separately.',
-        '<b>Find Bar Upgrade</b> — Command-F now uses a clearer high-contrast field with live result counts.',
-        '<b>Private Windows Stay Private</b> — Incognito windows open blank and separate from normal synced tabs and pins.',
-        '<b>Generated Images Restored</b> — Images in History render correctly again, with download support still in place.',
-        '<b>Copy Image</b> — Right-click image menus now include Copy Image alongside download and copy address.' ] },
-      { v: '4.0.8', icon: 'shapes', title: 'Nav Bubble Polish', major: false, items: [
-        '<b>Rounder Nav Bubbles</b> — Chat bubbles now size to the message instead of turning short prompts into giant bars.',
-        '<b>Fullscreen Wrapping Fixed</b> — Long Nav replies wrap inside the bubble instead of clipping off the right edge.',
-        '<b>Cleaner Chat Shape</b> — User and Nav messages use softer, more native-feeling rounded bubbles across sidebar and fullscreen chat.' ] },
-      { v: '4.0.7', icon: 'download', title: 'Download Reliability', major: false, items: [
-        '<b>Google Drive Large Downloads</b> — Large Google Drive files now download instead of opening a failed plug-in page.',
-        '<b>Better Media Downloads</b> — Download links and right-click media downloads save images, videos, and direct media files instead of opening failed media pages.',
-        '<b>Smarter Native Ad Blocking</b> — Breeze now uses a simpler Off, On, and Advanced blocking model, with safer defaults and a stronger optional mode.',
-        '<b>Better Apple Autofill Access</b> — Right-click menus in supported login fields better preserve native Apple password and passkey autofill options.' ] },
-      { v: '4.0.6', icon: 'sparkles', title: 'A Living What’s New', major: false, items: [
-        '<b>Lander-Inspired Release Notes</b> — What’s New now uses the same airy editorial design language as the Breeze site.',
-        '<b>Living Update Screen</b> — Soft looping shimmer, floating marks, and ambient motion make the page feel alive when you revisit it.',
-        '<b>Less Scrolling</b> — Recent updates stay visible, while older releases collapse behind an Older Releases section.' ] },
-      { v: '4.0.5', icon: 'zap', title: 'Tab Cleanup & Refresh Polish', major: false, items: [
-        '<b>Close Other Tabs</b> — Keep the selected tab open while closing every other open tab, including open pinned app tabs while leaving the pins themselves in place.',
-        '<b>Pinned Apps Stay Awake</b> — A Settings toggle keeps pinned app tabs from being put to sleep by default, with control for users who want different behavior.',
-        '<b>Cleaner Refresh Spin</b> — The reload icon now rotates around its own center for a smoother, more native-feeling refresh animation.' ] },
-      { v: '4.0.4', icon: 'panel-left', title: 'Sidebar Drag & Shortcut Polish', major: false, items: [
-        '<b>Drag the Sidebar Around</b> — Reorder pinned apps, tabs, and tab folders directly in the sidebar, including moving tabs between folders.',
-        '<b>Split Tabs Stay Together</b> — Dragging split-view tabs preserves the split relationship while letting you rearrange their place in the list.',
-        '<b>Backspace Stays Safe</b> — Pressing Backspace in web text fields edits text instead of unexpectedly navigating back.',
-        '<b>Cleaner New Tab</b> — New-tab keyboard hints now live behind a compact Shortcuts toggle.' ] },
-      { v: '4.0.3', icon: 'shield-check', title: 'Privacy & Playback Polish', major: false, items: [
-        '<b>Privacy by Choice</b> — Nav still understands the current page, while chat history, browsing history, bookmarks, and other open tabs are controllable in Settings.',
-        '<b>Subtler Plus Divider</b> — The sidebar new-tab divider uses lighter line art with shorter rails and a drawn plus.',
-        '<b>Picture-in-Picture Return Fix</b> — Closing or returning from PiP brings the source media tab forward again.',
-        '<b>Quieter Quit</b> — Breeze no longer waits on background adblock compilation during app termination, avoiding scary quit-time crash reports.' ] },
-      { v: '4.0.2', icon: 'sparkles', title: 'New Tab Hotfix', major: false, items: [
-        '<b>New Tab Center Restored</b> — The clock, greeting, and input bar keep the right light/dark contrast instead of disappearing into light backgrounds.',
-        '<b>Clean Plus Divider</b> — The sidebar new-tab divider no longer leaks the default system button title, and stays compact and subtle.',
-        '<b>Search Hint</b> — The new-tab input shows Enter vs. Shift-Enter hints so explicit web searches are easier to discover.' ] },
-      { v: '4.0.1', icon: 'shield-check', title: 'Sharper Browsing Controls', major: false, items: [
-        '<b>Optional Extreme Ad Blocking</b> — Normal mode stays compatibility-first, and Extreme mode can push harder on ad-heavy sites.',
-        '<b>Per-Site Escape Hatch</b> — When Extreme mode is on, a shield in the URL bar lets you turn it off for the current site.',
-        '<b>Shift-Enter Searches</b> — Press Shift-Enter in the address or new-tab field to send the text straight to Google.',
-        '<b>More Room for Tab Titles</b> — Sidebar tab names keep the close button out of the way until hover, so titles ellipsize later.' ] },
-      { v: '4.0.0', icon: 'search-check', title: 'Full Speed Ahead', major: true, items: [
-        '<b>Modern Breeze Begins</b> — Breeze 4 starts the current native, AI-forward, privacy-focused generation of the browser.',
-        '<b>Research Summary Pages</b> — Research-style Nav tasks finish on a polished Breeze summary page with useful sources collected below.',
-        '<b>Smarter Form Filling</b> — Nav can type into more modern fields, including React-style inputs, ARIA text boxes, and rich text editors.',
-        '<b>Better Agent Clicks</b> — Agent clicks send fuller mouse events so custom web-app buttons respond more reliably.',
-        '<b>Bigger Chat Text</b> — User and Nav chat bubbles use larger text for easier reading.' ] },
+      { v: '5.0.0', icon: 'rocket', title: 'Tasks', major: true, items: [
+        '<b>Meet Tasks</b> — Type <code>/</code> in Nav, a new tab, or the address bar to pop a menu of one-keystroke superpowers. Pick one, add your prompt — like <code>/research the best ebikes</code> — and Nav takes it from there.',
+        '<b>Four to Start</b> — <code>/research</code> reads several sources into a sourced summary, <code>/summarize</code> TL;DRs the page you\'re on, <code>/factcheck</code> verifies a claim against multiple sources, and <code>/youtube</code> runs Creator Tools on a video.',
+        '<b>Slash Anywhere</b> — The Task palette works from the Nav chat, fullscreen Nav, the new-tab ask bar, and the address bar — the same <code>/</code> everywhere.',
+        '<b>Live Research Loader</b> — Nav now shows an animated working bubble that narrates what it\'s doing — searching, reading, thinking — paired with the ambient edge glow.',
+        '<b>A Proper Welcome</b> — Fresh installs get a real onboarding screen that introduces Breeze and Tasks instead of dropping you on a blank page.',
+        '<b>Auto HTTPS</b> — Plain <code>http://</code> links now upgrade to <code>https://</code> automatically, while local and dev addresses stay on http.',
+        '<b>Patient Search</b> — Nav waits for slower search results to finish rendering before reading them, so answers stop coming up short.' ] },
+      { v: '4.x', icon: 'search-check', title: 'The Native Era', major: true, items: [
+        '<b>Modern Breeze</b> — Breeze 4 established the current native, AI-forward, privacy-focused generation: Nav with page context and browser actions, research summary pages, and rebuilt chat.',
+        '<b>Spectra Search</b> — Breeze\'s own private search engine arrived as a first-class option across New Tab, the address bar, and Nav.',
+        '<b>Browsing Polish</b> — Sidebar drag-and-drop, smarter ad blocking, download reliability, Picture-in-Picture fixes, and the living What\'s New screen all landed here.',
+        '<b>Full Breakdown</b> — <a href="https://github.com/Froydinger/breezebrowser-live/releases" target="_blank">See GitHub releases</a> for every v4 patch, from 4.0.0 to 4.1.6.' ] },
       { v: '3.x', icon: 'cpu', title: 'Picking Up Speed', major: true, items: [
         '<b>Native Mac Foundation</b> — Breeze was rebuilt as a Swift/AppKit/WKWebView Mac app for Apple Silicon.',
         '<b>WebKit Instead of Chromium</b> — The browser moved onto Apple’s system web engine for better Mac integration, lower overhead, and native media behavior.',

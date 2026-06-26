@@ -279,7 +279,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistantWidthC,
             assistantLeadingC,
         ])
-        assistant.onSend = { [weak self] t in self?.sendToAI(t) }
+        assistant.onSend = { [weak self] t in
+            guard let self else { return }
+            if let (task, prompt) = BreezeTask.parse(t) { self.runTask(task, prompt: prompt); return }
+            self.sendToAI(t)
+        }
+        assistant.onSlashTasks = { [weak self] token in self?.aiSlashTasks(token) }
+        assistant.onSlashTasksEnd = { [weak self] in self?.suggestionsPopover.hide() }
+        assistant.onStop = { [weak self] in self?.cancelAI() }
         assistant.onClose = { [weak self] in self?.setAssistant(false) }
         assistant.onNewChat = { [weak self] in self?.newChat() }
         assistant.onAtMention = { [weak self] in self?.aiAtMention() }
@@ -1713,6 +1720,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
 
+        // A leading "/task" command runs a Nav Task instead of navigating/searching.
+        if let (task, prompt) = BreezeTask.parse(q) {
+            suggestionsPopover.hide()
+            address.stringValue = ""; newTab.field.stringValue = ""
+            runTask(task, prompt: prompt)
+            return
+        }
+
         let isURL = q.contains("://") || (q.contains(".") && !q.contains(" "))
         if isURL {
             var s = q
@@ -1896,6 +1911,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func setAssistant(_ open: Bool) {
         assistantOpen = open
+        if !open { assistant.stopTipRotation() }   // don't rotate tips while Nav is hidden
         // If assistant is currently embedded in a chat tab, don't animate the sidebar panel
         if current?.isChatTab == true && !open { return }
         
@@ -1919,6 +1935,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             updateCreatorToolsAvailability()
             assistant.focusInput()
             prepareAIStatus()
+            assistant.resumeTipsIfEmpty()
         }
         scheduleReflow()
     }
@@ -1927,7 +1944,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func prepareAIStatus() {
         if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("Nav · Breeze Cloud. Ask anything, summarize pages, or make images.")
+            assistant.setModelStatus("Nav · Breeze Cloud. Ask anything, summarize pages, run Tasks, and act for you.")
         } else {
             assistant.setInputEnabled(true, placeholder: "Nav is not configured in this build…")
             assistant.setModelStatus("Nav is not configured in this build.")
@@ -1974,6 +1991,72 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         - 3 thumbnail direction ideas
         - 3 next-video ideas inspired by the page
         """)
+    }
+
+    // MARK: - Tasks (the /slash command palette)
+
+    /// Set by the /research Task so the next Nav answer is forced onto the
+    /// "Research, wrapped." page even if the keyword heuristic wouldn't catch it.
+    var forceResearchSummary = false
+
+    /// True between hitting the kill switch and the request unwinding, so the
+    /// late completion doesn't print a "Sorry — cancelled" bubble.
+    var aiCancelled = false
+    /// Bumped each send; a completion whose turn no longer matches is stale (e.g.
+    /// the user cancelled and sent again) and is dropped.
+    var aiTurn = 0
+
+    /// The global AI kill switch — cancels the in-flight Nav request immediately.
+    func cancelAI() {
+        aiCancelled = true
+        llm.cancel()
+        hideRainbowGlow()
+        assistant.hideTaskLoader()
+        assistant.setWorking(false)
+        assistant.setStatus(nil)
+        assistant.setInputEnabled(true)
+        assistant.focusInput()
+    }
+
+    /// Pop the themed Task palette above the Nav input, filtered by what's typed
+    /// after "/". Reuses our custom suggestions popover (not a system menu) so it
+    /// matches Breeze; picking a row fills "/slug " into the Nav input.
+    func aiSlashTasks(_ token: String) {
+        let matches = BreezeTask.suggestions(for: token)
+        guard !matches.isEmpty else { suggestionsPopover.hide(); return }
+        let items = matches.map { SuggestionItem(title: $0.title, url: "/\($0.slug)", type: .task, subtitle: $0.subtitle) }
+        suggestionsPopover.show(relativeTo: assistant.input, items: items, preferredEdge: .maxY)
+    }
+
+    /// Run a Task. Page-based Tasks (summarize / youtube) act on the current tab;
+    /// prompt-based Tasks (research / fact-check) frame the user's text for Nav.
+    func runTask(_ task: BreezeTask, prompt: String) {
+        if !assistantOpen { setAssistant(true) }
+        assistant.setImageMode(false)
+        switch task.slug {
+        case "youtube":
+            runCreatorTools()
+        case "summarize":
+            if prompt.isEmpty {
+                sendToAI("Give me a clear TL;DR of the page I'm currently viewing: one or two sentences up top, then the key points as short bullets. Use the current page text I gave you — don't search unless it's genuinely missing.")
+            } else {
+                sendToAI("Summarize the page I'm viewing, focused on: \(prompt). Lead with a one-line takeaway, then bullets.")
+            }
+        case "factcheck":
+            let claim = prompt.isEmpty ? "the main claim on the page I'm currently viewing" : prompt
+            sendToAI("Fact-check this and tell me plainly whether it's TRUE, FALSE, or MIXED, then explain briefly with the sources you checked: \(claim)")
+        case "research":
+            // The literal word "research" is what flips Nav into multi-source research
+            // mode (Agent reads several pages); the flag forces the summary page.
+            forceResearchSummary = true
+            if prompt.isEmpty {
+                sendToAI("Research the page I'm currently viewing and give me a thorough, sourced rundown.")
+            } else {
+                sendToAI("Research \(prompt)")
+            }
+        default:
+            if !prompt.isEmpty { sendToAI(prompt) }
+        }
     }
 
     func newChat() {
@@ -2025,11 +2108,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func sendToAI(_ text: String) {
-        if assistant.wantsImageMode {
-            sendToAIImage(text)
-            return
-        }
-
         // Cloud not configured → warn instead of firing a doomed request.
         if !llm.ready {
             assistant.addUser(text)
@@ -2040,7 +2118,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ailog("sendToAI (Breeze Cloud): \(text)")
         assistant.addUser(text)
         assistant.setInputEnabled(false, placeholder: "Thinking…")
-        assistant.setStatus("Thinking…")
+        let working = text.range(of: "research", options: .caseInsensitive) != nil ? "Researching…" : "Thinking…"
+        assistant.setStatus(working)
+        assistant.showTaskLoader(working)
+        assistant.setWorking(true)
+        aiCancelled = false
+        aiTurn += 1
+        let myTurn = aiTurn
         showRainbowGlow()
 
         Task { [weak self] in
@@ -2050,9 +2134,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let history = Store.shared.settings["aiUseChatHistory"] as? Bool != false ? self.assistant.messages : []
             let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
                 guard let self else { return }
+                guard myTurn == self.aiTurn else { return }   // stale turn → drop
                 self.ailog("model returned")
                 self.hideRainbowGlow()
+                self.assistant.hideTaskLoader()
+                self.assistant.setWorking(false)
                 self.assistant.setStatus(nil); self.assistant.setInputEnabled(true); self.assistant.focusInput()
+                if self.aiCancelled { self.aiCancelled = false; return }   // user hit the kill switch
                 switch r {
                 case .success(let (answer, toolChips)):
                     let chips = labels + toolChips
@@ -2076,12 +2164,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @discardableResult
     func openResearchSummaryIfNeeded(query: String, answer: String, chips: [String]) -> Bool {
         let q = query.lowercased()
-        let researchy = chips.contains { $0.lowercased().contains("web search") || $0.lowercased().contains("http") } ||
-            q.contains("research") || q.contains("find ") || q.contains("list ") || q.contains("best ") ||
-            q.contains("recommend") || q.contains("compare") || q.contains("options")
+        // The standalone "Research, wrapped." page is summoned when the user runs the
+        // /research Task (forceResearchSummary) or literally asks to "research" — NOT
+        // on plain lookups like "find pizza near me", which used to hijack the page.
+        let force = forceResearchSummary
+        forceResearchSummary = false
+        let researchy = force || q.contains("research")
         let transactional = q.contains("fill ") || q.contains("type ") || q.contains("click ") ||
             q.contains("email ") || q.contains("log in") || q.contains("sign in") || q.contains("submit")
-        guard researchy && !transactional && answer.count > 180 else { return false }
+        guard researchy && !transactional && answer.count > (force ? 120 : 180) else { return false }
         guard let url = writeResearchSummaryPage(query: query, answer: answer) else { return false }
         let tab: Tab
         if let cur = current, !cur.isChatTab {
@@ -2167,11 +2258,33 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return out.joined(separator: "\n")
     }
 
+    /// The real Nav icon (nav-icon.png) as a base64 data URI, so internal HTML pages
+    /// written outside the bundle (e.g. the Research summary) can show the actual
+    /// brand mark instead of a stand-in glyph.
+    func navIconDataURI() -> String? {
+        var data: Data?
+        if let url = Bundle.main.url(forResource: "nav-icon", withExtension: "png") {
+            data = try? Data(contentsOf: url)
+        }
+        if data == nil {
+            for p in ["../ui/nav-icon.png", "ui/nav-icon.png", "../nav-icon.png", "nav-icon.png"] {
+                if let d = try? Data(contentsOf: URL(fileURLWithPath: p)) { data = d; break }
+            }
+        }
+        guard let d = data else { return nil }
+        return "data:image/png;base64," + d.base64EncodedString()
+    }
+
     func researchSummaryHTML(query: String, answer: String, links: [(String, String)]) -> String {
         let body = markdownToResearchHTML(answer)
         let linkCards = links.map { label, url in
             "<a class=\"source\" href=\"\(url.htmlEscaped)\"><span>\(label.htmlEscaped)</span><small>\((URL(string: url)?.host ?? url).htmlEscaped)</small></a>"
         }.joined(separator: "\n")
+        // Prefer the real Nav PNG; fall back to a drawn navigation arrow if it's missing.
+        let navURI = navIconDataURI()
+        let mark = navURI != nil
+            ? "<div class=\"mark\"><img src=\"\(navURI!)\" alt=\"Nav\"/></div>"
+            : "<div class=\"mark mark--draw\"><svg viewBox=\"0 0 24 24\"><path d=\"M3 11 22 2 13 21 11 13 3 11Z\"/></svg></div>"
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Research Summary — Breeze</title>
@@ -2179,13 +2292,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         :root{color-scheme:light dark;--bg:#f2f0ed;--card:rgba(255,255,255,.72);--text:#23232a;--soft:rgba(35,35,42,.58);--accent:#3aa6b9;--line:rgba(0,0,0,.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
         @media(prefers-color-scheme:dark){:root{--bg:#16161a;--card:rgba(255,255,255,.055);--text:#ececf0;--soft:rgba(236,236,240,.55);--line:rgba(255,255,255,.11)}}
         *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 6%,color-mix(in srgb,var(--accent) 28%,transparent),transparent 28%),linear-gradient(160deg,var(--bg),color-mix(in srgb,var(--accent) 7%,var(--bg)));color:var(--text);padding:56px 24px 84px}.wrap{max-width:860px;margin:0 auto}
-        header{text-align:center;margin-bottom:34px;animation:rise .45s cubic-bezier(.22,1,.36,1)}.mark{width:62px;height:62px;border-radius:18px;margin:0 auto 16px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),#7c5bfa);box-shadow:0 22px 55px color-mix(in srgb,var(--accent) 35%,transparent)}.mark svg{width:34px;height:34px;stroke:white;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+        header{text-align:center;margin-bottom:34px;animation:rise .45s cubic-bezier(.22,1,.36,1)}.mark{width:64px;height:64px;margin:0 auto 16px;display:grid;place-items:center;filter:drop-shadow(0 18px 42px color-mix(in srgb,var(--accent) 32%,transparent))}.mark img{width:64px;height:64px;border-radius:18px;display:block}.mark--draw{border-radius:18px;background:linear-gradient(135deg,var(--accent),#7c5bfa)}.mark--draw svg{width:30px;height:30px;fill:white;stroke:white;stroke-width:1.6;stroke-linejoin:round}
         .pill{display:inline-block;color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent);font-size:12px;font-weight:750;padding:6px 12px;border-radius:999px;margin-bottom:12px}h1{font-size:44px;line-height:1.02;margin:0;font-weight:800;letter-spacing:-.8px}header p{color:var(--soft);font-size:16px;line-height:1.5;margin:14px auto 0;max-width:720px}
         .panel{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,.14);backdrop-filter:blur(18px);animation:rise .55s cubic-bezier(.22,1,.36,1)}
         .summary h1{font-size:30px}.summary h2{font-size:20px;margin:28px 0 10px}.summary p,.summary li{font-size:15.5px;line-height:1.62;color:var(--text)}.summary ul{padding-left:20px}.summary a{color:var(--accent);font-weight:700}
         .sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:26px}.source{display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-radius:16px;background:color-mix(in srgb,var(--accent) 9%,transparent);text-decoration:none;border:1px solid color-mix(in srgb,var(--accent) 18%,transparent)}.source span{color:var(--text);font-weight:750}.source small{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-        </style></head><body><div class="wrap"><header><div class="mark"><svg viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h9l5 5v11.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5Z"/><path d="M14 3v6h6"/><path d="M8 14h8M8 17h6"/></svg></div><div class="pill">Nav Research Summary</div><h1>Research, wrapped.</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
+        </style></head><body><div class="wrap"><header>\(mark)<div class="pill">Nav Research Summary</div><h1>Research, wrapped.</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
         """
     }
 
@@ -2813,15 +2926,39 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.setStatus("Searching the web…")
         if let u = URL(string: searchURL(for: query)) { t.webView.load(URLRequest(url: u)) }
         await waitForLoad(t)
-        // Spectra (our default engine) paints results slower than Google. Give the
-        // page up to ~5s to actually render before scraping — poll so a fast engine
-        // still returns quickly, but a slow search isn't mistaken for "no results."
-        var text = ""
-        let deadline = Date().addingTimeInterval(5.0)
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            text = await readText(of: t)
-            if text.count > 400 { break }   // results have rendered
+        // Spectra (our default engine) and other JS search engines paint the page
+        // SHELL first — nav, header, "researching…" chrome — and only stream the
+        // actual results in a beat later. So both "page loaded" and a one-shot
+        // >400-char scrape can fire while the results area is still empty, which is
+        // why Nav was scraping before anything real had rendered.
+        //
+        // Instead of trusting a single read, poll until the page text STOPS GROWING
+        // (results have streamed in and settled), with a minimum floor so a slow
+        // engine is never scraped early and a hard cap so we never hang. This is
+        // engine-agnostic: every web search waits the same way.
+        var text = await readText(of: t)
+        var lastLen = text.count
+        var stableHits = 0
+        var sawGrowth = false
+        let start = Date()
+        let minWait = 2.5          // never scrape sooner than this — Spectra is slow
+        let hardDeadline = 14.0    // …but never hang forever
+        while Date().timeIntervalSince(start) < hardDeadline {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            let fresh = await readText(of: t)
+            if fresh.count > text.count { text = fresh }
+            let grew = fresh.count > lastLen + 40   // meaningful new content arrived
+            if grew { sawGrowth = true }
+            lastLen = fresh.count
+            stableHits = grew ? 0 : (stableHits + 1)
+            let elapsed = Date().timeIntervalSince(start)
+            if elapsed < minWait { continue }
+            // Substantial content that hasn't grown for ~2 polls (~1.2s) → settled.
+            if text.count > 500 && stableHits >= 2 {
+                // If we actually watched results stream in, go. If the page never
+                // grew, it may just be slow to start rendering — give it longer.
+                if sawGrowth || elapsed >= 4.5 { break }
+            }
         }
         if text.isEmpty { text = await readText(of: t) }
         assistant.setStatus("Thinking…")
@@ -3826,7 +3963,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let lastSeen = Store.shared.string("lastSeenVersion")
         let forced = ProcessInfo.processInfo.environment["BREEZE_WHATSNEW_FROM"] != nil
+        let hasOnboarded = Store.shared.bool("hasOnboarded")
+        let forceOnboard = ProcessInfo.processInfo.environment["BREEZE_ONBOARD"] != nil
         Store.shared.settings["lastSeenVersion"] = current; Store.shared.saveSettings()
+
+        // Fresh install (or a build that predates onboarding) → show the native
+        // welcome flow instead of What's New. `BREEZE_ONBOARD=1` forces it for testing.
+        if forceOnboard || !hasOnboarded {
+            Store.shared.settings["hasOnboarded"] = true; Store.shared.saveSettings()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.openInternal(.onboarding) }
+            return
+        }
+        // Existing install that just updated → What's New.
         guard forced || (!lastSeen.isEmpty && lastSeen != current) else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in self?.openInternal(.updates) }
     }
@@ -4010,6 +4158,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 newChat()
                 sendToAI(text)
             }
+        case "finishOnboarding":
+            // Replace the onboarding page with a fresh new tab.
+            if let t = tabs.first(where: { $0.webView === wv }) {
+                openNewTab()
+                closeTab(t)
+            }
+        case "openSettings":
+            openInternal(.settings)
         case "aiReady":
             // Reflects the cached flag, not secret storage, so this never prompts.
             resolve(llm.ready ? "true" : "false")
@@ -4297,6 +4453,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
 extension BrowserController: AddressSuggestionsDelegate {
     func didSelectSuggestion(_ url: String) {
+        // Task rows are encoded as "/slug" — pick one to drop "/slug " into the active
+        // field, ready for a prompt (or just Enter for page-based Tasks).
+        if url.hasPrefix("/"), let task = BreezeTask.match(String(url.dropFirst())) {
+            let text = "/\(task.slug) "
+            if let f = window.firstResponder as? NSTextView, let tf = f.delegate as? NSTextField {
+                tf.stringValue = text
+                f.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+            }
+            suggestionsPopover.hide()
+            return
+        }
         navigate(url)
     }
     
@@ -4332,7 +4499,21 @@ extension BrowserController: AddressSuggestionsDelegate {
             suggestionsPopover.hide()
             return
         }
-        
+
+        // "/task" palette: while typing the slug (leading "/", no space yet), show the
+        // Task list right in the address / new-tab bar.
+        let raw = field.stringValue
+        if raw.hasPrefix("/") && !raw.contains(" ") {
+            let tasks = BreezeTask.suggestions(for: String(raw.dropFirst()))
+            let taskItems = tasks.map { SuggestionItem(title: $0.title, url: "/\($0.slug)", type: .task, subtitle: $0.subtitle) }
+            if taskItems.isEmpty { suggestionsPopover.hide() }
+            else {
+                let edge: NSRectEdge = field === newTab.field ? .maxY : .minY
+                suggestionsPopover.show(relativeTo: field, items: taskItems, preferredEdge: edge)
+            }
+            return
+        }
+
         var items: [SuggestionItem] = []
         
         let bms = Store.shared.bookmarks.filter { 

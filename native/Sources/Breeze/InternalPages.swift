@@ -6,7 +6,7 @@ import Cocoa
 import WebKit
 
 enum InternalPage: String {
-    case updates, settings, history, bookmarks, downloads, passwords
+    case updates, settings, history, bookmarks, downloads, passwords, onboarding
 
     var file: String {
         switch self {
@@ -22,6 +22,7 @@ enum InternalPage: String {
         case .bookmarks: return "Bookmarks"
         case .downloads: return "Downloads"
         case .passwords: return "Passwords"
+        case .onboarding: return "Welcome to Breeze"
         }
     }
 
@@ -97,6 +98,8 @@ let breezeBridgeJS = """
     aiReady: function () { return call('aiReady'); },
     onAIReady: function () {},
     openExternal: function (url) { send('openExternal', { url: url }); },
+    finishOnboarding: function () { send('finishOnboarding'); },
+    openSettings: function () { send('openSettings'); },
     resetAIUsage: function () { send('resetAIUsage'); },
     onFocusInput: function () {},
     importSources: function () { return Promise.resolve([]); },

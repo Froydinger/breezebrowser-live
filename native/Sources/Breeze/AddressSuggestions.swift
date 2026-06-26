@@ -4,12 +4,14 @@ enum SuggestionType {
     case bookmark
     case history
     case search
+    case task        // a Nav /slash Task
 }
 
 struct SuggestionItem {
     let title: String
     let url: String
     let type: SuggestionType
+    var subtitle: String = ""
 }
 
 protocol AddressSuggestionsDelegate: AnyObject {
@@ -56,8 +58,9 @@ private final class RoundedSuggestionRowView: NSTableRowView {
 }
 
 final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    private let rowHeight: CGFloat = 32
-    private let maxVisibleRows = 8
+    private let rowHeight: CGFloat = 40
+    private let maxVisibleRows = 7
+    private let vPad: CGFloat = 8
     private let popover = NSPopover()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
@@ -95,33 +98,49 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
-        
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 280))
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: vPad, left: 0, bottom: vPad, right: 0)
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 280))
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 14
+        container.layer?.masksToBounds = true
+        container.layer?.borderWidth = 1
         scrollView.frame = container.bounds
         scrollView.autoresizingMask = [.width, .height]
         container.addSubview(scrollView)
-        
+
         viewCtrl.view = container
-        
+
         popover.contentViewController = viewCtrl
         popover.behavior = .transient
         popover.animates = false
     }
-    
+
+    /// Match the Breeze palette (called on every show in case the theme changed).
+    private func styleForTheme() {
+        let p = Theme.shared.palette
+        popover.appearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)
+        viewCtrl.view.layer?.backgroundColor = (p.isDark ? p.bg : NSColor.white).cgColor
+        viewCtrl.view.layer?.borderColor = NSColor.white.withAlphaComponent(p.isDark ? 0.12 : 0.0).cgColor
+    }
+
     func show(relativeTo textField: NSTextField, items: [SuggestionItem], preferredEdge: NSRectEdge = .minY) {
         let previousField = targetField
         self.targetField = textField
         self.suggestions = items
+        styleForTheme()
         tableView.reloadData()
-        
+
         if items.isEmpty {
             popover.close()
             return
         }
 
         let visibleRows = min(items.count, maxVisibleRows)
-        let height = CGFloat(visibleRows) * rowHeight
-        let size = NSSize(width: 450, height: height)
+        let height = CGFloat(visibleRows) * rowHeight + vPad * 2
+        let width = max(textField.bounds.width, 380)
+        let size = NSSize(width: width, height: height)
         viewCtrl.view.frame.size = size
         popover.contentSize = size
         scrollView.hasVerticalScroller = items.count > maxVisibleRows
@@ -221,32 +240,32 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
             
             let tf = NSTextField(labelWithString: "")
             tf.translatesAutoresizingMaskIntoConstraints = false
-            tf.font = .systemFont(ofSize: 13, weight: .medium)
+            tf.font = .systemFont(ofSize: 14, weight: .medium)
             tf.lineBreakMode = .byTruncatingTail
             tf.tag = 102
-            
+
             let urlF = NSTextField(labelWithString: "")
             urlF.translatesAutoresizingMaskIntoConstraints = false
-            urlF.font = .systemFont(ofSize: 12)
+            urlF.font = .systemFont(ofSize: 12.5)
             urlF.textColor = .secondaryLabelColor
             urlF.lineBreakMode = .byTruncatingTail
             urlF.tag = 103
-            
+
             cell?.addSubview(icon)
             cell?.addSubview(tf)
             cell?.addSubview(urlF)
-            
+
             NSLayoutConstraint.activate([
-                icon.leadingAnchor.constraint(equalTo: cell!.leadingAnchor, constant: 14),
+                icon.leadingAnchor.constraint(equalTo: cell!.leadingAnchor, constant: 17),
                 icon.centerYAnchor.constraint(equalTo: cell!.centerYAnchor),
-                icon.widthAnchor.constraint(equalToConstant: 14),
-                icon.heightAnchor.constraint(equalToConstant: 14),
-                
-                tf.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+                icon.widthAnchor.constraint(equalToConstant: 16),
+                icon.heightAnchor.constraint(equalToConstant: 16),
+
+                tf.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 12),
                 tf.centerYAnchor.constraint(equalTo: cell!.centerYAnchor),
-                
+
                 urlF.leadingAnchor.constraint(equalTo: tf.trailingAnchor, constant: 10),
-                urlF.trailingAnchor.constraint(lessThanOrEqualTo: cell!.trailingAnchor, constant: -14),
+                urlF.trailingAnchor.constraint(lessThanOrEqualTo: cell!.trailingAnchor, constant: -16),
                 urlF.centerYAnchor.constraint(equalTo: cell!.centerYAnchor)
             ])
             
@@ -258,19 +277,25 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
             case .bookmark: icon.image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: nil)
             case .history: icon.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
             case .search: icon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+            case .task:
+                let slug = item.url.hasPrefix("/") ? String(item.url.dropFirst()) : item.url
+                let sym = BreezeTask.match(slug)?.symbol ?? "bolt.fill"
+                icon.image = NSImage(systemSymbolName: sym, accessibilityDescription: nil)
             }
-            icon.contentTintColor = .secondaryLabelColor
+            icon.contentTintColor = item.type == .task ? Theme.shared.palette.accent : Theme.shared.palette.textSoft
         }
-        
+
+        let p = Theme.shared.palette
         if let tf = cell?.viewWithTag(102) as? NSTextField {
             tf.stringValue = item.title.isEmpty ? item.url : item.title
-            tf.textColor = (tableView.selectedRow == row) ? .selectedControlTextColor : .labelColor
+            tf.textColor = p.text
         }
-        
+
         if let urlF = cell?.viewWithTag(103) as? NSTextField {
-            let u = item.url.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
-            urlF.stringValue = u
-            urlF.textColor = (tableView.selectedRow == row) ? .selectedControlTextColor.withAlphaComponent(0.7) : .secondaryLabelColor
+            urlF.stringValue = item.type == .task
+                ? item.subtitle
+                : item.url.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
+            urlF.textColor = p.textSoft
         }
         
         return cell
@@ -287,15 +312,11 @@ final class AddressSuggestionsPopover: NSObject, NSTableViewDataSource, NSTableV
     }
     
     func tableViewSelectionDidChange(_ notification: Notification) {
-        tableView.enumerateAvailableRowViews { rowView, row in
+        let p = Theme.shared.palette
+        tableView.enumerateAvailableRowViews { rowView, _ in
             if let cell = rowView.view(atColumn: 0) as? NSTableCellView {
-                let isSelected = tableView.selectedRow == row
-                if let tf = cell.viewWithTag(102) as? NSTextField {
-                    tf.textColor = isSelected ? .selectedControlTextColor : .labelColor
-                }
-                if let urlF = cell.viewWithTag(103) as? NSTextField {
-                    urlF.textColor = isSelected ? .selectedControlTextColor.withAlphaComponent(0.7) : .secondaryLabelColor
-                }
+                if let tf = cell.viewWithTag(102) as? NSTextField { tf.textColor = p.text }
+                if let urlF = cell.viewWithTag(103) as? NSTextField { urlF.textColor = p.textSoft }
             }
         }
     }

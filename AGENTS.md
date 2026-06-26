@@ -56,6 +56,10 @@ Skip any step only if the user explicitly says so.
 - One backend only: Breeze Cloud via `CloudLLM.swift`. Provider routing lives
   server-side. Do NOT add a local model, BYOK setup, bundled runtime, model
   picker, or fallback backend.
+- Next update cleanup: remove image generation/editing from the native app and
+  Breeze Cloud client surface. It is no longer considered worth the code/UI
+  weight; keep Nav focused on page understanding, browsing, search, creator
+  tools, and reminders.
 - Every Breeze/BreezeTest build that will be tested, shipped, zipped, or released
   must embed `BREEZE_CLOUD_AI_BASE_URL` and `BREEZE_CLOUD_CLIENT_TOKEN` in
   `Info.plist`. The local token is read from

@@ -109,6 +109,32 @@ enum Agent {
         After an action you'll get the result, then you can act again or answer. When \
         ready, reply normally (NO action keyword) with a helpful answer.
 
+        KEEP SEARCHES PLAIN AND SHORT. When you SEARCH, type only short, natural \
+        keywords — the way a person types into a search box ("current tiktok trends", \
+        "pizza near me", "swift async await tutorial"). Our default engine is simpler \
+        than Google and chokes on operator-heavy queries, so NEVER use search \
+        operators: no site:, no OR, no quotes, no intitle:/inurl:, no minus-exclusions, \
+        and don't tack the year onto the end. One clean keyword query — then drill into \
+        what you need by OPENing a specific site or CLICKing a result, NOT by stuffing \
+        filters into the query. If you want a particular website, just OPEN it directly.
+
+        LOCAL / "NEAR ME" QUERIES: When the user asks for something nearby ("pizza \
+        near me", "gas station nearby", "coffee around here", "best tacos in town"), \
+        DO NOT ask them for a city or ZIP code. Just SEARCH the query exactly as they \
+        said it — keep the "near me" / "nearby" wording in it — because the browser \
+        supplies the user's location automatically and the results come back local. \
+        Only ask for a location if the results genuinely come back with nothing local.
+
+        RELAY WHAT YOU FIND — DON'T GO QUIET. After a SEARCH (or after opening a \
+        results page), your job is to READ what's there and ANSWER the user with the \
+        actual findings: the names, places, prices, facts, the top options. Once you \
+        can see real results, summarize them — do NOT type the query into the page's \
+        own search box, do NOT re-run the same search, and do NOT click around a page \
+        that already shows the answer. The results page is for YOU to read, not to \
+        operate. If one engine looks empty it's fine to try another, but the moment \
+        you can see usable results, give them to the user in plain language. Never \
+        gather results and then end the turn without sharing what you found.
+
         Hard rules:
         • You DO have web access. NEVER say you can't browse — just OPEN it.
         • "OPEN" is only for navigating to actual web addresses or domains in the browser. Do NOT use OPEN to "open" page elements like menus, dialogs, dropdowns, or input/text boxes on the current page — use CLICK or TYPE for those.
@@ -223,11 +249,17 @@ enum Agent {
         // context, the recovery window can still answer about the current page
         // instead of replying blind ("not sure which video you mean").
         var lastResult = currentCtx
+        // Research mode is summoned ONLY by the literal word "research". In that mode
+        // Nav must not just summarize the results page — it has to OPEN and READ a few
+        // (≈3–4) of the top result pages and synthesize across them.
+        let isResearch = userText.range(of: "research", options: .caseInsensitive) != nil
         // Restated on every continuation step. The FM backend uses a fresh session per
         // message and a tiny context window, so without this the model loses sight of
         // the user's goal mid-task and just describes the page instead of finishing it
         // (e.g. it found the first result but never clicked it).
-        let goal = "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
+        let goal = isResearch
+            ? "Remember the user's original request: \"\(userText)\". They asked you to RESEARCH this — SEARCH once, then actually OPEN and READ several (about 3–4) of the top result pages one at a time before answering. Do NOT answer from the search results page alone. Keep working until you've read multiple real sources, then synthesize a thorough answer that pulls together what you found across them and cites the pages."
+            : "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
         // Tool output is trimmed to keep each step's prompt lean — faster, cheaper, and
         // safely under the context limit across a multi-step task (most pages answer
         // fine from the first ~4k chars).
@@ -258,9 +290,24 @@ enum Agent {
             let reply: String
             do { reply = try await ask(prompt) }
             catch { return (await recover(), chips) }      // self-heal on overflow / model error
-            // On the last allowed step, force a plain answer (ignore any action).
-            if step == maxSteps - 1 { return (finalize(reply, fallback: lastFallback), chips) }
-            guard let action = parse(reply) else { return (finalize(reply, fallback: lastFallback), chips) }
+            // On the last allowed step, force a plain answer (ignore any action). If
+            // the model's reply is action-only / empty (still trying to act), don't
+            // dump the canned fallback — synthesize a real answer from everything we
+            // gathered, so a research/search run never ends on "Here's what I found
+            // about <query>." with no actual findings.
+            if step == maxSteps - 1 {
+                let forced = finalize(reply, fallback: "")
+                return (forced.isEmpty ? await recover() : forced, chips)
+            }
+            // No action this turn → the model is done. If it actually wrote prose,
+            // use it; if it went silent (no parseable action, no prose), don't dump
+            // the canned tool fallback like "I've opened X for you" — synthesize from
+            // everything gathered. This is what was stranding /research on a bare
+            // "opened the page" reply instead of producing the summary.
+            guard let action = parse(reply) else {
+                let finalized = finalize(reply, fallback: "")
+                return (finalized.isEmpty ? await recover() : finalized, chips)
+            }
             switch action {
             case .open(let u):
                 let host = u.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
@@ -268,12 +315,18 @@ enum Agent {
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've opened \(host) for you."
                 lastResult = await tools.aiOpenURL(u)
-                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThe page is now open. If finishing the request clearly needs a click or further reading, do it with CLICK: <ID> (use the Interactive Elements IDs above) or OPEN: <url>. If the request is already answered, or it's unclear what to do next, just answer or ask the user in plain language — do NOT click random elements."
+                let openNote = isResearch
+                    ? "This is one of your research sources — read it. If you've read fewer than ~3–4 sources so far, go OPEN another result link (OPEN: <url> or CLICK: <ID>) and keep gathering before you answer. Once you've read several, write a thorough synthesized answer that pulls together what each source said."
+                    : "The page is now open. If finishing the request clearly needs a click or further reading, do it with CLICK: <ID> (use the Interactive Elements IDs above) or OPEN: <url>. If the request is already answered, or it's unclear what to do next, just answer or ask the user in plain language — do NOT click random elements."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\n\(openNote)"
             case .search(let q):
                 if !chips.contains("🔎 Web search") { chips.append("🔎 Web search") }
                 lastFallback = "Here's what I found about \"\(q)\"."
                 lastResult = await tools.aiSearchWeb(q)
-                prompt = "\(goal)\n\n\(cap(lastResult))\n\nThese are the search results. If the request needs a specific page's details, open one with CLICK: <ID> from the Interactive Elements list or OPEN: <url>. If the results already answer the question, just answer the user in plain language using them."
+                let searchNote = isResearch
+                    ? "These are the search results. The user asked you to RESEARCH this, so do NOT answer from this results page alone — pick the most promising 3–4 result links and OPEN them one at a time (OPEN: <url> or CLICK: <ID> from the Interactive Elements list), reading each real page. Only after you've read several sources, write a synthesized answer covering what you found across them."
+                    : "These are the search results. If the request needs a specific page's details, open one with CLICK: <ID> from the Interactive Elements list or OPEN: <url>. If the results already answer the question, just answer the user in plain language using them."
+                prompt = "\(goal)\n\n\(cap(lastResult))\n\n\(searchNote)"
             case .click(let target):
                 let chip = "🖱️ Click: \(target)"
                 if !chips.contains(chip) { chips.append(chip) }

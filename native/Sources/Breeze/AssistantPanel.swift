@@ -10,11 +10,17 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     let input = NSTextField()
     private let sendBtn = HoverButton(symbol: "arrow.up.circle.fill", size: 30, point: 20)
     private let attachBtn = HoverButton(symbol: "paperclip", size: 28, point: 15)
-    private let imageBtn = HoverButton(symbol: "paintbrush", size: 28, point: 15)
-    private let creatorBtn = HoverButton(symbol: "sparkles", size: 28, point: 14)
+    private let creatorBtn = HoverButton(symbol: "play.rectangle.fill", size: 28, point: 14)
     var onAttach: (() -> Void)?
     var onSend: ((String) -> Void)?
     var onCreatorTools: (() -> Void)?
+    /// Fires with the text typed after "/" so the controller can show the Task palette.
+    var onSlashTasks: ((String) -> Void)?
+    /// Fires when the "/" context ends, so the controller can hide the palette.
+    var onSlashTasksEnd: (() -> Void)?
+    /// Fires when the user taps the button while Nav is working — the AI kill switch.
+    var onStop: (() -> Void)?
+    private var working = false
     var onClose: (() -> Void)?
     var onNewChat: (() -> Void)?
     var onAtMention: (() -> Void)?
@@ -38,18 +44,15 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var historyWidthC: NSLayoutConstraint!
     private let headerLogo = NSImageView()
     private let emptyLogo = NSImageView()
-    private var emptyChipViews: [(NSView, NSTextField)] = []
     private struct MessageBubbleRecord {
         weak var bubble: MessageBubbleView?
         weak var widthConstraint: NSLayoutConstraint?
         weak var heightConstraint: NSLayoutConstraint?
     }
     private var messageBubbles: [MessageBubbleRecord] = []
-    private var imageMode = false
     // chat state
     private var chatId = Date().timeIntervalSince1970
     var messages: [[String: String]] = []   // {role: user|ai|image, text, path?}
-    var wantsImageMode: Bool { imageMode }
     private let historyView = NSView()
     private let historyList = NSStackView()
 
@@ -142,11 +145,12 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         contextDoc.addSubview(contextRow)
         contextScroll.documentView = contextDoc
         contextScroll.isHidden = true
-        sendBtn.onTap = { [weak self] in self?.send() }
+        sendBtn.onTap = { [weak self] in
+            guard let self else { return }
+            if self.working { self.onStop?() } else { self.send() }
+        }
         attachBtn.onTap = { [weak self] in self?.onAttach?() }
-        imageBtn.toolTip = "Generate or edit an image"
-        imageBtn.onTap = { [weak self] in self?.setImageMode(!(self?.imageMode ?? false)) }
-        inputWrap.addSubview(attachBtn); inputWrap.addSubview(imageBtn); inputWrap.addSubview(input); inputWrap.addSubview(sendBtn)
+        inputWrap.addSubview(attachBtn); inputWrap.addSubview(input); inputWrap.addSubview(sendBtn)
 
         status.font = .systemFont(ofSize: 11.5)
         status.translatesAutoresizingMaskIntoConstraints = false
@@ -213,9 +217,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             inputWrap.heightAnchor.constraint(equalToConstant: 52),
             attachBtn.leadingAnchor.constraint(equalTo: inputWrap.leadingAnchor, constant: 6),
             attachBtn.centerYAnchor.constraint(equalTo: inputWrap.centerYAnchor),
-            imageBtn.leadingAnchor.constraint(equalTo: attachBtn.trailingAnchor, constant: 2),
-            imageBtn.centerYAnchor.constraint(equalTo: inputWrap.centerYAnchor),
-            input.leadingAnchor.constraint(equalTo: imageBtn.trailingAnchor, constant: 4),
+            input.leadingAnchor.constraint(equalTo: attachBtn.trailingAnchor, constant: 6),
             input.centerYAnchor.constraint(equalTo: inputWrap.centerYAnchor),
             input.trailingAnchor.constraint(equalTo: sendBtn.leadingAnchor, constant: -6),
             sendBtn.trailingAnchor.constraint(equalTo: inputWrap.trailingAnchor, constant: -8),
@@ -236,59 +238,128 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let h = NSTextField(labelWithString: "Nav")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
         h.translatesAutoresizingMaskIntoConstraints = false
-        let p = NSTextField(labelWithString: "Powered by Breeze Cloud.\nReads pages, searches the web, makes images, and acts for you.")
+        let p = NSTextField(labelWithString: "Powered by Breeze Cloud.\nReads pages, searches the web, and acts for you.")
         p.font = .systemFont(ofSize: 12.5); p.alignment = .center; p.maximumNumberOfLines = 3
         p.textColor = Theme.shared.palette.textSoft
         p.translatesAutoresizingMaskIntoConstraints = false
         p.cell?.wraps = true
         p.cell?.lineBreakMode = .byWordWrapping
-        
-        let chips = NSStackView(views: ["Summarize this page", "Key takeaways", "Explain this simply"].map { chip($0) })
-        chips.orientation = .vertical; chips.spacing = 6; chips.alignment = .centerX
-        chips.translatesAutoresizingMaskIntoConstraints = false
-        
-        let s = NSStackView(views: [emptyLogo, h, p, chips]); s.orientation = .vertical; s.spacing = 10; s.alignment = .centerX
+
+        let tip = buildTipTile()
+
+        let s = NSStackView(views: [emptyLogo, h, p, tip]); s.orientation = .vertical; s.spacing = 12; s.alignment = .centerX
         s.translatesAutoresizingMaskIntoConstraints = false
+        s.setCustomSpacing(18, after: p)
         empty.addSubview(s); s.pin(to: empty)
-        
+
         NSLayoutConstraint.activate([
             emptyLogo.widthAnchor.constraint(equalToConstant: 44),
             emptyLogo.heightAnchor.constraint(equalToConstant: 44),
             h.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16),
             p.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16),
-            chips.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -16)
+            tip.widthAnchor.constraint(lessThanOrEqualToConstant: 300),
+            tip.widthAnchor.constraint(lessThanOrEqualTo: empty.widthAnchor, constant: -24)
         ])
         self.emptyTitle = h; self.emptySub = p
+        refreshTipVisibility()
     }
     private var emptyTitle: NSTextField!
     private var emptySub: NSTextField!
 
-    /// Full rounded pill with padding.
-    private func chip(_ text: String) -> NSView {
-        let pill = NSView(); pill.wantsLayer = true; pill.layer?.cornerRadius = 15
-        pill.translatesAutoresizingMaskIntoConstraints = false
-        let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 12)
+    // MARK: - Rotating Nav tips (replaces the old quick-prompt chips)
+
+    private let navTips: [String] = [
+        "Type / to run a Task — like /research or /summarize — right here, in a new tab, or the address bar.",
+        "Press ⌘E anytime to open or close Nav.",
+        "Type @ to pull another open tab into the conversation.",
+        "Highlight text on any page, then ask Nav about just that selection.",
+        "Tell Nav “remind me in 20 minutes to…” and it’ll fire a notification when it’s time."
+    ]
+    private var tipIndex = 0
+    private var tipTimer: Timer?
+    private var tipCard: NSView!
+    private var tipLabel: NSTextField!
+    private var tipDismiss: HoverButton!
+
+    private func buildTipTile() -> NSView {
+        let card = NSView(); card.wantsLayer = true; card.layer?.cornerRadius = 16
+        card.translatesAutoresizingMaskIntoConstraints = false
+
+        let bulb = NSImageView()
+        bulb.image = tintedSymbol("lightbulb.fill", point: 13, weight: .semibold, color: Theme.shared.palette.accent)
+        bulb.translatesAutoresizingMaskIntoConstraints = false
+
+        tipIndex = Int.random(in: 0..<navTips.count)
+        let label = NSTextField(wrappingLabelWithString: navTips[tipIndex])
+        label.font = .systemFont(ofSize: 12.5); label.alignment = .left
+        label.textColor = Theme.shared.palette.text
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        pill.addSubview(label)
+        label.isSelectable = false
+        tipLabel = label
+
+        let x = HoverButton(symbol: "xmark", size: 20, point: 9)
+        x.toolTip = "Hide tips"
+        x.onTap = { [weak self] in self?.dismissTips() }
+        tipDismiss = x
+
+        card.addSubview(bulb); card.addSubview(label); card.addSubview(x)
         NSLayoutConstraint.activate([
-            pill.heightAnchor.constraint(equalToConstant: 30),
-            label.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 16),
-            label.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -16),
+            bulb.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            bulb.topAnchor.constraint(equalTo: card.topAnchor, constant: 15),
+            bulb.widthAnchor.constraint(equalToConstant: 15), bulb.heightAnchor.constraint(equalToConstant: 15),
+            label.leadingAnchor.constraint(equalTo: bulb.trailingAnchor, constant: 9),
+            label.topAnchor.constraint(equalTo: card.topAnchor, constant: 13),
+            label.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -13),
+            label.trailingAnchor.constraint(equalTo: x.leadingAnchor, constant: -6),
+            x.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -8),
+            x.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
         ])
-        let g = NSClickGestureRecognizer(target: self, action: #selector(chipClicked(_:)))
-        pill.addGestureRecognizer(g)
-        pill.identifier = NSUserInterfaceItemIdentifier(text)
-        emptyChipViews.append((pill, label))
-        styleEmptyChip(pill, label: label)
-        return pill
+        // Tap the card (not the X) to cycle to the next tip.
+        let g = NSClickGestureRecognizer(target: self, action: #selector(cycleTip))
+        card.addGestureRecognizer(g)
+        tipCard = card
+        styleTipCard()
+        return card
     }
-    @objc private func chipClicked(_ g: NSClickGestureRecognizer) {
-        if let t = g.view?.identifier?.rawValue { onSend?(t) }
+
+    private func styleTipCard() {
+        guard let tipCard else { return }
+        let p = Theme.shared.palette
+        tipCard.layer?.backgroundColor = p.accent.withAlphaComponent(p.isDark ? 0.13 : 0.10).cgColor
+        tipCard.layer?.borderWidth = 1
+        tipCard.layer?.borderColor = p.accent.withAlphaComponent(0.22).cgColor
+        tipLabel?.textColor = p.text
     }
+
+    @objc private func cycleTip() {
+        guard !navTips.isEmpty else { return }
+        tipIndex = (tipIndex + 1) % navTips.count
+        tipLabel?.stringValue = navTips[tipIndex]
+    }
+
+    /// Show/hide the whole tip tile based on the saved preference, and start a gentle
+    /// rotation only while the empty state is visible (timer is torn down the moment a
+    /// message arrives — no idle/perpetual work).
+    private func refreshTipVisibility() {
+        let hidden = Store.shared.bool("hideNavTips")
+        tipCard?.isHidden = hidden
+        if hidden || empty.isHidden { stopTipRotation() } else { startTipRotation() }
+    }
+    private func startTipRotation() {
+        guard tipTimer == nil, !(tipCard?.isHidden ?? true) else { return }
+        tipTimer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { [weak self] _ in
+            self?.cycleTip()
+        }
+    }
+    func stopTipRotation() { tipTimer?.invalidate(); tipTimer = nil }
+    /// Restart tip rotation when Nav is shown again on an empty chat.
+    func resumeTipsIfEmpty() { if !empty.isHidden { refreshTipVisibility() } }
+    private func dismissTips() {
+        Store.shared.settings["hideNavTips"] = true; Store.shared.saveSettings()
+        tipCard?.isHidden = true
+        stopTipRotation()
+    }
+
 
     // MARK: messages
 
@@ -423,6 +494,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
 
     private func addMessage(_ text: String, user: Bool) {
         empty.isHidden = true
+        stopTipRotation()
         let p = Theme.shared.palette
         let attributed: NSAttributedString
         if user {
@@ -472,10 +544,44 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         messagesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         messageBubbles.removeAll()
         empty.isHidden = false
+        tipIndex = Int.random(in: 0..<max(1, navTips.count))
+        tipLabel?.stringValue = navTips.isEmpty ? "" : navTips[tipIndex]
+        refreshTipVisibility()   // fresh tip + restart rotation on a new chat
     }
     func setStatus(_ s: String?) {
         status.isHidden = (s == nil)
         status.stringValue = s ?? ""
+        if let s, !s.isEmpty { taskLoader?.setLabel(s) }   // keep the chat loader's label in sync
+    }
+
+    // MARK: - Working loader (animated dots in the chat while Nav runs a Task)
+
+    private var taskLoader: TaskLoaderView?
+    /// Show an animated "working" bubble in the chat. The dots animate on the render
+    /// server (no main-thread timer) and the bubble is torn down the moment work ends,
+    /// so it never violates the no-idle-animation rule.
+    func showTaskLoader(_ label: String) {
+        empty.isHidden = true
+        hideTaskLoader()
+        let loader = TaskLoaderView(label: label)
+        loader.translatesAutoresizingMaskIntoConstraints = false
+        let row = NSView(); row.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(loader)
+        messagesStack.addArrangedSubview(row)
+        NSLayoutConstraint.activate([
+            row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor),
+            loader.topAnchor.constraint(equalTo: row.topAnchor),
+            loader.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            loader.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            loader.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor),
+        ])
+        taskLoader = loader
+        loader.startAnimating()
+        scrollToBottom()
+    }
+    func hideTaskLoader() {
+        taskLoader?.superview?.removeFromSuperview()
+        taskLoader = nil
     }
     /// Shown in the empty state so the user can see the model's readiness.
     func setModelStatus(_ text: String) {
@@ -484,19 +590,39 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     /// Lock the input while the model downloads / prepares.
     func setInputEnabled(_ on: Bool, placeholder: String? = nil) {
         input.isEnabled = on
-        input.placeholderString = placeholder ?? (imageMode ? "Describe the image to create or edit…" : "Ask anything…  (@ to add a tab)")
+        input.placeholderString = placeholder ?? "Ask anything…  (@ tab · / task)"
     }
 
-    func setImageMode(_ on: Bool) {
-        imageMode = on
-        imageBtn.isOn = on
-        imageBtn.toolTip = on ? "Image mode on" : "Generate or edit an image"
-        input.placeholderString = on ? "Describe the image to create or edit…" : "Ask anything…  (@ to add a tab)"
+    /// Image generation was removed from Nav; kept as a no-op so older call sites
+    /// (and any saved state) don't need to change.
+    func setImageMode(_ on: Bool) {}
+
+    /// Toggle the send button into a stop button (the global AI kill switch) while
+    /// Nav is working, so a tap cancels the in-flight request.
+    func setWorking(_ on: Bool) {
+        working = on
+        sendBtn.symbol = on ? "stop.circle.fill" : "arrow.up.circle.fill"
+        sendBtn.isOn = on
+        sendBtn.toolTip = on ? "Stop" : nil
     }
 
-    // typing "@" opens the tab picker
+    // typing "@" opens the tab picker; "/" at the start opens the Task palette.
     func controlTextDidChange(_ obj: Notification) {
-        if input.stringValue.hasSuffix("@") { onAtMention?() }
+        let v = input.stringValue
+        if v.hasSuffix("@") { onAtMention?(); return }
+        // While typing the slug (leading "/", no space yet) show the live Task list;
+        // otherwise dismiss it.
+        if v.hasPrefix("/") && !v.contains(" ") { onSlashTasks?(String(v.dropFirst())) }
+        else { onSlashTasksEnd?() }
+    }
+
+    /// Picked a Task from the palette — drop "/slug " into the input, ready for the
+    /// user's prompt (or just Enter for page-based Tasks), and update the hint.
+    func fillSlashTask(_ task: BreezeTask) {
+        input.stringValue = "/\(task.slug) "
+        input.placeholderString = task.placeholder
+        focusInput()
+        input.currentEditor()?.selectedRange = NSRange(location: (input.stringValue as NSString).length, length: 0)
     }
 
     func popMenuAtInput(_ menu: NSMenu) {
@@ -803,16 +929,6 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         if wash.superlayer == nil { layer.insertSublayer(wash, above: gradient) }
     }
 
-    private func styleEmptyChip(_ pill: NSView, label: NSTextField) {
-        let p = Theme.shared.palette
-        if p.isDark {
-            pill.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.88).cgColor
-            label.textColor = NSColor(white: 0.10, alpha: 1)
-        } else {
-            pill.layer?.backgroundColor = p.surface.cgColor
-            label.textColor = p.text
-        }
-    }
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
@@ -827,8 +943,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         creatorBtn.applyTheme()
         emptyTitle?.textColor = p.text
         emptySub?.textColor = p.textSoft
-        emptyChipViews.forEach { styleEmptyChip($0.0, label: $0.1) }
-        imageBtn.isOn = imageMode
+        styleTipCard()
     }
 }
 
@@ -1034,5 +1149,73 @@ private final class MessageBubbleView: NSView {
         let point = CGPoint(x: insets.left, y: insets.top)
         layoutManager.drawBackground(forGlyphRange: glyphRange, at: point)
         layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: point)
+    }
+}
+
+/// The animated "Nav is working" bubble shown in the chat while a Task runs. Three
+/// dots breathe in a staggered wave (Core Animation, render-server) next to a live
+/// status label. It only exists between send and done, so there's no idle GPU cost.
+private final class TaskLoaderView: NSView {
+    private let label = NSTextField(labelWithString: "")
+    private let dotsLayer = CALayer()
+    private var dots: [CALayer] = []
+
+    init(label text: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 17
+        layer?.backgroundColor = NSColor(srgbRed: 0.075, green: 0.078, blue: 0.09, alpha: 0.96).cgColor
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
+
+        label.stringValue = text
+        label.font = .systemFont(ofSize: 13.5, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.92)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+
+        let dotHost = NSView(); dotHost.wantsLayer = true
+        dotHost.translatesAutoresizingMaskIntoConstraints = false
+        dotHost.layer?.addSublayer(dotsLayer)
+        addSubview(dotHost)
+
+        let r: CGFloat = 3.0, gap: CGFloat = 7.0
+        for i in 0..<3 {
+            let d = CALayer()
+            d.frame = CGRect(x: CGFloat(i) * gap, y: 0, width: r * 2, height: r * 2)
+            d.cornerRadius = r
+            d.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+            dotsLayer.addSublayer(d)
+            dots.append(d)
+        }
+        dotsLayer.frame = CGRect(x: 0, y: 0, width: gap * 2 + r * 2, height: r * 2)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 13),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -13),
+            dotHost.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 9),
+            dotHost.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+            dotHost.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 1),
+            dotHost.widthAnchor.constraint(equalToConstant: gap * 2 + r * 2),
+            dotHost.heightAnchor.constraint(equalToConstant: r * 2),
+        ])
+    }
+    required init?(coder: NSCoder) { nil }
+
+    func setLabel(_ s: String) { label.stringValue = s }
+
+    func startAnimating() {
+        for (i, d) in dots.enumerated() {
+            let a = CABasicAnimation(keyPath: "opacity")
+            a.fromValue = 0.25; a.toValue = 1.0
+            a.duration = 0.55
+            a.beginTime = CACurrentMediaTime() + Double(i) * 0.18
+            a.autoreverses = true
+            a.repeatCount = .infinity
+            a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            d.add(a, forKey: "breathe")
+        }
     }
 }

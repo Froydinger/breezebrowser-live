@@ -60,6 +60,8 @@ final class Store {
         "aiCloudClientId": "",
         "pluginCreatorTools": false,
         "lastSeenVersion": "",
+        "hasOnboarded": false,
+        "hideNavTips": false,
         "permissions": [String: Any](),
         "reminders": [Any]()
     ]

@@ -194,11 +194,14 @@ final class TabRowView: NSView, NSDraggingSource {
         applyTheme()
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let closePoint = close.convert(point, from: self)
-        if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
-            return close
-        }
-        return super.hitTest(point)
+        // `point` is in our superview's coordinate system. The whole row is one
+        // click target — if we let it fall through to subviews (title label,
+        // favicon), their views swallow the click and TabRowView.mouseUp never
+        // fires, so selecting a tab took several clicks. mouseUp decides select
+        // vs. close from the real cursor position.
+        let local = convert(point, from: superview)
+        guard bounds.contains(local) else { return nil }
+        return self
     }
 
     override func mouseDown(with event: NSEvent) {

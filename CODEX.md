@@ -75,6 +75,10 @@ native releases are now just normal GitHub "latest". Everything here is native.
   `BREEZE_CLOUD_CLIENT_TOKEN` at build time. Do NOT add a local model
   (Llama/llama-server/GGUF), Apple Foundation Models, a model picker, BYOK UI, or
   a second client-side model path.
+- **Next update cleanup:** remove image generation/editing from the native app
+  and Breeze Cloud client surface. It is no longer worth the code/UI weight; keep
+  Nav focused on page understanding, browsing, search, creator tools, and
+  reminders.
 - **No Cloud config → warn, don't fail:** a build without the Worker URL/token
   shows "Nav is not configured in this build." This is expected for an
   unconfigured dev build and unacceptable for BreezeTest validation or release.

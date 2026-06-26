@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Welcome to Breeze</title>
+  <script>
+    // Apply theme before first paint (no flash), like the other internal pages.
+    try {
+      var t = window.breezeInternal && breezeInternal.theme;
+      var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+      if (dark) document.documentElement.classList.add('dark');
+    } catch (e) {}
+  </script>
+  <style>
+    :root {
+      --bg: #f9f7f4; --bg-alt: #ffffff; --card: rgba(255,255,255,0.86); --text: #202026;
+      --soft: rgba(32,32,38,0.72); --faint: rgba(32,32,38,0.42); --accent: #3aa6b9;
+      --accent-strong: #25879a; --line: rgba(0,0,0,0.09); --shadow: 0 22px 70px rgba(24,34,38,0.12);
+      --ease: cubic-bezier(0.22,1,0.36,1);
+    }
+    html.dark {
+      --bg: #151618; --bg-alt: #1c1d21; --card: rgba(255,255,255,0.06); --text: #ececf0;
+      --soft: rgba(236,236,240,0.62); --faint: rgba(236,236,240,0.34); --line: rgba(255,255,255,0.1);
+      --shadow: 0 22px 70px rgba(0,0,0,0.28);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background:
+        radial-gradient(circle at 84% 4%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 34rem),
+        linear-gradient(180deg, var(--bg-alt) 0%, var(--bg) 40%, var(--bg-alt) 100%);
+      color: var(--text); min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      padding: 60px 24px 120px; -webkit-font-smoothing: antialiased;
+    }
+    .wrap { width: min(760px, 100%); margin: 0 auto; }
+    header { text-align: center; margin-bottom: 40px; animation: rise 0.55s var(--ease); }
+    header img { width: 78px; height: 78px; border-radius: 22px; margin-bottom: 22px;
+      filter: drop-shadow(0 16px 38px color-mix(in srgb, var(--accent) 36%, transparent));
+      animation: pop 0.6s var(--ease) 0.05s backwards; }
+    header h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(38px, 7vw, 60px);
+      font-weight: 400; line-height: 1.0; letter-spacing: 0; }
+    header p { color: var(--soft); font-size: 17px; line-height: 1.6; max-width: 560px; margin: 16px auto 0; }
+
+    .hero {
+      background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 16%, var(--card)), var(--card));
+      border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+      border-radius: 26px; padding: 30px 30px 26px; box-shadow: var(--shadow);
+      margin-bottom: 22px; animation: rise 0.6s var(--ease) 0.06s backwards;
+    }
+    .hero .badge { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 800;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 6px 11px; border-radius: 99px; }
+    .hero h2 { font-size: 25px; font-weight: 760; margin: 14px 0 6px; letter-spacing: -0.02em; }
+    .hero .lead { color: var(--soft); font-size: 15px; line-height: 1.6; }
+    .hero .lead code, .tip code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+      background: var(--accent); color: #fff; padding: 1.5px 7px; border-radius: 7px; font-weight: 600; }
+
+    .tasks { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+    .task { display: flex; gap: 12px; align-items: flex-start; padding: 14px 15px; border-radius: 16px;
+      background: color-mix(in srgb, var(--accent) 7%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent); }
+    .task .ic { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+      background: color-mix(in srgb, var(--accent) 18%, transparent); }
+    .task .ic svg { width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .task .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; font-weight: 700; color: var(--text); }
+    .task .desc { font-size: 12.5px; color: var(--soft); line-height: 1.45; margin-top: 3px; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 26px; }
+    .feat { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px 19px;
+      box-shadow: var(--shadow); animation: rise 0.6s var(--ease) 0.1s backwards; }
+    .feat h3 { font-size: 15px; font-weight: 720; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+    .feat h3 svg { width: 16px; height: 16px; stroke: var(--accent); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .feat p { font-size: 13px; color: var(--soft); line-height: 1.55; }
+
+    .tip { text-align: center; color: var(--soft); font-size: 13.5px; line-height: 1.6; margin-bottom: 30px; }
+
+    .actions { position: fixed; left: 0; right: 0; bottom: 0; padding: 18px 24px 24px;
+      display: flex; gap: 12px; justify-content: center;
+      background: linear-gradient(180deg, transparent, var(--bg-alt) 46%); }
+    button { font: inherit; font-size: 15px; font-weight: 650; border: none; cursor: pointer; border-radius: 14px;
+      padding: 13px 26px; transition: transform 0.12s var(--ease), filter 0.12s var(--ease); }
+    button:active { transform: scale(0.97); }
+    .primary { background: var(--accent); color: #fff; box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 40%, transparent); }
+    .primary:hover { filter: brightness(1.06); }
+    .ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+    .ghost:hover { filter: brightness(1.04); }
+    .ghost.done { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    @keyframes pop { from { opacity: 0; transform: scale(0.82); } to { opacity: 1; transform: none; } }
+    @media (max-width: 620px) { .tasks, .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img src="icon.png" alt="Breeze" />
+      <h1>Welcome to Breeze</h1>
+      <p>A fast, native Mac browser with a built-in AI named Nav. Here's the one thing worth learning first.</p>
+    </header>
+
+    <div class="hero">
+      <span class="badge">New · Tasks</span>
+      <h2>Meet Tasks</h2>
+      <p class="lead">Type <code>/</code> in Nav, a new tab, or the address bar and a menu of one-keystroke superpowers pops up. Pick one, add your prompt — like <code>/research the best ebikes</code> — and Nav does the rest.</p>
+      <div class="tasks">
+        <div class="task">
+          <div class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
+          <div><div class="cmd">/research</div><div class="desc">Reads several sources and writes a sourced summary page.</div></div>
+        </div>
+        <div class="task">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></div>
+          <div><div class="cmd">/summarize</div><div class="desc">A quick TL;DR of the page or video you're on.</div></div>
+        </div>
+        <div class="task">
+          <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+          <div><div class="cmd">/factcheck</div><div class="desc">Checks a claim against multiple sources.</div></div>
+        </div>
+        <div class="task">
+          <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z" fill="var(--accent)" stroke="none"/></svg></div>
+          <div><div class="cmd">/youtube</div><div class="desc">Creator Tools: title, thumbnail & packaging feedback.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="feat">
+        <h3><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Spectra Search</h3>
+        <p>Breeze's own private, fast search engine is built right in — no tracking, clean results.</p>
+      </div>
+      <div class="feat">
+        <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Secure by default</h3>
+        <p>Plain <b>http://</b> links auto-upgrade to <b>https://</b>, and real system passkeys just work.</p>
+      </div>
+      <div class="feat">
+        <h3><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="3"/><path d="M10 9l5 3-5 3z" fill="var(--accent)" stroke="none"/></svg> Real video</h3>
+        <p>Apple's WebKit means Netflix, FairPlay DRM, and Picture-in-Picture play natively.</p>
+      </div>
+      <div class="feat">
+        <h3><svg viewBox="0 0 24 24"><path d="M3 11 22 2 13 21 11 13 3 11Z" fill="var(--accent)" stroke="none"/></svg> Nav, your AI</h3>
+        <p>Ask anything in the sidebar — Nav can read pages, search the web, and run your Tasks.</p>
+      </div>
+    </div>
+
+    <p class="tip">Tip: open Nav anytime from the sidebar, then just type <code>/</code> to see your Tasks.</p>
+  </div>
+
+  <div class="actions">
+    <button class="ghost" id="defaultBtn">Make Breeze my default</button>
+    <button class="primary" id="startBtn">Start browsing →</button>
+  </div>
+
+  <script>
+    document.getElementById('startBtn').addEventListener('click', function () {
+      try { window.breezeInternal.finishOnboarding(); } catch (e) {}
+    });
+    var db = document.getElementById('defaultBtn');
+    db.addEventListener('click', function () {
+      try {
+        window.breezeInternal.makeDefaultBrowser();
+        db.textContent = 'Set as default ✓';
+        db.classList.add('done');
+        db.disabled = true;
+      } catch (e) {}
+    });
+    // Hide the default-browser button if we already are the default.
+    try {
+      window.breezeInternal.isDefaultBrowser().then(function (yes) {
+        if (yes) { db.textContent = 'Default browser ✓'; db.classList.add('done'); db.disabled = true; }
+      });
+    } catch (e) {}
+  </script>
+</body>
+</html>
