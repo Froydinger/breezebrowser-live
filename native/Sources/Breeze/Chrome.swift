@@ -204,6 +204,11 @@ final class TabRowView: NSView, NSDraggingSource {
         return self
     }
 
+    // Switch tabs on the FIRST click even when a WKWebView currently has focus.
+    // Without this, AppKit eats the first click just to move first-responder off the
+    // web view, so selecting a tab (especially from a split) took 2–3 clicks.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let closePoint = close.convert(point, from: self)
@@ -402,6 +407,7 @@ final class GroupHeaderView: NSView, NSDraggingSource {
     @objc private func themed() { /* re-tint keeps current carrot dir */ apply(collapsed: carrotCollapsed) }
     private var carrotCollapsed = false
     func setCollapsed(_ c: Bool) { carrotCollapsed = c; apply(collapsed: c) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     @objc private func clicked() { onToggle?() }
     override func mouseDragged(with event: NSEvent) {
         guard let dragPayload else { return }
@@ -603,6 +609,7 @@ final class PinView: NSView, NSDraggingSource {
     }
     override func mouseEntered(with e: NSEvent) { hovering = true; applyTheme() }
     override func mouseExited(with e: NSEvent)  { hovering = false; applyTheme() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     @objc private func clicked() { onSelect?() }
     override func mouseDragged(with event: NSEvent) {
         guard let dragPayload else { return }

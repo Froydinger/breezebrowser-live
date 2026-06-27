@@ -265,6 +265,7 @@
     <div class="seg" id="seg">
       <button data-mode="pages" class="on">Pages</button>
       <button data-mode="chats">Nav chats</button>
+      <button data-mode="summaries">Summaries</button>
       <button data-mode="images">Images</button>
     </div>
     <input id="search" type="text" placeholder="Search history…" autofocus />
@@ -276,6 +277,7 @@
     let all = [];
     let chats = [];
     let images = [];
+    let summaries = [];
     let mode = 'pages';
     const listEl = document.getElementById('list');
     const emptyEl = document.getElementById('empty');
@@ -294,6 +296,7 @@
 
     function render() {
       if (mode === 'chats') { renderChats(); return; }
+      if (mode === 'summaries') { renderSummaries(); return; }
       if (mode === 'images') { renderImages(); return; }
       const q = searchEl.value.trim().toLowerCase();
       const items = q
@@ -382,6 +385,48 @@
       }
     }
 
+    function renderSummaries() {
+      const q = searchEl.value.trim().toLowerCase();
+      const items = q ? summaries.filter((s) => (s.title || '').toLowerCase().includes(q) || (s.kind || '').includes(q)) : summaries;
+      listEl.textContent = '';
+      emptyEl.style.display = items.length ? 'none' : '';
+      emptyEl.textContent = 'No saved summaries yet. Run /research or /youtube to create one.';
+      for (const s of items) {
+        const el = document.createElement('div');
+        el.className = 'entry';
+        const isCreator = (s.kind || '') === 'creator';
+        const color = isCreator ? '%23ff5b5b' : '%235b7cfa';
+        const path = isCreator
+          ? '<path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="m10 9 5 3-5 3z"/>'
+          : '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>';
+        const img = document.createElement('img');
+        img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2">' + path + '</svg>');
+        const t = document.createElement('div');
+        t.className = 't';
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = s.title || (isCreator ? 'Creator breakdown' : 'Research summary');
+        const sub = document.createElement('div');
+        sub.className = 'url';
+        const when = s.ts ? new Date(s.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+        sub.textContent = (isCreator ? 'Creator breakdown' : 'Research, wrapped') + (when ? ' · ' + when : '');
+        t.append(title, sub);
+        const del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = '✕';
+        del.title = 'Delete summary';
+        del.addEventListener('click', (e) => {
+          e.stopPropagation();
+          breezeInternal.deleteSummary(s.id);
+          summaries = summaries.filter((x) => x.id !== s.id);
+          render();
+        });
+        el.append(img, t, del);
+        el.addEventListener('click', () => breezeInternal.openSummary(s.file));
+        listEl.appendChild(el);
+      }
+    }
+
     function renderImages() {
       const q = searchEl.value.trim().toLowerCase();
       const items = q ? images.filter((img) => (img.prompt || '').toLowerCase().includes(q)) : images;
@@ -429,8 +474,10 @@
       mode = m;
       for (const b of document.querySelectorAll('#seg button')) b.classList.toggle('on', b.dataset.mode === m);
       clearBtn.style.display = m === 'pages' ? '' : 'none';
-      searchEl.placeholder = m === 'pages' ? 'Search history…' : (m === 'chats' ? 'Search Nav chats…' : 'Search images…');
-      emptyEl.textContent = m === 'pages' ? 'Nothing here yet.' : (m === 'chats' ? 'No Nav chats yet.' : 'No generated images yet.');
+      const ph = { pages: 'Search history…', chats: 'Search Nav chats…', summaries: 'Search summaries…', images: 'Search images…' };
+      const em = { pages: 'Nothing here yet.', chats: 'No Nav chats yet.', summaries: 'No saved summaries yet. Run /research or /youtube to create one.', images: 'No generated images yet.' };
+      searchEl.placeholder = ph[m] || 'Search…';
+      emptyEl.textContent = em[m] || 'Nothing here yet.';
       render();
     }
     for (const b of document.querySelectorAll('#seg button')) {
@@ -447,6 +494,7 @@
     breezeInternal.getHistory().then((h) => { all = h; render(); });
     if (breezeInternal.getChats) breezeInternal.getChats().then((c) => { chats = c || []; if (mode === 'chats') render(); });
     if (breezeInternal.getAIImages) breezeInternal.getAIImages().then((items) => { images = items || []; if (mode === 'images') render(); });
+    if (breezeInternal.getSummaries) breezeInternal.getSummaries().then((s) => { summaries = s || []; if (mode === 'summaries') render(); });
     searchEl.addEventListener('input', render);
     document.getElementById('clear').addEventListener('click', () => {
       if (!confirm('Clear all browsing history?')) return;

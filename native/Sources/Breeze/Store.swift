@@ -14,9 +14,11 @@ final class Store {
     private let bookmarksURL: URL
     private let chatsURL: URL
     private let imagesURL: URL
+    private let summariesURL: URL
     private let openTabsURL: URL
     var chats: [[String: Any]] = []      // { id, title, messages:[{role,text}] }
     var images: [[String: Any]] = []     // { id, prompt, path, ts }
+    var summaries: [[String: Any]] = []  // { id, kind, title, file, ts } — research/creator pages
 
     var settings: [String: Any]
     var pins: [Pin]
@@ -81,6 +83,7 @@ final class Store {
         bookmarksURL = dir.appendingPathComponent("bookmarks.json")
         chatsURL = dir.appendingPathComponent("chats.json")
         imagesURL = dir.appendingPathComponent("images.json")
+        summariesURL = dir.appendingPathComponent("summaries.json")
         openTabsURL = dir.appendingPathComponent("opentabs.json")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -105,6 +108,8 @@ final class Store {
         chats = (try? Data(contentsOf: chatsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         images = (try? Data(contentsOf: imagesURL)).flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
+        summaries = (try? Data(contentsOf: summariesURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
@@ -136,6 +141,28 @@ final class Store {
         saveChats()
     }
     func deleteChat(id: Double) { chats.removeAll { ($0["id"] as? Double) == id }; saveChats() }
+
+    // MARK: - Research / Creator summaries (full-screen pages saved to disk)
+
+    func saveSummaries() {
+        if let data = try? JSONSerialization.data(withJSONObject: summaries) { try? data.write(to: summariesURL) }
+    }
+    /// Record a generated summary page (newest first). `file` is the file name in the
+    /// "Research Summaries" support folder.
+    func addSummary(kind: String, title: String, file: String) {
+        summaries.insert(["id": Date().timeIntervalSince1970, "kind": kind, "title": title, "file": file,
+                          "ts": Date().timeIntervalSince1970 * 1000], at: 0)
+        if summaries.count > 200 { summaries = Array(summaries.prefix(200)) }
+        saveSummaries()
+    }
+    func deleteSummary(id: Double) {
+        if let file = summaries.first(where: { ($0["id"] as? Double) == id })?["file"] as? String {
+            let url = supportDirectory.appendingPathComponent("Research Summaries", isDirectory: true).appendingPathComponent(file)
+            try? FileManager.default.removeItem(at: url)
+        }
+        summaries.removeAll { ($0["id"] as? Double) == id }
+        saveSummaries()
+    }
     func chatMessages(id: Double) -> [[String: String]] {
         (chats.first { ($0["id"] as? Double) == id }?["messages"] as? [[String: String]]) ?? []
     }

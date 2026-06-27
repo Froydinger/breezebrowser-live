@@ -2328,7 +2328,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard tabs.contains(where: { $0 === video }),
               let url = writeResearchSummaryPage(query: q, answer: answer,
                                                  pill: "Nav Creator Tools",
-                                                 heading: "Creator breakdown.") else {
+                                                 heading: "Creator breakdown.",
+                                                 kind: "creator") else {
             assistant.addAI(answer, chips: chips)   // fall back to a normal chat reply
             return
         }
@@ -2489,7 +2490,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func writeResearchSummaryPage(query: String, answer: String,
                                   pill: String = "Nav Research Summary",
-                                  heading: String = "Research, wrapped.") -> URL? {
+                                  heading: String = "Research, wrapped.",
+                                  kind: String = "research") -> URL? {
         let dir = Store.shared.supportDirectory.appendingPathComponent("Research Summaries", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("research-\(Int(Date().timeIntervalSince1970)).html")
@@ -2500,6 +2502,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let html = researchSummaryHTML(query: query, answer: answer, links: Array(links.prefix(12)), pill: pill, heading: heading)
         do {
             try html.write(to: url, atomically: true, encoding: .utf8)
+            Store.shared.addSummary(kind: kind, title: query, file: url.lastPathComponent)
+            broadcastToInternalPages()   // refresh any open History page
             return url
         } catch {
             print("Breeze research summary write failed: \(error.localizedDescription)")
@@ -3214,8 +3218,58 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
         }
         if text.isEmpty { text = await readText(of: t) }
+        // Capture the real result links so the Research summary always has sources —
+        // even when Nav synthesizes straight from the results page without opening each.
+        let engineHost = (URL(string: searchURL(for: query))?.host ?? "").lowercased()
+        for (title, link) in await searchResultLinks(of: t, engineHost: engineHost)
+        where !aiVisitedSources.contains(where: { $0.1 == link }) {
+            aiVisitedSources.append((title, link))
+        }
         assistant.setStatus("Thinking…")
         return "Web search results for \"\(query)\":\n\n" + text
+    }
+
+    /// Pull the actual outbound result links from a search results page so they can
+    /// be listed as sources on the Research summary. Engine-agnostic heuristic:
+    /// external links with real title text, minus the engine's own chrome.
+    @MainActor func searchResultLinks(of t: Tab, engineHost: String) async -> [(String, String)] {
+        let js = """
+        (function(){
+          var out = [], seen = {};
+          var eng = "ENGINE";
+          var bad = ["google.","bing.","duckduckgo.","gstatic","googleusercontent","schema.org","w3.org"];
+          var anchors = document.querySelectorAll('a[href]');
+          for (var i = 0; i < anchors.length; i++) {
+            var href = anchors[i].href || "";
+            if (href.slice(0,7) !== "http://" && href.slice(0,8) !== "https://") continue;
+            var uo; try { uo = new URL(href); } catch(e){ continue; }
+            var q = uo.searchParams.get('q') || uo.searchParams.get('url');
+            if (q && (q.slice(0,7) === "http://" || q.slice(0,8) === "https://")) { href = q; try { uo = new URL(href); } catch(e){} }
+            var host = (uo.hostname || "").toLowerCase();
+            if (!host) continue;
+            if (eng && host.indexOf(eng) !== -1) continue;
+            var skip = false;
+            for (var b = 0; b < bad.length; b++) { if (host.indexOf(bad[b]) !== -1) { skip = true; break; } }
+            if (skip) continue;
+            if (seen[href]) continue;
+            var title = (anchors[i].innerText || anchors[i].textContent || "").replace(/\\s+/g, " ").trim();
+            if (title.length < 15) continue;
+            seen[href] = 1;
+            out.push([title.slice(0,90), href]);
+            if (out.length >= 8) break;
+          }
+          return JSON.stringify(out);
+        })()
+        """.replacingOccurrences(of: "ENGINE", with: engineHost)
+        return await withCheckedContinuation { cont in
+            t.webView.evaluateJavaScript(js) { result, _ in
+                guard let s = result as? String, let data = s.data(using: .utf8),
+                      let arr = try? JSONSerialization.jsonObject(with: data) as? [[String]] else {
+                    cont.resume(returning: []); return
+                }
+                cont.resume(returning: arr.compactMap { $0.count == 2 ? ($0[0], $0[1]) : nil })
+            }
+        }
     }
 
     @MainActor func aiClick(_ target: String) async -> String {
@@ -4417,6 +4471,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
         case "deleteChat":
             if let id = chatId(from: args["id"]) { Store.shared.deleteChat(id: id) }
+        case "getSummaries":
+            resolve(Store.json(Store.shared.summaries))
+        case "openSummary":
+            if let file = args["file"] as? String {
+                let fileURL = Store.shared.supportDirectory
+                    .appendingPathComponent("Research Summaries", isDirectory: true)
+                    .appendingPathComponent(file)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    let t = Tab(); t.isNewTab = false; t.isChatTab = false; t.title = "Summary"
+                    wire(t); tabs.append(t); active = tabs.count - 1
+                    showActive(); renderTabs()
+                    t.webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+                }
+            }
+        case "deleteSummary":
+            if let id = chatId(from: args["id"]) { Store.shared.deleteSummary(id: id) }
         case "downloadAIImage":
             if let path = args["path"] as? String { downloadAIImage(path: path) }
         case "askAI":
