@@ -1,7 +1,6 @@
 // Breeze Cloud backend. Provider selection lives server-side so the app does
 // not expose model IDs or provider credentials.
 
-import AppKit
 import Foundation
 
 final class CloudLLM: NSObject {
@@ -95,7 +94,7 @@ final class CloudLLM: NSObject {
 
         var body: [String: Any] = ["messages": history]
         if !minimal {
-            body["max_completion_tokens"] = 2000
+            body["max_completion_tokens"] = 2400
             body["reasoning_effort"] = "low"
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -124,114 +123,6 @@ final class CloudLLM: NSObject {
             }
         }
         return content.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    // MARK: - Images
-
-    func generateImage(prompt: String, contexts: [AIContext], attachments: [AIImageAttachment],
-                       completion: @escaping (Result<NSImage, Error>) -> Void) {
-        guard usingCloud else {
-            completion(.failure(Self.error("Nav is not configured in this build.")))
-            return
-        }
-
-        let requestID = UUID().uuidString
-        let finalPrompt = imagePrompt(userPrompt: prompt, contexts: contexts)
-        Task {
-            do {
-                let image: NSImage
-                if attachments.isEmpty {
-                    image = try await createImage(prompt: finalPrompt, requestID: requestID)
-                } else {
-                    image = try await editImage(prompt: finalPrompt, attachments: attachments, requestID: requestID)
-                }
-                await MainActor.run { completion(.success(image)) }
-            } catch {
-                await MainActor.run { completion(.failure(error)) }
-            }
-        }
-    }
-
-    private func createImage(prompt: String, requestID: String) async throws -> NSImage {
-        guard let url = endpoint(path: "/v1/images/generations") else {
-            throw Self.error("Nav is not configured in this build.")
-        }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        applyAuth(to: &req, requestID: requestID)
-        req.timeoutInterval = 240
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "prompt": prompt,
-            "quality": "low",
-            "size": "1024x1024",
-            "n": 1,
-            "output_format": "png",
-        ])
-        return try await decodeImageResponse(req)
-    }
-
-    private func editImage(prompt: String, attachments: [AIImageAttachment], requestID: String) async throws -> NSImage {
-        guard let url = endpoint(path: "/v1/images/edits") else {
-            throw Self.error("Nav is not configured in this build.")
-        }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        applyAuth(to: &req, requestID: requestID)
-        req.timeoutInterval = 240
-
-        let files = attachments.prefix(4).map {
-            MultipartFile(field: "image", filename: $0.filename, mime: "image/png", data: $0.data)
-        }
-        let multipart = makeMultipart(fields: [
-            "prompt": prompt,
-            "quality": "low",
-            "size": "1024x1024",
-            "n": "1",
-            "output_format": "png",
-        ], files: files)
-        req.setValue("multipart/form-data; boundary=\(multipart.boundary)", forHTTPHeaderField: "Content-Type")
-        req.httpBody = multipart.body
-        return try await decodeImageResponse(req)
-    }
-
-    private func decodeImageResponse(_ req: URLRequest) async throws -> NSImage {
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse else {
-            throw Self.error("No response from Breeze Cloud.")
-        }
-        guard http.statusCode == 200 else {
-            throw Self.error(Self.friendlyError(status: http.statusCode, data: data))
-        }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let items = json["data"] as? [[String: Any]],
-              let first = items.first else {
-            throw Self.error("Unexpected image response.")
-        }
-        if let b64 = first["b64_json"] as? String,
-           let imageData = Data(base64Encoded: b64),
-           let image = NSImage(data: imageData) {
-            return image
-        }
-        if let urlString = first["url"] as? String, let url = URL(string: urlString) {
-            let (imageData, _) = try await URLSession.shared.data(from: url)
-            if let image = NSImage(data: imageData) { return image }
-        }
-        throw Self.error("Breeze Cloud returned no image data.")
-    }
-
-    private func imagePrompt(userPrompt: String, contexts: [AIContext]) -> String {
-        let relevant = contexts.map { "[\($0.label)]\n\(String($0.text.prefix(2000)))" }
-            .joined(separator: "\n\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if relevant.isEmpty { return userPrompt }
-        return """
-        Use this Breeze context only if it is relevant to the user's image request:
-        \(relevant)
-
-        User image request:
-        \(userPrompt)
-        """
     }
 
     // MARK: - Auth/config helpers
@@ -290,37 +181,4 @@ final class CloudLLM: NSObject {
     private static func error(_ message: String) -> NSError {
         NSError(domain: "Breeze", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
-}
-
-private struct MultipartFile {
-    let field: String
-    let filename: String
-    let mime: String
-    let data: Data
-}
-
-private func makeMultipart(fields: [String: String], files: [MultipartFile]) -> (body: Data, boundary: String) {
-    let boundary = "BreezeBoundary-\(UUID().uuidString)"
-    var body = Data()
-
-    func append(_ string: String) {
-        if let data = string.data(using: .utf8) { body.append(data) }
-    }
-
-    for (key, value) in fields {
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
-        append("\(value)\r\n")
-    }
-
-    for file in files {
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"\(file.field)\"; filename=\"\(file.filename)\"\r\n")
-        append("Content-Type: \(file.mime)\r\n\r\n")
-        body.append(file.data)
-        append("\r\n")
-    }
-
-    append("--\(boundary)--\r\n")
-    return (body, boundary)
 }

@@ -8,12 +8,8 @@ workers_dev = true
 # never wipe it again. The API key stays a secret (OPENAI_API_KEY / AI_PROVIDER_API_KEY).
 AI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 AI_CHAT_MODEL = "gpt-5.4-mini"
-AI_IMAGE_GENERATION_ENDPOINT = "https://api.openai.com/v1/images/generations"
-AI_IMAGE_EDIT_ENDPOINT = "https://api.openai.com/v1/images/edits"
-AI_IMAGE_MODEL = "gpt-image-2"
-MAX_OUTPUT_TOKENS = "1200"
+MAX_OUTPUT_TOKENS = "2400"
 CHAT_DAILY_LIMIT = "1000"
-IMAGE_DAILY_LIMIT = "10"
 
 [[durable_objects.bindings]]
 name = "QUOTA"

@@ -2,25 +2,19 @@ interface Env {
   AI_PROVIDER_API_KEY?: string;
   OPENAI_API_KEY?: string;        // legacy secret; used as a fallback for the key
   AI_CHAT_ENDPOINT: string;
-  AI_IMAGE_GENERATION_ENDPOINT: string;
-  AI_IMAGE_EDIT_ENDPOINT: string;
   AI_CHAT_MODEL: string;
-  AI_IMAGE_MODEL: string;
   MAX_OUTPUT_TOKENS: string;
   CHAT_DAILY_LIMIT: string;
-  IMAGE_DAILY_LIMIT: string;
   BREEZE_CLIENT_TOKEN?: string;
   QUOTA: DurableObjectNamespace<QuotaTracker>;
 }
 
-type QuotaKind = "chat" | "image";
+type QuotaKind = "chat";
 
 interface QuotaState {
   day: string;
   chat: number;
-  image: number;
   seenChat: string[];
-  seenImage: string[];
 }
 
 const corsHeaders = {
@@ -36,34 +30,30 @@ export class QuotaTracker {
   async fetch(req: Request): Promise<Response> {
     const { kind, requestId } = await req.json<{ kind: QuotaKind; requestId?: string }>();
     const day = new Date().toISOString().slice(0, 10);
-    const limit = kind === "image"
-      ? intEnv(this.env.IMAGE_DAILY_LIMIT, 10)
-      : intEnv(this.env.CHAT_DAILY_LIMIT, 30);
+    const limit = intEnv(this.env.CHAT_DAILY_LIMIT, 30);
 
     let quota = await this.state.storage.get<QuotaState>("quota");
     if (!quota || quota.day !== day) {
-      quota = { day, chat: 0, image: 0, seenChat: [], seenImage: [] };
+      quota = { day, chat: 0, seenChat: [] };
     }
 
-    const seenKey = kind === "image" ? "seenImage" : "seenChat";
-    const countKey = kind;
-    const seen = quota[seenKey];
+    const seen = quota.seenChat;
     const uniqueId = (requestId || "").trim();
     const alreadyCounted = uniqueId.length > 0 && seen.includes(uniqueId);
 
     if (!alreadyCounted) {
-      if (quota[countKey] >= limit) {
+      if (quota.chat >= limit) {
         return Response.json({
           ok: false,
           kind,
           limit,
-          used: quota[countKey],
+          used: quota.chat,
           remaining: 0,
           error: `Daily ${kind} limit reached.`,
         }, { status: 429 });
       }
 
-      quota[countKey] += 1;
+      quota.chat += 1;
       if (uniqueId) {
         seen.push(uniqueId);
         if (seen.length > 100) seen.splice(0, seen.length - 100);
@@ -75,8 +65,8 @@ export class QuotaTracker {
       ok: true,
       kind,
       limit,
-      used: quota[countKey],
-      remaining: Math.max(0, limit - quota[countKey]),
+      used: quota.chat,
+      remaining: Math.max(0, limit - quota.chat),
     });
   }
 }
@@ -135,22 +125,6 @@ function withQuotaHeaders(resp: Response, quota: Record<string, unknown>) {
   return new Response(resp.body, { status: resp.status, headers });
 }
 
-function allowedSize(raw: unknown) {
-  const value = typeof raw === "string" ? raw : "1024x1024";
-  if (value === "auto") return value;
-  const match = value.match(/^(\d{3,4})x(\d{3,4})$/);
-  if (!match) return "1024x1024";
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  if (width % 16 !== 0 || height % 16 !== 0) return "1024x1024";
-  if (width < 256 || height < 256 || width > 3840 || height > 3840) return "1024x1024";
-  const ratio = Math.max(width, height) / Math.min(width, height);
-  if (ratio > 3) return "1024x1024";
-  const pixels = width * height;
-  if (pixels < 655_360 || pixels > 8_294_400) return "1024x1024";
-  return value;
-}
-
 async function proxyChat(req: Request, env: Env) {
   let body: Record<string, unknown>;
   try {
@@ -166,7 +140,7 @@ async function proxyChat(req: Request, env: Env) {
   const { quotaResp, quota } = await checkQuota(req, env, "chat");
   if (!quotaResp.ok) return json(quota, quotaResp.status);
 
-  const configuredMax = intEnv(env.MAX_OUTPUT_TOKENS, 1200);
+  const configuredMax = intEnv(env.MAX_OUTPUT_TOKENS, 2400);
   const requestedMax = Number.parseInt(String(body.max_completion_tokens ?? configuredMax), 10);
   const maxCompletionTokens = Math.min(
     Number.isFinite(requestedMax) && requestedMax > 0 ? requestedMax : configuredMax,
@@ -201,99 +175,6 @@ async function proxyChat(req: Request, env: Env) {
   return withQuotaHeaders(upstream, quota);
 }
 
-async function proxyImageGeneration(req: Request, env: Env) {
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json<Record<string, unknown>>();
-  } catch {
-    return json({ error: "invalid_json" }, 400);
-  }
-
-  if (typeof body.prompt !== "string" || !body.prompt.trim()) {
-    return json({ error: "missing_prompt" }, 400);
-  }
-
-  const { quotaResp, quota } = await checkQuota(req, env, "image");
-  if (!quotaResp.ok) return json(quota, quotaResp.status);
-
-  let endpoint: string;
-  let providerKey: string;
-  let providerModel: string;
-  try {
-    endpoint = requiredEnv(env.AI_IMAGE_GENERATION_ENDPOINT, "AI_IMAGE_GENERATION_ENDPOINT");
-    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY || env.OPENAI_API_KEY, "AI_PROVIDER_API_KEY");
-    providerModel = requiredEnv(env.AI_IMAGE_MODEL, "AI_IMAGE_MODEL");
-  } catch {
-    return json({ error: "provider_not_configured" }, 500);
-  }
-
-  const upstream = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${providerKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: providerModel,
-      prompt: body.prompt,
-      n: 1,
-      quality: "low",
-      size: allowedSize(body.size),
-      output_format: "png",
-    }),
-  });
-
-  return withQuotaHeaders(upstream, quota);
-}
-
-async function proxyImageEdit(req: Request, env: Env) {
-  let form: FormData;
-  try {
-    form = await req.formData();
-  } catch {
-    return json({ error: "invalid_form_data" }, 400);
-  }
-
-  const prompt = String(form.get("prompt") || "").trim();
-  if (!prompt) return json({ error: "missing_prompt" }, 400);
-
-  const images = form.getAll("image").filter((value) => value instanceof File);
-  if (images.length === 0) return json({ error: "missing_image" }, 400);
-
-  const { quotaResp, quota } = await checkQuota(req, env, "image");
-  if (!quotaResp.ok) return json(quota, quotaResp.status);
-
-  const upstreamForm = new FormData();
-  let endpoint: string;
-  let providerKey: string;
-  let providerModel: string;
-  try {
-    endpoint = requiredEnv(env.AI_IMAGE_EDIT_ENDPOINT, "AI_IMAGE_EDIT_ENDPOINT");
-    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY || env.OPENAI_API_KEY, "AI_PROVIDER_API_KEY");
-    providerModel = requiredEnv(env.AI_IMAGE_MODEL, "AI_IMAGE_MODEL");
-  } catch {
-    return json({ error: "provider_not_configured" }, 500);
-  }
-
-  upstreamForm.set("model", providerModel);
-  upstreamForm.set("prompt", prompt);
-  upstreamForm.set("n", "1");
-  upstreamForm.set("quality", "low");
-  upstreamForm.set("size", allowedSize(form.get("size")));
-  upstreamForm.set("output_format", "png");
-  for (const image of images) upstreamForm.append("image", image);
-  const mask = form.get("mask");
-  if (mask instanceof File) upstreamForm.set("mask", mask);
-
-  const upstream = await fetch(endpoint, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${providerKey}` },
-    body: upstreamForm,
-  });
-
-  return withQuotaHeaders(upstream, quota);
-}
-
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method === "OPTIONS") {
@@ -308,8 +189,6 @@ export default {
     if (req.method === "GET" && path === "/health") return json({ ok: true });
     if (req.method !== "POST") return json({ error: "not_found" }, 404);
     if (path === "/v1/chat/completions") return proxyChat(req, env);
-    if (path === "/v1/images/generations") return proxyImageGeneration(req, env);
-    if (path === "/v1/images/edits") return proxyImageEdit(req, env);
     return json({ error: "not_found" }, 404);
   },
 } satisfies ExportedHandler<Env>;

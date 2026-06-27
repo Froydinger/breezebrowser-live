@@ -332,11 +332,6 @@ struct AIExtra {
     }
 }
 
-struct AIImageAttachment {
-    let data: Data
-    let filename: String
-}
-
 /// Pin squircle sizing — matches the Electron --pin-min values (Settings).
 enum PinSize: String {
     case small, medium, large

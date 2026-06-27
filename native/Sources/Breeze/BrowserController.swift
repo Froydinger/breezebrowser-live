@@ -83,6 +83,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var urlObs: [UUID: NSKeyValueObservation] = [:]
     var popupWindows: [UUID: NSWindow] = [:]
     var popupDownloadCandidates: Set<UUID> = []
+    var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
 
     // chrome
@@ -125,6 +126,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     let remindersView = RemindersView()
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
+    var aiVisitedSources: [(String, String)] = [] // real pages opened during the current Nav turn
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     let ASSISTANT_W: CGFloat = 360
 
@@ -984,7 +986,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pane.forward.onTap = { [weak tab] in tab?.webView.goForward() }
         pane.reload.onTap = { [weak self, weak pane, weak tab] in
             if let pane { self?.spinReloadButton(pane.reload) }
-            tab?.webView.reload()
+            if let tab { self?.reloadTabPreservingMedia(tab) }
         }
         pane.onSidebarToggle = { [weak self] in self?.toggleSidebar() }
     }
@@ -1398,7 +1400,27 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func reloadCurrentTab() {
         spinReloadButton(reload)
-        current?.webView.reload()
+        if let current { reloadTabPreservingMedia(current) }
+    }
+
+    /// Keep HTML5 video at the same point across a user-initiated refresh. This is
+    /// intentionally per-tab and in-memory: navigation to another video starts fresh.
+    func reloadTabPreservingMedia(_ tab: Tab) {
+        let js = """
+        (() => {
+          const video = document.querySelector('video');
+          if (!video || !Number.isFinite(video.currentTime) || video.currentTime < 0.5) return null;
+          return { time: video.currentTime, wasPlaying: !video.paused && !video.ended };
+        })()
+        """
+        tab.webView.evaluateJavaScript(js) { [weak self, weak tab] result, _ in
+            guard let self, let tab else { return }
+            if let state = result as? [String: Any],
+               let time = state["time"] as? Double {
+                self.pendingMediaResume[tab.id] = (time, state["wasPlaying"] as? Bool ?? false)
+            }
+            tab.webView.reload()
+        }
     }
 
     func zoomPage(by delta: CGFloat) {
@@ -1965,32 +1987,277 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.setCreatorToolsAvailable(currentCreatorToolsURL() != nil)
     }
 
+    /// True when the tab is on a YouTube watch page. Toggle-independent — the
+    /// /youtube Task and /summarize work whether or not the header button is enabled.
+    func isYouTubeVideo(_ t: Tab) -> Bool {
+        guard !t.isNewTab, !t.isChatTab, let url = t.webView.url, let host = url.host?.lowercased() else { return false }
+        if host == "youtu.be" { return url.path.count > 1 }
+        if host.hasSuffix("youtube.com") { return url.path == "/watch" || (url.query?.contains("v=") ?? false) }
+        return false
+    }
+
+    /// Pull YouTube's own caption track for the current video and flatten it to plain
+    /// text, so Nav can "watch" the video (what's actually said) instead of only
+    /// reading the page chrome. Returns "" when the video has no captions.
+    @MainActor
+    func youTubeTranscript(of t: Tab) async -> String {
+        let nativeTranscript = await nativeYouTubeTranscript(of: t)
+        if !nativeTranscript.isEmpty { return nativeTranscript }
+
+        let body = #"""
+        async function getTracks() {
+          // 1) Page global (fast path when present and fresh).
+          try {
+            var pr = window.ytInitialPlayerResponse;
+            var t = pr && pr.captions && pr.captions.playerCaptionsTracklistRenderer && pr.captions.playerCaptionsTracklistRenderer.captionTracks;
+            if (t && t.length) return t;
+          } catch (e) {}
+          // 2) Ask the Android InnerTube player for a fresh caption URL. YouTube's
+          //    WEB caption URL currently returns an empty 200 without a PoToken;
+          //    the first-party Android client URL remains directly readable.
+          try {
+            var vid = new URLSearchParams(location.search).get("v");
+            if (!vid && location.hostname.indexOf("youtu.be") >= 0) vid = location.pathname.slice(1);
+            var cfg = (window.ytcfg && window.ytcfg.data_) || {};
+            var key = cfg.INNERTUBE_API_KEY;
+            if (!key) { var mk = document.documentElement.innerHTML.match(/"INNERTUBE_API_KEY":"([^"]+)"/); if (mk) key = mk[1]; }
+            if (key && vid) {
+              var res = await fetch("https://www.youtube.com/youtubei/v1/player?key=" + key, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Youtube-Client-Name": "3",
+                  "X-Youtube-Client-Version": "20.10.38"
+                },
+                body: JSON.stringify({
+                  context: { client: { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 35, hl: "en", gl: "US" } },
+                  videoId: vid
+                })
+              });
+              var data = await res.json();
+              var t2 = data && data.captions && data.captions.playerCaptionsTracklistRenderer && data.captions.playerCaptionsTracklistRenderer.captionTracks;
+              if (t2 && t2.length) return t2;
+            }
+          } catch (e) {}
+          return [];
+        }
+        // Fast path: fetch the caption track directly. As of 2026 this often returns
+        // an empty 200 because timedtext now needs a PoToken — handled by the panel
+        // fallback below.
+        var tracks = await getTracks();
+        if (tracks.length) {
+          var track = tracks.filter(function(t){ return (t.languageCode || "").indexOf("en") === 0; })[0] || tracks[0];
+          try {
+            var url = new URL(track.baseUrl, location.href);
+            url.searchParams.set("fmt", "json3");
+            var r = await fetch(url.toString());
+            var d = await r.json();
+            var text = (d.events || []).map(function(e){
+              return (e.segs || []).map(function(s){ return s.utf8 || ""; }).join("");
+            }).join(" ").replace(/\s+/g, " ").trim();
+            if (text) return text;
+          } catch (e) {}
+        }
+
+        // The player can successfully load captions even when re-fetching the bare
+        // captionTracks baseUrl returns an empty 200 (YouTube adds a session PoToken
+        // internally). Reuse the exact authenticated timedtext URL the player used.
+        async function readPlayerCaptionRequest() {
+          try {
+            var names = performance.getEntriesByType("resource").map(function(e){ return e.name || ""; });
+            var urls = names.filter(function(u){ return u.indexOf("/api/timedtext") >= 0; }).reverse();
+            for (var i = 0; i < urls.length; i++) {
+              try {
+                var cu = new URL(urls[i], location.href);
+                cu.searchParams.set("fmt", "json3");
+                var cr = await fetch(cu.toString(), { credentials: "include" });
+                var raw = await cr.text();
+                if (!raw) continue;
+                var cd = JSON.parse(raw);
+                var ct = (cd.events || []).map(function(e){
+                  return (e.segs || []).map(function(s){ return s.utf8 || ""; }).join("");
+                }).join(" ").replace(/\s+/g, " ").trim();
+                if (ct) return ct;
+              } catch (e) {}
+            }
+          } catch (e) {}
+          return "";
+        }
+        var playerText = await readPlayerCaptionRequest();
+        if (playerText) return playerText;
+        // If captions are available but currently off, ask YouTube's own player to
+        // load the preferred track, then capture its tokenized request above.
+        try {
+          var player = document.querySelector("#movie_player");
+          if (player && tracks.length && player.loadModule && player.setOption) {
+            player.loadModule("captions");
+            var preferred = tracks.filter(function(t){ return (t.languageCode || "").indexOf("en") === 0; })[0] || tracks[0];
+            player.setOption("captions", "track", { languageCode: preferred.languageCode });
+            for (var p = 0; p < 12; p++) {
+              await new Promise(function(res){ setTimeout(res, 250); });
+              playerText = await readPlayerCaptionRequest();
+              if (playerText) return playerText;
+            }
+          }
+        } catch (e) {}
+
+        // Reliable fallback: let YouTube's own player fetch the transcript (it has the
+        // PoToken/session) by opening the transcript panel, then scrape the DOM.
+        function readSegments() {
+          var segs = document.querySelectorAll("ytd-transcript-segment-renderer");
+          if (!segs.length) return "";
+          var out = [];
+          for (var i = 0; i < segs.length; i++) {
+            var el = segs[i].querySelector("yt-formatted-string.segment-text")
+              || segs[i].querySelector(".segment-text")
+              || segs[i].querySelector("yt-formatted-string");
+            var t = el ? el.textContent : segs[i].textContent;
+            if (t) out.push(t.replace(/\s+/g, " ").trim());
+          }
+          return out.join(" ").replace(/\s+/g, " ").trim();
+        }
+        var existing = readSegments();
+        if (existing) return existing;
+        // expand the description, then click the "Show transcript" control
+        try { var ex = document.querySelector("tp-yt-paper-button#expand, #expand"); if (ex) ex.click(); } catch (e) {}
+        await new Promise(function(res){ setTimeout(res, 250); });
+        var controls = Array.prototype.slice.call(document.querySelectorAll(
+          "ytd-video-description-transcript-section-renderer button, button, a, ytd-button-renderer, yt-button-shape"
+        ));
+        var btn = controls.filter(function(b){
+          var label = ((b.getAttribute && b.getAttribute("aria-label")) || "") + " " + (b.textContent || "");
+          return /transcript/i.test(label);
+        })[0];
+        if (btn) { try { btn.click(); } catch (e) {} }
+        // YouTube sometimes leaves the panel on its spinner for 10–20 seconds,
+        // especially just after playback starts. Keep waiting without blocking AppKit.
+        for (var k = 0; k < 60; k++) {
+          await new Promise(function(res){ setTimeout(res, 500); });
+          var txt = readSegments();
+          if (txt) return txt;
+        }
+        return "";
+        """#
+        return await withCheckedContinuation { cont in
+            t.webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
+                if case .success(let v) = result { cont.resume(returning: (v as? String) ?? "") }
+                else { cont.resume(returning: "") }
+            }
+        }
+    }
+
+    /// Fetch captions through YouTube's first-party Android player context. This
+    /// avoids both the WEB timedtext PoToken and the transcript panel's flaky loader.
+    @MainActor
+    private func nativeYouTubeTranscript(of t: Tab) async -> String {
+        guard let pageURL = t.webView.url else { return "" }
+        let videoID: String
+        if pageURL.host?.lowercased() == "youtu.be" {
+            videoID = pageURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        } else {
+            videoID = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "v" })?.value ?? ""
+        }
+        guard !videoID.isEmpty else { return "" }
+
+        let apiKey: String = await withCheckedContinuation { continuation in
+            t.webView.evaluateJavaScript("window.ytcfg && (window.ytcfg.get ? window.ytcfg.get('INNERTUBE_API_KEY') : window.ytcfg.data_ && window.ytcfg.data_.INNERTUBE_API_KEY) || ''") { value, _ in
+                continuation.resume(returning: value as? String ?? "")
+            }
+        }
+        guard !apiKey.isEmpty,
+              let playerURL = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(apiKey)") else { return "" }
+
+        do {
+            let payload: [String: Any] = [
+                "context": ["client": [
+                    "clientName": "ANDROID", "clientVersion": "20.10.38",
+                    "androidSdkVersion": 35, "hl": "en", "gl": "US"
+                ]],
+                "videoId": videoID
+            ]
+            var request = URLRequest(url: playerURL)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("3", forHTTPHeaderField: "X-Youtube-Client-Name")
+            request.setValue("20.10.38", forHTTPHeaderField: "X-Youtube-Client-Version")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            let (playerData, playerResponse) = try await URLSession.shared.data(for: request)
+            guard (playerResponse as? HTTPURLResponse)?.statusCode == 200,
+                  let root = try JSONSerialization.jsonObject(with: playerData) as? [String: Any],
+                  let captions = root["captions"] as? [String: Any],
+                  let renderer = captions["playerCaptionsTracklistRenderer"] as? [String: Any],
+                  let tracks = renderer["captionTracks"] as? [[String: Any]], !tracks.isEmpty else { return "" }
+            let track = tracks.first(where: { ($0["languageCode"] as? String)?.hasPrefix("en") == true }) ?? tracks[0]
+            guard let base = track["baseUrl"] as? String,
+                  var components = URLComponents(string: base) else { return "" }
+            var items = components.queryItems ?? []
+            items.removeAll { $0.name == "fmt" }
+            items.append(URLQueryItem(name: "fmt", value: "json3"))
+            components.queryItems = items
+            guard let captionURL = components.url else { return "" }
+
+            var captionRequest = URLRequest(url: captionURL)
+            captionRequest.setValue(pageURL.absoluteString, forHTTPHeaderField: "Referer")
+            let (captionData, captionResponse) = try await URLSession.shared.data(for: captionRequest)
+            guard (captionResponse as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try JSONSerialization.jsonObject(with: captionData) as? [String: Any],
+                  let events = json["events"] as? [[String: Any]] else { return "" }
+            let text = events.compactMap { event -> String? in
+                guard let segments = event["segs"] as? [[String: Any]] else { return nil }
+                return segments.compactMap { $0["utf8"] as? String }.joined()
+            }.joined(separator: " ")
+            return text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            ailog("Native YouTube transcript fallback: \(error.localizedDescription)")
+            return ""
+        }
+    }
+
     func runCreatorTools() {
-        guard let url = currentCreatorToolsURL() else {
+        guard let t = current, isYouTubeVideo(t), let url = t.webView.url else {
             NSSound.beep()
             updateCreatorToolsAvailability()
             return
         }
         if !assistantOpen { setAssistant(true) }
         assistant.setImageMode(false)
-        pendingCreatorVideoTab = current   // summary will open split next to this video
-        let title = current?.title.isEmpty == false ? current!.title : "this YouTube page"
-        sendToAI("""
-        Creator Tools beta: analyze the current YouTube page for a creator.
+        pendingCreatorVideoTab = t        // summary will open split next to this video
+        let title = t.title.isEmpty == false ? t.title : "this YouTube video"
+        Task { [weak self] in
+            guard let self else { return }
+            let transcript = await self.youTubeTranscript(of: t)
+            self.ailog("YouTube transcript characters: \(transcript.count)")
+            let tBlock = transcript.isEmpty
+                ? "(No captions/transcript available for this video — analyze from the page metadata.)"
+                : "Video transcript (the actual spoken content — use this as your primary source):\n\(String(transcript.prefix(14000)))"
+            self.sendToAI("""
+            Creator Tools beta: analyze the current YouTube video for a creator.
 
-        Page: \(title)
-        URL: \(url.absoluteString)
+            Page: \(title)
+            URL: \(url.absoluteString)
 
-        Use only the page context Breeze provides unless live browsing is clearly necessary. Keep it practical and concise. If this looks like YouTube Studio or the user's own channel/video, focus on actionable improvements they can make. If it looks like another channel, treat it as public competitive/creative research.
+            \(tBlock)
 
-        Cover:
-        - Packaging read: title, thumbnail, hook, promise, audience, and format
-        - What is likely working
-        - What may be hurting clicks or retention
-        - 5 stronger title or angle options
-        - 3 thumbnail direction ideas
-        - 3 next-video ideas inspired by the page
-        """)
+            Keep it practical and concise. If this looks like YouTube Studio or the user's own channel/video, focus on actionable improvements. If it's another channel, treat it as competitive creative analysis.
+
+            Cover:
+            - Packaging read: title, thumbnail, hook, promise, audience, and format
+            - What the video actually delivers (from the transcript) vs. what the packaging promises
+            - What is likely working
+            - What may be hurting clicks or retention
+            - 5 stronger title or angle options
+            - 3 thumbnail direction ideas
+            - 3 next-video ideas grounded in what this video covered
+            """, displayText: "Analyze this video with Creator Tools", includePageContext: false)
+        }
+    }
+
+    private func pageSummarizePrompt(_ prompt: String) -> String {
+        prompt.isEmpty
+            ? "Give me a clear TL;DR of the page I'm currently viewing: one or two sentences up top, then the key points as short bullets. Use the current page text I gave you — don't search unless it's genuinely missing."
+            : "Summarize the page I'm viewing, focused on: \(prompt). Lead with a one-line takeaway, then bullets."
     }
 
     // MARK: - Tasks (the /slash command palette)
@@ -2022,10 +2289,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "youtube":
             runCreatorTools()
         case "summarize":
-            if prompt.isEmpty {
-                sendToAI("Give me a clear TL;DR of the page I'm currently viewing: one or two sentences up top, then the key points as short bullets. Use the current page text I gave you — don't search unless it's genuinely missing.")
+            if let t = current, isYouTubeVideo(t) {
+                // On YouTube, summarize from the actual transcript, not the page chrome.
+                Task { [weak self] in
+                    guard let self else { return }
+                    let transcript = await self.youTubeTranscript(of: t)
+                    if transcript.isEmpty {
+                        self.sendToAI(self.pageSummarizePrompt(prompt))
+                    } else {
+                        let focus = prompt.isEmpty ? "" : " Focus on: \(prompt)."
+                        self.sendToAI("Summarize this YouTube video from its transcript. Lead with a one-line takeaway, then the key points as short bullets, and note anything surprising.\(focus)\n\nTranscript:\n\(String(transcript.prefix(14000)))")
+                    }
+                }
             } else {
-                sendToAI("Summarize the page I'm viewing, focused on: \(prompt). Lead with a one-line takeaway, then bullets.")
+                sendToAI(pageSummarizePrompt(prompt))
             }
         case "factcheck":
             let claim = prompt.isEmpty ? "the main claim on the page I'm currently viewing" : prompt
@@ -2115,16 +2392,23 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         showActive(); refreshSidebar()  // chat-tab showActive() focuses the input
     }
 
-    func sendToAI(_ text: String) {
+    func sendToAI(_ text: String, displayText: String? = nil, includePageContext: Bool = true) {
         // Cloud not configured → warn instead of firing a doomed request.
         if !llm.ready {
-            assistant.addUser(text)
+            assistant.addUser(displayText ?? text)
             assistant.addAI("Nav is not configured in this build yet. Use the BreezeTest build with the Worker URL embedded.", chips: [])
             prepareAIStatus()
             return
         }
-        ailog("sendToAI (Breeze Cloud): \(text)")
-        assistant.addUser(text)
+        ailog("sendToAI (Breeze Cloud, \(text.count) characters)")
+        aiVisitedSources.removeAll()
+        if let tab = current,
+           let url = tab.webView.url,
+           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            let label = tab.title.isEmpty ? (url.host ?? url.absoluteString) : tab.title
+            aiVisitedSources.append((label, url.absoluteString))
+        }
+        assistant.addUser(displayText ?? text)
         assistant.setInputEnabled(false, placeholder: "Thinking…")
         let working = text.range(of: "research", options: .caseInsensitive) != nil ? "Researching…" : "Thinking…"
         assistant.setStatus(working)
@@ -2133,7 +2417,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         Task { [weak self] in
             guard let self else { return }
-            let contexts = await self.gatherContexts()
+            let contexts = includePageContext ? await self.gatherContexts() : []
             let labels = contexts.map { $0.label }
             let history = Store.shared.settings["aiUseChatHistory"] as? Bool != false ? self.assistant.messages : []
             let done: (Result<(String, [String]), Error>) -> Void = { [weak self] r in
@@ -2209,7 +2493,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let dir = Store.shared.supportDirectory.appendingPathComponent("Research Summaries", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("research-\(Int(Date().timeIntervalSince1970)).html")
-        let html = researchSummaryHTML(query: query, answer: answer, links: extractLinks(from: answer), pill: pill, heading: heading)
+        var links = extractLinks(from: answer)
+        for source in aiVisitedSources where !links.contains(where: { $0.1 == source.1 }) {
+            links.append(source)
+        }
+        let html = researchSummaryHTML(query: query, answer: answer, links: Array(links.prefix(12)), pill: pill, heading: heading)
         do {
             try html.write(to: url, atomically: true, encoding: .utf8)
             return url
@@ -2315,58 +2603,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
         </style></head><body><div class="wrap"><header>\(mark)<div class="pill">\(pill.htmlEscaped)</div><h1>\(heading.htmlEscaped)</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
         """
-    }
-
-    func sendToAIImage(_ text: String) {
-        if !llm.ready {
-            assistant.addUser(text)
-            assistant.addAI("Nav is not configured in this build yet. Use the BreezeTest build with the Worker URL embedded.", chips: [])
-            prepareAIStatus()
-            return
-        }
-        ailog("sendToAIImage (Breeze Cloud image services low): \(text)")
-        assistant.addUser(text)
-        let bubble = assistant.addImageLoading()
-        assistant.setInputEnabled(false, placeholder: "Making image…")
-        assistant.setStatus("Making image…")
-        showRainbowGlow()
-
-        Task { [weak self] in
-            guard let self else { return }
-            let contexts = await self.gatherContexts()
-            let attachments = self.aiExtras.compactMap { extra -> AIImageAttachment? in
-                guard let data = extra.imageData else { return nil }
-                return AIImageAttachment(data: data, filename: extra.imageFilename ?? "breeze-image.png")
-            }
-            self.llm.generateImage(prompt: text, contexts: contexts, attachments: attachments) { [weak self] result in
-                guard let self else { return }
-                self.hideRainbowGlow()
-                self.assistant.setStatus(nil)
-                self.assistant.setInputEnabled(true)
-                self.assistant.focusInput()
-                switch result {
-                case .success(let image):
-                    let url = self.saveGeneratedImage(image, prompt: text)
-                    self.assistant.finishImage(bubble, image: image, prompt: text, path: url?.path)
-                case .failure(let error):
-                    self.assistant.failImage(bubble, message: error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    func saveGeneratedImage(_ image: NSImage, prompt: String) -> URL? {
-        let dir = Store.shared.supportDirectory.appendingPathComponent("ai-images", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("\(Int(Date().timeIntervalSince1970 * 1000)).png")
-        guard let data = pngData(from: image) else { return nil }
-        do {
-            try data.write(to: url, options: .atomic)
-            Store.shared.addAIImage(prompt: prompt, path: url.path)
-            return url
-        } catch {
-            return nil
-        }
     }
 
     func downloadAIImage(path: String) {
@@ -2928,6 +3164,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         await waitForLoad(t)
         try? await Task.sleep(nanoseconds: 700_000_000)   // let the page settle
         let text = await readText(of: t)
+        let source = (t.webView.title?.isEmpty == false ? t.webView.title! : hostOf(u), u.absoluteString)
+        if !aiVisitedSources.contains(where: { $0.1 == source.1 }) { aiVisitedSources.append(source) }
         syncChrome(); refreshSidebar()
         assistant.setStatus("Thinking…")
         return "Opened \(u.absoluteString) in the browser. Title: \(t.webView.title ?? "")\n\nPage text:\n" + String(text.prefix(8000))
@@ -4352,6 +4590,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         syncChrome()
+        if let tab = tabs.first(where: { $0.webView === w }),
+           let resume = pendingMediaResume.removeValue(forKey: tab.id) {
+            let shouldPlay = resume.wasPlaying ? "true" : "false"
+            let js = """
+            (() => {
+              let tries = 0;
+              const restore = () => {
+                const video = document.querySelector('video');
+                if (video && video.readyState > 0 && Number.isFinite(video.duration)) {
+                  video.currentTime = \(resume.time);
+                  if (\(shouldPlay)) video.play().catch(() => {});
+                  return;
+                }
+                if (++tries < 40) setTimeout(restore, 250);
+              };
+              restore();
+            })()
+            """
+            w.evaluateJavaScript(js, completionHandler: nil)
+        }
         if isInternal(w) { injectBridgeState(into: w) }
         else if let u = w.url?.absoluteString {
             let isPrivateTab = tabs.first(where: { $0.webView === w })?.isPrivate ?? false
