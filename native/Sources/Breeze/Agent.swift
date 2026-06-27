@@ -289,7 +289,14 @@ enum Agent {
         for step in 0..<maxSteps {
             let reply: String
             do { reply = try await ask(prompt) }
-            catch { return (await recover(), chips) }      // self-heal on overflow / model error
+            catch {
+                // If the very first call fails, surface the real error (daily limit
+                // reached, network down, auth) instead of silently falling back to a
+                // canned "Done." — that masked a 429 and made Nav look broken. Once
+                // we've gathered something, self-heal from it instead.
+                if step == 0 && chips.isEmpty { throw error }
+                return (await recover(), chips)
+            }
             // On the last allowed step, force a plain answer (ignore any action). If
             // the model's reply is action-only / empty (still trying to act), don't
             // dump the canned fallback — synthesize a real answer from everything we

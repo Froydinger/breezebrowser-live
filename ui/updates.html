@@ -203,6 +203,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.0.2', icon: 'check-check', title: 'Clearer Nav', major: false, items: [
+        '<b>Honest Errors</b> — If Nav can\'t reach Breeze Cloud or you\'ve hit the daily limit, it now tells you plainly instead of replying with a vague “Done.”',
+        '<b>Higher Daily Limit</b> — Raised the daily Nav usage limit so heavy days don\'t cut you off early.' ] },
       { v: '5.0.1', icon: 'check-check', title: 'Tasks, Steadied', major: false, items: [
         '<b>Nav Fixed</b> — Resolved a regression that could make Nav reply with just “Done.” — it answers normally again.',
         '<b>Links Open Right</b> — Links meant to open in a new tab (<code>target="_blank"</code>) now reliably do, instead of sometimes doing nothing.',
