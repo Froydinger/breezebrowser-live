@@ -216,6 +216,13 @@ final class TabRowView: NSView, NSDraggingSource {
             onClose?()
             return
         }
+        // Select immediately on press. Waiting for mouseUp made tiny pointer
+        // movements start a drag session and swallow the selection event, forcing
+        // users to click the same tab two or three times.
+        if bounds.contains(point) {
+            onSelect?()
+            return  // selection rebuilds the sidebar; do not continue on this old row
+        }
         super.mouseDown(with: event)
     }
 
@@ -224,10 +231,6 @@ final class TabRowView: NSView, NSDraggingSource {
         let closePoint = close.convert(point, from: self)
         if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
             onClose?()
-            return
-        }
-        if bounds.contains(point) {
-            onSelect?()
             return
         }
         super.mouseUp(with: event)
