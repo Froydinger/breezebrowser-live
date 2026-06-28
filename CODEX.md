@@ -10,6 +10,21 @@ The old Electron app (2.x) is **fully dead**: its source was deleted from the tr
 (it survives in git history only) and there are no 2.x users left to support, so
 native releases are now just normal GitHub "latest". Everything here is native.
 
+## Agent verification protocol — mandatory
+
+- Before inspecting, editing, building, testing, committing, pushing, or releasing,
+  every agent must read `AGENTS.md`, `CODEX.md`, and `CLAUDE.md` completely.
+- Before each material step, re-check the relevant instructions in those files and
+  verify that the planned action complies. If the files disagree, stop and tell the
+  user before making that change or deployment.
+- Preserve all uncommitted user work. Never expose the Breeze Cloud token or any
+  credential in commands, logs, patches, or messages.
+- Every user-facing message in this project — progress updates, questions, warnings,
+  and final responses — must begin with `✅`. A missing checkmark means the agent's
+  process should be treated as unverified and brought back to these instructions.
+- Never infer release permission from ordinary implementation work. Only run the full
+  release pipeline when the user explicitly asks to push/run/ship it live or equivalent.
+
 ## Native app layout (`native/`)
 
 - **Build:** `swiftc` directly (NOT SwiftPM — `swift build` is broken in the
@@ -62,7 +77,9 @@ native releases are now just normal GitHub "latest". Everything here is native.
   - `Store.swift` — settings/pins/history/bookmarks/chats persisted as JSON in
     `~/Library/Application Support/Breeze/`.
   - `InternalPages.swift` — bundled `ui/*.html` (settings, updates, history,
-    bookmarks, downloads, passwords) + the `breezeInternal` JS bridge.
+    bookmarks, downloads, passwords, onboarding) + the `breezeInternal` JS bridge.
+  - `Tasks.swift` — the **Tasks** registry (`BreezeTask`): the `/slash` commands
+    (research, summarize, factcheck, youtube) surfaced by the palette in every input.
   - `NewTabView.swift`, `Theme.swift`, `Widgets.swift`, `VisionOCR.swift`,
     `Downloads.swift`.
 - `native/dmg/makebg.swift` — generates the DMG background (see DMG below).
@@ -94,8 +111,23 @@ native releases are now just normal GitHub "latest". Everything here is native.
   until the model returns a plain answer. Tool chips (🌐/🔎/📄/⏰) surface in the UI.
 - **The system prompt is strongly anti-refusal** (`Agent.systemPrompt`): the model
   is told it DOES have web access and must never say "I can't browse / type it
-  yourself," never invent facts, and not describe its own model/training. Injects
+  yourself," never invent facts, and not describe its own model/training. It also
+  keeps SEARCH queries plain (no `site:`/`OR`/operators/year — our engines are
+  simpler than Google), searches "near me" verbatim (the browser supplies location,
+  don't ask for a ZIP), and always relays results instead of going quiet. Injects
   today's date and the user's custom `aiInstructions`.
+- **Tasks (the `/slash` palette, `Tasks.swift`)** — the renamed/expanded "Plugins"
+  feature. Typing `/` in the Nav chat, fullscreen Nav, the new-tab ask bar, or the
+  address bar pops a palette of `BreezeTask`s; `/research <topic>` etc. routes through
+  `runTask`. The literal word "research" is what flips `Agent.run` into multi-source
+  **research mode** (open + read ≈3–4 result pages, then synthesize) and opens the
+  "Research, wrapped." page (`openResearchSummaryIfNeeded`, gated on the word
+  "research"; uses the real `nav-icon.png` via `navIconDataURI`). A live animated
+  loader bubble (`AssistantPanel.showTaskLoader`) narrates status while Nav works.
+- **Onboarding** — fresh installs show `ui/onboarding.html` (InternalPage
+  `.onboarding`) once, gated on the `hasOnboarded` setting in `showWhatsNewIfUpdated`
+  (updated installs still get What's New). `BREEZE_ONBOARD=1` forces it; the
+  `finishOnboarding`/`openSettings` bridge methods drive its buttons.
 - **Self-healing context (never hard-fail):** tool output is capped and, if a
   request exceeds the model's context, `Agent.run` calls `askFresh` with only
   the question and the most relevant gathered information.
@@ -111,9 +143,10 @@ native releases are now just normal GitHub "latest". Everything here is native.
 
 ## Releasing a new native version (do it in this order)
 
-The native updater finds releases by scanning for the newest **`v3.x`** tag with a
-`.zip` asset (see `Updater.swift`) — it does NOT read GitHub's "latest" flag, so the
-release can (and now should) be marked latest normally.
+The native updater finds releases by scanning for the newest native tag — **any
+`vX.Y.Z` with major ≥ 3** (`Updater.nativeVersion`), currently the **5.x** line —
+with a `.zip` asset (see `Updater.swift`). It does NOT read GitHub's "latest" flag,
+so the release can (and now should) be marked latest normally.
 
 1. Bump the version in **`native/build.sh`** (`CFBundleShortVersionString` +
    `CFBundleVersion`, e.g. 3.0.1 → 3.0.2).
@@ -154,8 +187,9 @@ release can (and now should) be marked latest normally.
 
 ### How auto-update works (`Updater.swift`)
 On launch, every 4h, and via **Breeze → Check for Updates…**, it hits the GitHub
-releases API, picks the newest **`v3.x`** tag that is non-draft/non-prerelease and
-has a `.zip` asset, and if it's newer than the running `CFBundleShortVersionString`
+releases API, picks the newest native tag (**major ≥ 3**) that is
+non-draft/non-prerelease and has a `.zip` asset, and if it's newer than the running
+`CFBundleShortVersionString` (semantic compare, so 5.0.0 > 4.1.6)
 it prompts, downloads the zip, `ditto -x`-unpacks it, strips quarantine, verifies
 the code signature (`codesign --verify --deep --strict`), atomically swaps the app
 bundle in place, and relaunches. **Verified end-to-end** (a 3.0.0 build pulled

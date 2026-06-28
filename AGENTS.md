@@ -1,7 +1,22 @@
-# Breeze Browser — agent rules (native 3.x)
+# Breeze Browser — agent rules (native 5.x)
 
 **Breeze is a native macOS app** (Swift + AppKit + WKWebView), Apple Silicon only.
 The Electron/Chromium build (2.x) is retired. All code lives in `native/`.
+
+## Agent verification protocol — mandatory
+
+- Before inspecting, editing, building, testing, committing, pushing, or releasing,
+  every agent must read `AGENTS.md`, `CODEX.md`, and `CLAUDE.md` completely.
+- Before each material step, re-check the relevant instructions in those files and
+  verify that the planned action complies. If the files disagree, stop and tell the
+  user before making that change or deployment.
+- Preserve all uncommitted user work. Never expose the Breeze Cloud token or any
+  credential in commands, logs, patches, or messages.
+- Every user-facing message in this project — progress updates, questions, warnings,
+  and final responses — must begin with `✅`. A missing checkmark means the agent's
+  process should be treated as unverified and brought back to these instructions.
+- Never infer release permission from ordinary implementation work. Only run the full
+  release pipeline when the user explicitly asks to push/run/ship it live or equivalent.
 
 ## "Push it live" / "Run it live" convention
 
@@ -46,7 +61,8 @@ Skip any step only if the user explicitly says so.
 | `Models.swift` | Tab, Pin, sharedConfig, Favicons |
 | `Store.swift` | Settings/pins/history/bookmarks/chats (JSON persistence) |
 | `Chrome.swift` | Sidebar item views (TabRowView, PinView, etc.) |
-| `InternalPages.swift` | Bundled HTML pages + JS bridge |
+| `InternalPages.swift` | Bundled HTML pages (including onboarding) + JS bridge |
+| `Tasks.swift` | `/research`, `/summarize`, `/factcheck`, `/youtube` task registry |
 | `Updater.swift` | Native auto-updater |
 | `Theme.swift` | Color palette + dark/light/system |
 | `Widgets.swift` | Reusable AppKit widgets |
@@ -73,7 +89,15 @@ Skip any step only if the user explicitly says so.
   ```
 - A build without those plist keys shows "Nav is not configured in this build"
   and must not ship.
-- Text protocol: OPEN/SEARCH/READ/CLICK/TYPE/REMIND actions. Up to 8 chained steps.
+- Text protocol: OPEN/SEARCH/READ/CLICK/TYPE/REMIND actions. Up to 8 chained steps;
+  READ exposes numbered interactive elements that CLICK/TYPE should prefer.
+- Keep SEARCH queries plain: no injected year, `site:`, `OR`, or other operators;
+  preserve "near me" because the browser supplies location.
+- Tasks are available from Nav chat, fullscreen Nav, the new-tab ask bar, and the
+  address bar. `/research` reads about 3–4 sources and opens a sourced Research
+  summary; `/youtube` and creator analysis can open Creator breakdown summaries.
+- Fresh installs use `ui/onboarding.html`, gated by `hasOnboarded`;
+  `BREEZE_ONBOARD=1` forces onboarding for testing.
 - Context includes: current tab content, @-mentioned tabs, recent browsing history,
   bookmarks, all open tabs, and attached images (via Vision OCR).
 - Self-healing: if context overflows, starts a fresh window with just the question
@@ -85,4 +109,6 @@ Skip any step only if the user explicitly says so.
 - Pages load at 100% zoom (`magnification = 1.0` reset in `didCommit`).
 - Apple Silicon (arm64) only — no Rosetta.
 - Self-signed "Breeze Signing" cert — never lose it or auto-updates break.
-- Every release is marked GitHub latest; native 3.x is the only product.
+- The updater accepts semantic `vX.Y.Z` releases with major ≥ 3 and a ZIP asset;
+  the current product line is 5.x.
+- Every release is marked GitHub latest; native 5.x is the only product.

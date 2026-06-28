@@ -149,7 +149,7 @@ func navLogo() -> NSImage? {
     return img
 }
 
-final class NewTabView: NSView {
+final class NewTabView: GradientBackgroundView {
     private let baseFieldHeight: CGFloat = 54
     private let maxFieldLines = 4
     private let logo = NSImageView()
@@ -271,6 +271,7 @@ final class NewTabView: NSView {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
+        needsDisplay = true
         let appAppearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)
         appearance = appAppearance
         clock.appearance = appAppearance

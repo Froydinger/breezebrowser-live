@@ -129,6 +129,26 @@
     .hero-list li { font-size: 14.5px; line-height: 1.58; color: var(--soft); padding-left: 18px; position: relative; }
     .hero-list li::before { content: ''; position: absolute; left: 1px; top: 0.75em; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
     .hero-list li b { color: var(--text); font-weight: 700; }
+    /* Compact treatment for one-fix patch releases. */
+    .hotfix-card {
+      display: grid; grid-template-columns: 44px 1fr; gap: 16px; align-items: start;
+      border-radius: 16px; padding: 18px 20px; margin-bottom: 38px;
+      color: var(--text); background: var(--card); border: 1px solid var(--line);
+      box-shadow: 0 12px 36px rgba(24,34,38,0.09);
+      animation: rise 0.45s var(--ease) backwards;
+    }
+    .hotfix-icon {
+      width: 44px; height: 44px; display: grid; place-items: center; border-radius: 13px;
+      color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent);
+    }
+    .hotfix-icon svg { width: 23px; height: 23px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .hotfix-meta { display: flex; align-items: center; gap: 9px; margin: 1px 0 6px; }
+    .hotfix-pill { font-size: 10px; line-height: 1; font-weight: 850; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+    .hotfix-version { font-size: 11px; color: var(--faint); font-weight: 750; }
+    .hotfix-title { font-family: Georgia, "Times New Roman", serif; font-size: 25px; line-height: 1.1; font-weight: 400; margin-bottom: 8px; }
+    .hotfix-list { gap: 0; }
+    .hotfix-list li { padding-left: 0; font-size: 14px; line-height: 1.52; }
+    .hotfix-list li::before { content: none; }
     /* small icon chip on each past release */
     .rel-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 9px;
       background: color-mix(in srgb, var(--accent) 12%, transparent); flex-shrink: 0; }
@@ -186,6 +206,7 @@
       'cpu': '<rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
       'bot': '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
       'maximize': '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+      'picture-in-picture': '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><rect x="12" y="12" width="9" height="7" rx="1"/>',
       'share': '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
       'rocket': '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
       'history': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
@@ -203,6 +224,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.0.5', icon: 'picture-in-picture', title: 'PiP, Without the Interruption', hotfix: true, major: false, items: [
+        '<b>Close and Keep Watching</b> — Closing the native Picture-in-Picture window now keeps you on your current tab and resumes the video in the background.' ] },
       { v: '5.0.4', icon: 'check-check', title: 'Research History & Snappier Tabs', major: false, items: [
         '<b>Summaries History</b> — A new <b>Summaries</b> tab in History keeps every Research and Creator breakdown you\'ve made, so you can reopen any of them anytime.',
         '<b>Sourced Research</b> — Research summaries now reliably list the source links they were built from.',
@@ -255,16 +278,28 @@
     const log = document.getElementById('log');
     const [latest, ...past] = RELEASES;
 
-    // The newest release gets a big, celebratory hero card with its icon.
-    const hero = document.createElement('div');
-    hero.className = 'hero';
-    hero.innerHTML =
-      '<div class="hero-orb o1"></div><div class="hero-orb o2"></div>' +
-      `<div class="hero-icon">${ic(latest.icon)}</div>` +
-      `<span class="hero-pill">Just landed · v${latest.v}</span>` +
-      `<h2 class="hero-title">${latest.title}</h2>` +
-      `<ul class="hero-list">${latest.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
-    log.appendChild(hero);
+    if (latest.hotfix) {
+      const hotfix = document.createElement('div');
+      hotfix.className = 'hotfix-card';
+      hotfix.innerHTML =
+        `<div class="hotfix-icon">${ic(latest.icon)}</div>` +
+        '<div class="hotfix-copy">' +
+        `<div class="hotfix-meta"><span class="hotfix-pill">Hotfix</span><span class="hotfix-version">v${latest.v}</span></div>` +
+        `<h2 class="hotfix-title">${latest.title}</h2>` +
+        `<ul class="hotfix-list">${latest.items.map((i) => `<li>${i}</li>`).join('')}</ul></div>`;
+      log.appendChild(hotfix);
+    } else {
+      // Feature releases get the large celebratory hero treatment.
+      const hero = document.createElement('div');
+      hero.className = 'hero';
+      hero.innerHTML =
+        '<div class="hero-orb o1"></div><div class="hero-orb o2"></div>' +
+        `<div class="hero-icon">${ic(latest.icon)}</div>` +
+        `<span class="hero-pill">Just landed · v${latest.v}</span>` +
+        `<h2 class="hero-title">${latest.title}</h2>` +
+        `<ul class="hero-list">${latest.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+      log.appendChild(hero);
+    }
 
     const head = document.createElement('div');
     head.className = 'past-head';

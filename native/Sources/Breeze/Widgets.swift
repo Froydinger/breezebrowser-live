@@ -4,7 +4,7 @@ import Cocoa
 
 /// Painted gradient background matching `body` in style.css:
 /// a 7% accent wash over the 160° bg gradient.
-final class GradientBackgroundView: NSView {
+class GradientBackgroundView: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
         guard let layer = layer else { return }

@@ -785,8 +785,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.removeFromSuperview()
         }
         for subview in webContainer.subviews {
-            if let pipTab = tabs.first(where: { $0.isInPiP && $0.webView === subview }), pipTab.id != current?.id {
-                pipTab.webView.isHidden = true
+            if let pipTab = tabs.first(where: { ($0.isInPiP || $0.keepsMediaAlive) && $0.webView === subview }), pipTab.id != current?.id {
+                // Keep PiP/background-media source views attached so playback can
+                // continue after native PiP closes. They stay behind the active tab
+                // in z-order, so the user only sees the current page.
+                pipTab.webView.isHidden = false
+                pipTab.webView.alphaValue = 1
             } else {
                 subview.removeFromSuperview()
             }
@@ -834,7 +838,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         let primary: NSView = t.isNewTab ? newTab : t.webView
-        if t.isNewTab { newTab.startClock() } else { newTab.stopClock(); t.webView.isHidden = false }
+        if t.isNewTab { newTab.startClock() } else {
+            newTab.stopClock()
+            t.webView.isHidden = false
+            t.webView.alphaValue = 1
+        }
 
         // If assistant was in a chat tab, re-attach it to root and restore sidebar constraints
         if assistant.superview == nil || assistant.superview == webContainer {
@@ -1518,7 +1526,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if active != i { autoPipLeavingTab() }
 
         active = i
-        if let t = current { t.lastActive = Date(); if t.sleeping { wake(t) } }
+        if let t = current {
+            t.keepsMediaAlive = false
+            t.lastActive = Date()
+            if t.sleeping { wake(t) }
+        }
         showActive(); refreshSidebar()
         if assistantOpen { updateAIContextPills() }
     }
@@ -3746,10 +3758,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let title = body["title"] as? String, !title.isEmpty { t.mediaTitle = title }
         if pipEvent == "enter" {
             t.isInPiP = true
+            t.keepsMediaAlive = false
             nowPlayingTab = t
         } else if pipEvent == "leave" {
             t.isInPiP = false
-            if current?.id != t.id { t.webView.removeFromSuperview() }
+            t.webView.alphaValue = 1
+            if current?.id == t.id {
+                t.keepsMediaAlive = false
+            } else {
+                // X dismisses without requesting a restore. Keep the user on their
+                // current tab and resume the video that AVKit pauses while closing.
+                t.keepsMediaAlive = true
+                t.isPlaying = true
+                t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.paused)v.play().catch(function(){});})()")
+            }
         } else if playing {
             nowPlayingTab = t
         }

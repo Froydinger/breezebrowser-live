@@ -251,6 +251,7 @@ final class Tab {
     var mediaTitle = ""
     var lastMediaPauseAt: Date?
     var isInPiP = false
+    var keepsMediaAlive = false  // native PiP X dismissed; keep background playback attached
     var sleeping = false         // discarded to save memory; reloads on activate
     var sleptURL: String?        // URL to restore when woken
     var lastActive = Date()

@@ -10,6 +10,21 @@ The old Electron app (2.x) is **fully dead**: its source was deleted from the tr
 (it survives in git history only) and there are no 2.x users left to support, so
 native releases are now just normal GitHub "latest". Everything here is native.
 
+## Agent verification protocol — mandatory
+
+- Before inspecting, editing, building, testing, committing, pushing, or releasing,
+  every agent must read `AGENTS.md`, `CODEX.md`, and `CLAUDE.md` completely.
+- Before each material step, re-check the relevant instructions in those files and
+  verify that the planned action complies. If the files disagree, stop and tell the
+  user before making that change or deployment.
+- Preserve all uncommitted user work. Never expose the Breeze Cloud token or any
+  credential in commands, logs, patches, or messages.
+- Every user-facing message in this project — progress updates, questions, warnings,
+  and final responses — must begin with `✅`. A missing checkmark means the agent's
+  process should be treated as unverified and brought back to these instructions.
+- Never infer release permission from ordinary implementation work. Only run the full
+  release pipeline when the user explicitly asks to push/run/ship it live or equivalent.
+
 ## Native app layout (`native/`)
 
 - **Build:** `swiftc` directly (NOT SwiftPM — `swift build` is broken in the
