@@ -224,6 +224,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.0.7', icon: 'download', title: 'Images Open, Downloads Download', hotfix: true, major: false, items: [
+        '<b>No More White Image Tabs</b> — Opening an image or media link in a new tab now displays it normally instead of leaving a blank, endlessly loading page.',
+        '<b>Downloads, Not Guesswork</b> — Breeze now follows real download signals from links and servers instead of guessing from filenames, while explicit downloads continue to save normally.' ] },
       { v: '5.0.6', icon: 'check-check', title: 'Tabs on the First Click', hotfix: true, major: false, items: [
         '<b>One Click Means One Click</b> — Sidebar tabs now switch immediately when pressed, instead of occasionally needing two or three clicks.' ] },
       { v: '5.0.5', icon: 'picture-in-picture', title: 'PiP, Without the Interruption', hotfix: true, major: false, items: [

@@ -3874,7 +3874,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if navigationAction.navigationType == .linkActivated,
            navigationAction.modifierFlags.contains(.command),
            let source = tabs.first(where: { $0.webView === w }) {
-            openTab(url: url, from: source, autoGroupSameSite: true)
+            let tab = openTab(url: httpsUpgraded(url), from: source, autoGroupSameSite: true)
+            popupDownloadCandidates.insert(tab.id)
+            decisionHandler(.cancel)
+            return
+        }
+        // A clicked link aimed at a new window has no target frame. Handle it
+        // before current-frame URL rewriting so target="_blank" never hijacks
+        // the source tab. Keep the new tab marked until real content commits so
+        // response-driven downloads can close the otherwise blank tab.
+        if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame == nil,
+           scheme == "http" || scheme == "https" {
+            let dest = httpsUpgraded(url)
+            let tab: Tab
+            if let source = tabs.first(where: { $0.webView === w }) {
+                tab = openTab(url: dest, from: source, autoGroupSameSite: true)
+            } else {
+                tab = openTab(url: dest)
+            }
+            popupDownloadCandidates.insert(tab.id)
             decisionHandler(.cancel)
             return
         }
@@ -3889,35 +3907,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 return
             }
         }
-        if isDownloadIntentURL(url) || isLikelyFileURL(url) {
-            if #available(macOS 11.3, *) {
-                decisionHandler(.download)
-            } else {
-                startExplicitDownload(url, in: w)
-                decisionHandler(.cancel)
-            }
-            return
-        }
         // `<a download>`, blob:/data: download links, and right-click "Download
         // Linked File" set shouldPerformDownload. WebKit won't save the file
         // unless we answer .download here — otherwise it just navigates and the
         // download silently never happens (the "can't download anything" bug).
         if #available(macOS 11.3, *), navigationAction.shouldPerformDownload {
             decisionHandler(.download)
-            return
-        }
-        // A clicked link aimed at a new window (target="_blank") has no target frame.
-        // WebKit's createWebView path doesn't reliably fire for these, so some such
-        // links would silently do nothing — open them in a new tab ourselves.
-        if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame == nil,
-           scheme == "http" || scheme == "https" {
-            let dest = httpsUpgraded(url)
-            if let source = tabs.first(where: { $0.webView === w }) {
-                openTab(url: dest, from: source, autoGroupSameSite: true)
-            } else {
-                openTab(url: dest)
-            }
-            decisionHandler(.cancel)
             return
         }
         decisionHandler(.allow)
@@ -3998,29 +3993,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if host.hasSuffix("drive.google.com") && path == "/uc" && (hasConfirm || exportDownload) { return true }
         if host.hasSuffix("googleusercontent.com") && path.contains("/download") && hasConfirm { return true }
         return false
-    }
-
-    func isDownloadIntentURL(_ url: URL) -> Bool {
-        if isGoogleDriveConfirmedDownload(url) { return true }
-        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
-        let path = comps.path.lowercased()
-        let host = comps.host?.lowercased() ?? ""
-        let items = comps.queryItems ?? []
-        if path.split(separator: "/").contains(where: { $0 == "download" }) { return true }
-        if items.contains(where: { ["download", "dl"].contains($0.name.lowercased()) }) { return true }
-        if items.contains(where: { $0.name.lowercased() == "response-content-disposition" }) { return true }
-        if host.contains("pexels.com") && (path.contains("/download") || items.contains(where: { $0.name.lowercased().contains("download") })) { return true }
-        return false
-    }
-
-    func isLikelyFileURL(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        return [
-            "zip", "dmg", "pkg", "tar", "gz", "rar", "7z",
-            "mp4", "m4v", "mov", "webm", "mp3", "m4a", "wav", "ogg",
-            "png", "jpg", "jpeg", "webp", "gif", "svg", "avif",
-            "doc", "docx", "xls", "xlsx", "ppt", "pptx"
-        ].contains(ext)
     }
 
     func shouldDownloadResponse(_ response: URLResponse) -> Bool {
@@ -4130,7 +4102,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func openContextLinkInNewTab() {
         guard let url = contextLinkURL else { return }
-        openTab(url: url, from: current, autoGroupSameSite: true)
+        let tab = openTab(url: url, from: current, autoGroupSameSite: true)
+        popupDownloadCandidates.insert(tab.id)
     }
 
     @objc func openContextLinkInNewWindow() {
@@ -4153,7 +4126,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func openContextImageInNewTab() {
         guard let url = contextImageURL else { return }
-        openTab(url: url, from: current, autoGroupSameSite: false)
+        let tab = openTab(url: url, from: current, autoGroupSameSite: false)
+        popupDownloadCandidates.insert(tab.id)
     }
 
     @objc func downloadContextImage() {
@@ -4189,7 +4163,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func openContextMediaInNewTab() {
         guard let url = contextMediaURL else { return }
-        openTab(url: url, from: current, autoGroupSameSite: false)
+        let tab = openTab(url: url, from: current, autoGroupSameSite: false)
+        popupDownloadCandidates.insert(tab.id)
     }
 
     @objc func downloadContextMedia() {
@@ -4737,11 +4712,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // a reload or follow-up main-frame load can proceed normally.
         if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
         guard let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? w.url else { return }
-        if isDownloadIntentURL(failing) || isLikelyFileURL(failing) {
-            startExplicitDownload(failing, in: w)
-            if w.canGoBack { w.goBack() }
-            return
-        }
         let escapedURL = failing.absoluteString.htmlEscaped
         let escapedMessage = error.localizedDescription.htmlEscaped
         let retryURL = failing.absoluteString.jsEscaped
@@ -4766,8 +4736,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let tab = tabs.first(where: { $0.webView === w }),
            popupDownloadCandidates.contains(tab.id),
            let url = w.url,
-           !isDownloadIntentURL(url),
-           !isLikelyFileURL(url) {
+           url.scheme?.lowercased() != "about" {
             popupDownloadCandidates.remove(tab.id)
         }
         syncChrome()
@@ -4776,11 +4745,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, createWebViewWith cfg: WKWebViewConfiguration,
                  for a: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let t = tabs.first(where: { $0.webView === w }), blockedPopups.contains(t.id) { return nil }
-        if let url = a.request.url {
-            if isDownloadIntentURL(url) || isLikelyFileURL(url) || a.shouldPerformDownload {
+        if let url = a.request.url, a.shouldPerformDownload {
                 startExplicitDownload(url, in: w)
                 return nil
-            }
         }
         
         cfg.websiteDataStore = w.configuration.websiteDataStore
