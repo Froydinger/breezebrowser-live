@@ -320,28 +320,28 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if initialContent == .empty {
             refreshSidebar()
         } else if isPrivateWindow {
-            openNewTab(isPrivate: true)
+            openNewTab(isPrivate: true, playSound: false)
         } else if initialContent == .newTab {
-            openNewTab()
+            openNewTab(playSound: false)
         } else if BrowserController.sharedTabs.isEmpty {
             let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
             if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
-                for url in Store.shared.openTabs { openTab(url: url) }
+                for url in Store.shared.openTabs { openTab(url: url, playSound: false) }
             } else if restoreMode == "ask" && !Store.shared.openTabs.isEmpty {
-                openNewTab()
+                openNewTab(playSound: false)
                 let alert = NSAlert()
                 alert.messageText = "Restore Previous Session?"
                 alert.informativeText = "You had \(Store.shared.openTabs.count) tabs open. Would you like to restore them?"
                 alert.addButton(withTitle: "Restore")
                 alert.addButton(withTitle: "Start Fresh")
                 if alert.runModal() == .alertFirstButtonReturn {
-                    for url in Store.shared.openTabs { openTab(url: url) }
+                    for url in Store.shared.openTabs { openTab(url: url, playSound: false) }
                     closeTab(tabs[0]) // close the initial new tab
                 } else {
                     Store.shared.openTabs = []; Store.shared.saveOpenTabs()
                 }
             } else {
-                openNewTab()
+                openNewTab(playSound: false)
             }
         } else {
             active = 0
@@ -1338,8 +1338,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Tab ops -------------------------------------------------------
 
-    func openNewTab(isPrivate: Bool = false) {
+    func openNewTab(isPrivate: Bool = false, playSound: Bool = true) {
         autoPipLeavingTab()                       // keep a playing video alive via PiP
+        if playSound { BreezeSounds.shared.play(.newTab) }
         let p = isPrivate || isPrivateWindow
         let t = Tab(isPrivate: p)
         wire(t)
@@ -1350,7 +1351,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     @discardableResult
-    func openTab(url: String, isPrivate: Bool = false) -> Tab {
+    func openTab(url: String, isPrivate: Bool = false, playSound: Bool = true) -> Tab {
+        if playSound { BreezeSounds.shared.play(.newTab) }
         let p = isPrivate || isPrivateWindow
         let t = Tab(isPrivate: p); t.isNewTab = false
         wire(t)
@@ -3503,7 +3505,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let content = UNMutableNotificationContent()
             content.title = "Breeze reminder"
             content.body = text
-            if Store.shared.settings["notificationSounds"] as? Bool != false { content.sound = .default }
+            content.sound = BreezeSounds.shared.notificationSound()
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
             try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
 
@@ -3546,7 +3548,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 let txt = r["label"] as? String ?? "Reminder"
                 let content = UNMutableNotificationContent()
                 content.title = "Breeze reminder"; content.body = txt
-                if Store.shared.settings["notificationSounds"] as? Bool != false { content.sound = .default }
+                content.sound = BreezeSounds.shared.notificationSound()
                 let trig = UNTimeIntervalNotificationTrigger(timeInterval: secs, repeats: false)
                 center.add(UNNotificationRequest(identifier: id, content: content, trigger: trig))
                 live.append(r)
@@ -3967,18 +3969,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         downloads.insert(it, at: 0)
         broadcastDownloads()
+        BreezeSounds.shared.play(.downloadStarted)
         completionHandler(dest)
     }
     func downloadDidFinish(_ download: WKDownload) {
         if let it = item(for: download) { it.state = .completed; it.received = it.total }
         activeDownloads[ObjectIdentifier(download)] = nil
+        BreezeSounds.shared.play(.downloadComplete)
         broadcastDownloads()
     }
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        if let it = item(for: download) { it.state = .failed }
+        let wasCancelled = item(for: download)?.state == .cancelled
+        if let it = item(for: download), !wasCancelled { it.state = .failed }
         activeDownloads[ObjectIdentifier(download)] = nil
         print("Breeze download failed: \(error.localizedDescription) [\(download.originalRequest?.url?.absoluteString ?? "unknown URL")] ")
-        NSSound.beep()
+        if !wasCancelled { BreezeSounds.shared.play(.downloadFailed) }
         broadcastDownloads()
     }
 
@@ -4568,6 +4573,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if changedKey == nil || changedKey == "clock24" || changedKey == "showGreeting" || changedKey == "userName" {
             newTab.tick()
         }
+        if changedKey == "notificationSounds" || changedKey == "browserSoundVolume" {
+            initReminders()
+        }
     }
 
     func shareCurrentPage(from view: NSView?) {
@@ -4712,6 +4720,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // a reload or follow-up main-frame load can proceed normally.
         if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
         guard let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? w.url else { return }
+        BreezeSounds.shared.play(.error)
         let escapedURL = failing.absoluteString.htmlEscaped
         let escapedMessage = error.localizedDescription.htmlEscaped
         let retryURL = failing.absoluteString.jsEscaped
@@ -4757,6 +4766,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.isNewTab = false
         wire(t)
         popupDownloadCandidates.insert(t.id)
+        BreezeSounds.shared.play(.newTab)
         
         tabs.append(t)
         active = tabs.count - 1

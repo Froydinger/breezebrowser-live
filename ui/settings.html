@@ -340,11 +340,73 @@
         </div>
         <div class="row">
           <div>
-            <div class="row-label">Breeze notification sounds</div>
-            <div class="row-hint">Play a short chime for downloads, reminders, and other Breeze alerts.</div>
+            <div class="row-label">Sound volume</div>
+            <div class="row-hint">Sets the volume for Breeze interface sounds below.</div>
+          </div>
+          <select id="browserSoundVolume">
+            <option value="20">20%</option>
+            <option value="50">50%</option>
+            <option value="70">70%</option>
+            <option value="100">100%</option>
+          </select>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">New tab sounds</div>
+            <div class="row-hint">Play when Breeze opens a new or linked tab.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="newTabSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Notification sounds</div>
+            <div class="row-hint">Use the Breeze notification sound for reminders and alerts.</div>
           </div>
           <label class="toggle">
             <input type="checkbox" id="notificationSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Download started sounds</div>
+            <div class="row-hint">Play once a download has a destination and begins.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="downloadStartedSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Download complete sounds</div>
+            <div class="row-hint">Play when a download finishes successfully.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="downloadCompleteSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Download failed sounds</div>
+            <div class="row-hint">Play when a download cannot finish.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="downloadFailedSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Page error sounds</div>
+            <div class="row-hint">Play when Breeze shows a connection or page-load error.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="errorSounds" />
             <span class="knob"></span>
           </label>
         </div>
@@ -862,7 +924,13 @@
       document.getElementById('adblockModeSelect').value = adMode;
       document.getElementById('webNotifications').checked = settings.webNotifications !== false;
       document.getElementById('webNotifications2').checked = settings.webNotifications !== false;
+      document.getElementById('browserSoundVolume').value = String(settings.browserSoundVolume || 70);
+      document.getElementById('newTabSounds').checked = settings.newTabSounds !== false;
       document.getElementById('notificationSounds').checked = settings.notificationSounds !== false;
+      document.getElementById('downloadStartedSounds').checked = settings.downloadStartedSounds !== false;
+      document.getElementById('downloadCompleteSounds').checked = settings.downloadCompleteSounds !== false;
+      document.getElementById('downloadFailedSounds').checked = settings.downloadFailedSounds !== false;
+      document.getElementById('errorSounds').checked = settings.errorSounds !== false;
       document.getElementById('updateSounds').checked = settings.updateSounds !== false;
 
       document.querySelectorAll('#pinsize-seg button').forEach((b) =>
@@ -948,7 +1016,13 @@
     });
     document.getElementById('webNotifications').addEventListener('change', (e) => set('webNotifications', e.target.checked));
     document.getElementById('webNotifications2').addEventListener('change', (e) => set('webNotifications', e.target.checked));
+    document.getElementById('browserSoundVolume').addEventListener('change', (e) => set('browserSoundVolume', Number(e.target.value)));
+    document.getElementById('newTabSounds').addEventListener('change', (e) => set('newTabSounds', e.target.checked));
     document.getElementById('notificationSounds').addEventListener('change', (e) => set('notificationSounds', e.target.checked));
+    document.getElementById('downloadStartedSounds').addEventListener('change', (e) => set('downloadStartedSounds', e.target.checked));
+    document.getElementById('downloadCompleteSounds').addEventListener('change', (e) => set('downloadCompleteSounds', e.target.checked));
+    document.getElementById('downloadFailedSounds').addEventListener('change', (e) => set('downloadFailedSounds', e.target.checked));
+    document.getElementById('errorSounds').addEventListener('change', (e) => set('errorSounds', e.target.checked));
     document.getElementById('updateSounds').addEventListener('change', (e) => set('updateSounds', e.target.checked));
 
     document.querySelectorAll('#pinsize-seg button').forEach((b) =>

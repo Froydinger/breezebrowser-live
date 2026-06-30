@@ -49,6 +49,11 @@ cp ../nav-icon.png "$APP/Contents/Resources/nav-icon.png" 2>/dev/null || true
 # Bundle the internal HTML pages (settings, updates, history, bookmarks, …).
 mkdir -p "$APP/Contents/Resources/ui"
 cp -R ../ui/. "$APP/Contents/Resources/ui/" 2>/dev/null || true
+# Bundle Breeze-owned interface sounds. Notification variants live at the
+# Resources root because UserNotifications resolves custom sounds there.
+mkdir -p "$APP/Contents/Resources/Sounds"
+cp Resources/Sounds/*.mp3 "$APP/Contents/Resources/Sounds/"
+cp Resources/Sounds/BreezeNotification*.aiff "$APP/Contents/Resources/"
 # Bundle the EasyList adblock rules
 cp easylist.json "$APP/Contents/Resources/easylist.json" 2>/dev/null || true
 cp "READ THIS FIRST.txt" "$OUT_DIR/READ THIS FIRST.txt" 2>/dev/null || true
@@ -60,8 +65,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>5.0.7</string>
-  <key>CFBundleShortVersionString</key><string>5.0.7</string>
+  <key>CFBundleVersion</key><string>5.0.8</string>
+  <key>CFBundleShortVersionString</key><string>5.0.8</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>

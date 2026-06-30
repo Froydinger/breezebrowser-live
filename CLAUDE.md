@@ -184,6 +184,9 @@ so the release can (and now should) be marked latest normally.
    the 3 download links + schema `downloadUrl` at
    `releases/download/vX.Y.Z/Breeze-X.Y.Z-arm64.dmg` and bump `softwareVersion`.
    `gh repo clone Froydinger/breezebrowser /tmp/lander`, edit, commit, push.
+6. Update this repo's tracked fallback page: set `site/index.html`'s `MAC_URL`
+   to the exact versioned DMG asset. Never use `releases/latest/download` with
+   `Breeze-arm64.dmg`; release assets are versioned and that URL returns 404.
 
 ### How auto-update works (`Updater.swift`)
 On launch, every 4h, and via **Breeze → Check for Updates…**, it hits the GitHub

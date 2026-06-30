@@ -41,6 +41,8 @@ do the FULL release pipeline — not just `git push`. The complete steps:
 9. **Update the lander** (`Froydinger/breezebrowser`, `index.html`) so all three
    download links and schema `downloadUrl` target the new DMG, and bump
    `softwareVersion`. Commit and push the lander update.
+10. **Update the tracked fallback site** — set `site/index.html`'s `MAC_URL` to
+    the exact versioned DMG asset (`Breeze-X.Y.Z-arm64.dmg`) before committing.
 
 Skip any step only if the user explicitly says so.
 
