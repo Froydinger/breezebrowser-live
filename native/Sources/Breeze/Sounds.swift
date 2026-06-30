@@ -8,6 +8,9 @@ enum BreezeSoundEvent: Hashable {
     case downloadComplete
     case downloadFailed
     case error
+    case splitOpened
+    case splitClosed
+    case sitePinned
 
     var settingKey: String {
         switch self {
@@ -17,6 +20,9 @@ enum BreezeSoundEvent: Hashable {
         case .downloadComplete: return "downloadCompleteSounds"
         case .downloadFailed: return "downloadFailedSounds"
         case .error: return "errorSounds"
+        case .splitOpened: return "splitOpenedSounds"
+        case .splitClosed: return "splitClosedSounds"
+        case .sitePinned: return "sitePinnedSounds"
         }
     }
 
@@ -28,6 +34,9 @@ enum BreezeSoundEvent: Hashable {
         case .downloadComplete: return "download-complete"
         case .downloadFailed: return "download-failed"
         case .error: return "error"
+        case .splitOpened: return "split-opened"
+        case .splitClosed: return "split-closed"
+        case .sitePinned: return "site-pinned"
         }
     }
 }
@@ -38,13 +47,13 @@ final class BreezeSounds {
     static let shared = BreezeSounds()
 
     private var sounds: [BreezeSoundEvent: NSSound] = [:]
-    private let allowedVolumes = [20, 50, 70, 100]
+    private let allowedVolumes = [10, 20, 50, 70, 100]
 
     private init() {}
 
     var volumePercent: Int {
-        let stored = (Store.shared.settings["browserSoundVolume"] as? NSNumber)?.intValue ?? 70
-        return allowedVolumes.contains(stored) ? stored : 70
+        let stored = (Store.shared.settings["browserSoundVolume"] as? NSNumber)?.intValue ?? 10
+        return allowedVolumes.contains(stored) ? stored : 10
     }
 
     func isEnabled(_ event: BreezeSoundEvent) -> Bool {
@@ -75,7 +84,7 @@ final class BreezeSounds {
     }
 
     /// UserNotifications has no runtime volume property, so the bundle contains
-    /// four pre-scaled copies of the supplied notification sound.
+    /// pre-scaled copies of the supplied notification sound.
     func notificationSound() -> UNNotificationSound? {
         guard isEnabled(.notification) else { return nil }
         let name = UNNotificationSoundName(rawValue: "BreezeNotification\(volumePercent).aiff")

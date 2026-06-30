@@ -9,7 +9,7 @@ import CoreImage
 import QuartzCore
 import CoreServices
 
-let SIDEBAR_W: CGFloat = 286
+let SIDEBAR_W: CGFloat = 200
 
 enum BrowserInitialContent {
     case restoredSession, newTab, empty
@@ -187,10 +187,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         root.addSubview(topBar)
         buildFindBar()
 
-        if Store.shared.string("sidebarWidthDefaultVersion") != "3.8.6" {
+        if Store.shared.string("sidebarWidthDefaultVersion") != "5.0.9" {
             sidebarWidth = SIDEBAR_W
             Store.shared.settings["sidebarWidth"] = Double(sidebarWidth)
-            Store.shared.settings["sidebarWidthDefaultVersion"] = "3.8.6"
+            Store.shared.settings["sidebarWidthDefaultVersion"] = "5.0.9"
             Store.shared.saveSettings()
         } else if let w = Store.shared.settings["sidebarWidth"] as? Double, w >= 200, w <= 460 {
             sidebarWidth = w
@@ -1023,8 +1023,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         
         showActive()
         refreshSidebar()
+        BreezeSounds.shared.play(.splitOpened)
     }
     func exitSplit(_ t: Tab) {
+        guard t.splitPartnerId != nil else { return }
         if let partnerId = t.splitPartnerId, let partner = tabs.first(where: { $0.id == partnerId }) {
             partner.splitPartnerId = nil
             partner.splitIsRight = false
@@ -1033,6 +1035,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.splitIsRight = false
         showActive()
         refreshSidebar()
+        BreezeSounds.shared.play(.splitClosed)
     }
 
     @objc func dragSplit(_ g: NSPanGestureRecognizer) {
@@ -1582,6 +1585,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard let url = t.webView.url?.absoluteString else { return }
         if !pins.contains(where: { $0.url == url }) {
             pins.append(Pin(url: url, title: t.title)); persistPins()
+            BreezeSounds.shared.play(.sitePinned)
         }
         t.pinUrl = url
         refreshSidebar()
@@ -1595,7 +1599,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             reloadPinnedTabIfBlank(t, url: url)
             return
         }
-        openTab(url: url)
+        openTab(url: url, playSound: false)
         current?.pinUrl = url
         if let t = current { reloadPinnedTabIfBlank(t, url: url) }
         refreshSidebar()
@@ -3833,7 +3837,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { _ in }
     }
     func backToNowPlaying() {
-        if let t = nowPlayingTab, let i = tabs.firstIndex(where: { $0.id == t.id }) { select(i) }
+        guard let t = nowPlayingTab, let i = tabs.firstIndex(where: { $0.id == t.id }) else { return }
+        if current?.id != t.id {
+            select(i)
+        } else {
+            pip(for: t.webView, toggle: true)
+        }
     }
 
     // MARK: - Downloads -----------------------------------------------------

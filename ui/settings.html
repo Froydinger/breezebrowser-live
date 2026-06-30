@@ -344,6 +344,7 @@
             <div class="row-hint">Sets the volume for Breeze interface sounds below.</div>
           </div>
           <select id="browserSoundVolume">
+            <option value="10">10%</option>
             <option value="20">20%</option>
             <option value="50">50%</option>
             <option value="70">70%</option>
@@ -407,6 +408,36 @@
           </div>
           <label class="toggle">
             <input type="checkbox" id="errorSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Open split view sounds</div>
+            <div class="row-hint">Play when a second tab enters split view.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="splitOpenedSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Close split view sounds</div>
+            <div class="row-hint">Play when Breeze leaves split view.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="splitClosedSounds" />
+            <span class="knob"></span>
+          </label>
+        </div>
+        <div class="row">
+          <div>
+            <div class="row-label">Pin site sounds</div>
+            <div class="row-hint">Play when a site is added to pinned apps.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="sitePinnedSounds" />
             <span class="knob"></span>
           </label>
         </div>
@@ -924,13 +955,16 @@
       document.getElementById('adblockModeSelect').value = adMode;
       document.getElementById('webNotifications').checked = settings.webNotifications !== false;
       document.getElementById('webNotifications2').checked = settings.webNotifications !== false;
-      document.getElementById('browserSoundVolume').value = String(settings.browserSoundVolume || 70);
+      document.getElementById('browserSoundVolume').value = String(settings.browserSoundVolume || 10);
       document.getElementById('newTabSounds').checked = settings.newTabSounds !== false;
       document.getElementById('notificationSounds').checked = settings.notificationSounds !== false;
       document.getElementById('downloadStartedSounds').checked = settings.downloadStartedSounds !== false;
       document.getElementById('downloadCompleteSounds').checked = settings.downloadCompleteSounds !== false;
       document.getElementById('downloadFailedSounds').checked = settings.downloadFailedSounds !== false;
       document.getElementById('errorSounds').checked = settings.errorSounds !== false;
+      document.getElementById('splitOpenedSounds').checked = settings.splitOpenedSounds !== false;
+      document.getElementById('splitClosedSounds').checked = settings.splitClosedSounds !== false;
+      document.getElementById('sitePinnedSounds').checked = settings.sitePinnedSounds !== false;
       document.getElementById('updateSounds').checked = settings.updateSounds !== false;
 
       document.querySelectorAll('#pinsize-seg button').forEach((b) =>
@@ -1023,6 +1057,9 @@
     document.getElementById('downloadCompleteSounds').addEventListener('change', (e) => set('downloadCompleteSounds', e.target.checked));
     document.getElementById('downloadFailedSounds').addEventListener('change', (e) => set('downloadFailedSounds', e.target.checked));
     document.getElementById('errorSounds').addEventListener('change', (e) => set('errorSounds', e.target.checked));
+    document.getElementById('splitOpenedSounds').addEventListener('change', (e) => set('splitOpenedSounds', e.target.checked));
+    document.getElementById('splitClosedSounds').addEventListener('change', (e) => set('splitClosedSounds', e.target.checked));
+    document.getElementById('sitePinnedSounds').addEventListener('change', (e) => set('sitePinnedSounds', e.target.checked));
     document.getElementById('updateSounds').addEventListener('change', (e) => set('updateSounds', e.target.checked));
 
     document.querySelectorAll('#pinsize-seg button').forEach((b) =>

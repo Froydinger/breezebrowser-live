@@ -46,7 +46,10 @@ final class Store {
         "downloadCompleteSounds": true,
         "downloadFailedSounds": true,
         "errorSounds": true,
-        "browserSoundVolume": 70,
+        "splitOpenedSounds": true,
+        "splitClosedSounds": true,
+        "sitePinnedSounds": true,
+        "browserSoundVolume": 10,
         "updateSounds": true,
         "autoPip": true,
         "keepPinnedAppsAwake": true,
@@ -100,6 +103,10 @@ final class Store {
             for (k, v) in saved { s[k] = v }
         }
         s["accent"] = Store.defaults["accent"]
+        if s["browserSoundVolumeDefaultVersion"] as? String != "5.0.9" {
+            s["browserSoundVolume"] = 10
+            s["browserSoundVolumeDefaultVersion"] = "5.0.9"
+        }
         settings = s
 
         if let data = try? Data(contentsOf: pinsURL),
