@@ -69,6 +69,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     lazy var placeholderView = TabPlaceholderView()
     var downloads: [DownloadItem] = []
     var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
+    var pendingDownloadBroadcast: DispatchWorkItem?
     var contextLinkURL: URL?
     var contextImageURL: URL?
     var contextMediaURL: URL?
@@ -3848,8 +3849,28 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Downloads -----------------------------------------------------
 
     func broadcastDownloads() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.broadcastDownloads() }
+            return
+        }
+        pendingDownloadBroadcast?.cancel()
+        pendingDownloadBroadcast = nil
         let js = "if(window.__bzOnDownloads)window.__bzOnDownloads(\(Store.json(downloadList)));"
         for t in tabs where isInternal(t.webView) { t.webView.evaluateJavaScript(js) }
+    }
+
+    /// WKDownload progress can report many times per second. Coalesce those
+    /// ticks so internal pages update smoothly without flooding WebKit's JS
+    /// bridge. State changes still call broadcastDownloads() immediately.
+    func scheduleDownloadBroadcast() {
+        guard pendingDownloadBroadcast == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingDownloadBroadcast = nil
+            self.broadcastDownloads()
+        }
+        pendingDownloadBroadcast = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     func item(for d: WKDownload) -> DownloadItem? { downloads.first { $0.wk === d } }
@@ -3972,9 +3993,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         it.wk = download; it.localURL = dest
         it.total = response.expectedContentLength
         it.obs = download.progress.observe(\.completedUnitCount) { [weak self, weak it] p, _ in
-            guard let it else { return }
-            it.received = p.completedUnitCount; it.total = p.totalUnitCount
-            DispatchQueue.main.async { self?.broadcastDownloads() }
+            let received = p.completedUnitCount
+            let total = p.totalUnitCount
+            DispatchQueue.main.async {
+                guard let self, let it else { return }
+                it.received = received
+                it.total = total
+                self.scheduleDownloadBroadcast()
+            }
         }
         downloads.insert(it, at: 0)
         broadcastDownloads()

@@ -225,6 +225,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.0', icon: 'download', title: 'Downloads, Settled Down', hotfix: true, major: false, items: [
+        '<b>One Download, One Row</b> — Progress updates now reconcile against each download\'s real ID instead of duplicating the list.',
+        '<b>Smooth Progress</b> — Download updates are paced and rendered efficiently, eliminating the constant page stutter.',
+        '<b>Cancel Means Cancel</b> — Cancelling updates the existing download cleanly instead of leaving repeated or broken rows behind.' ] },
       { v: '5.0.9', icon: 'volume-2', title: 'A Quieter, Roomier Breeze', major: false, items: [
         '<b>More Sounds, More Control</b> — Split view, closing split view, and pinning a site each have their own sound and independent Settings toggle.',
         '<b>Gentler by Default</b> — Added a 10% sound-volume option and made it the new default for everyone.',

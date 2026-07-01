@@ -133,9 +133,12 @@
 
     .bar-fill {
       height: 100%;
+      width: 100%;
       background: var(--accent);
       border-radius: 2px;
-      transition: width 0.25s var(--ease);
+      transform: scaleX(0);
+      transform-origin: left center;
+      transition: transform 0.12s linear;
     }
 
     #empty {
@@ -209,7 +212,11 @@
           const cancel = document.createElement('button');
           cancel.className = 'cancel';
           cancel.textContent = 'Cancel';
-          cancel.addEventListener('click', () => breezeInternal.cancelDownload(d.id));
+          cancel.addEventListener('click', () => {
+            cancel.disabled = true;
+            cancel.textContent = 'Cancelling…';
+            breezeInternal.cancelDownload(d.id);
+          });
           actions.append(cancel);
         } else if (d.state === 'completed') {
           const open = document.createElement('button');
@@ -226,20 +233,21 @@
       const active = d.state === 'progressing' && d.totalBytes > 0;
       bar.style.display = active ? '' : 'none';
       if (active) {
-        bar.querySelector('.bar-fill').style.width =
-          `${(d.receivedBytes / d.totalBytes) * 100}%`;
+        const progress = Math.max(0, Math.min(1, d.receivedBytes / d.totalBytes));
+        bar.querySelector('.bar-fill').style.transform = `scaleX(${progress})`;
       }
     }
 
     function render(list) {
       emptyEl.style.display = list.length ? 'none' : '';
       const existing = new Map(
-        [...listEl.children].map((el) => [Number(el.dataset.id), el])
+        [...listEl.children].map((el) => [el.dataset.id, el])
       );
       list.forEach((d, i) => {
-        let el = existing.get(d.id);
+        const id = String(d.id);
+        let el = existing.get(id);
         if (!el) el = buildRow(d);
-        existing.delete(d.id);
+        existing.delete(id);
         updateRow(el, d);
         if (listEl.children[i] !== el) listEl.insertBefore(el, listEl.children[i] || null);
       });
