@@ -129,11 +129,26 @@ final class Updater {
     }
 
     private func relaunch(path: String) {
-        // detached: wait for us to quit, then reopen the new bundle
+        // LaunchServices treats `open` as activation while the old instance is
+        // still alive. A fixed sleep races WebKit/AppKit shutdown and can activate
+        // the dying process without starting the replacement. Wait for this exact
+        // PID to disappear, then force a fresh instance of the updated bundle.
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "sleep 1; open \"\(path)\""]
-        try? p.run()
+        p.arguments = ["-c", "while /bin/kill -0 \"$BREEZE_OLD_PID\" 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open -n \"$BREEZE_RELAUNCH_PATH\""]
+        p.environment = [
+            "PATH": "/usr/bin:/bin",
+            "BREEZE_OLD_PID": String(ProcessInfo.processInfo.processIdentifier),
+            "BREEZE_RELAUNCH_PATH": path,
+        ]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+        } catch {
+            alertInstallFailed()
+            return
+        }
         NSApp.terminate(nil)
     }
 

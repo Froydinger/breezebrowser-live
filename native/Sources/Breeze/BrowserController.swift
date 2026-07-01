@@ -93,6 +93,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let root = GradientBackgroundView()
     let sidebar = HoverReportView()
     let edgeHandle = HoverReportView()   // left-edge strip to peek the sidebar
+    let webCornerOverlay = RoundedContentOverlayView()
+    var webCornerConstraints: [NSLayoutConstraint] = []
     var sidebarHidden = false
     var peeking = false
     var sidebarLeft: NSLayoutConstraint!
@@ -225,6 +227,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
         webContainerTopC.isActive = true
+        updateWebCornerOverlay()
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
@@ -775,6 +778,26 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard on != webFullscreen else { return }
         webFullscreen = on
         webContainer.layer?.cornerRadius = on ? 0 : 10
+        updateWebCornerOverlay()
+    }
+
+    func updateWebCornerOverlay() {
+        let shouldShow = !webFullscreen
+        if shouldShow {
+            guard webCornerOverlay.superview == nil else { return }
+            root.addSubview(webCornerOverlay, positioned: .above, relativeTo: webContainer)
+            webCornerConstraints = [
+                webCornerOverlay.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+                webCornerOverlay.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+                webCornerOverlay.topAnchor.constraint(equalTo: webContainer.topAnchor),
+                webCornerOverlay.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+            ]
+            NSLayoutConstraint.activate(webCornerConstraints)
+        } else if webCornerOverlay.superview != nil {
+            NSLayoutConstraint.deactivate(webCornerConstraints)
+            webCornerConstraints.removeAll()
+            webCornerOverlay.removeFromSuperview()
+        }
     }
 
     func updateWebFullscreenClipping() {
@@ -794,7 +817,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func isWebViewFullscreen(_ webView: WKWebView) -> Bool {
-        fullscreenWebViews.contains(ObjectIdentifier(webView))
+        // WebKit moves an element-fullscreen WKWebView into a private window.
+        // That hierarchy move can lead fullscreenState by a run-loop turn, so
+        // the hosting window is the earliest reliable ownership signal. Never
+        // hide or reparent a view while that private window owns it.
+        if let hostWindow = webView.window, hostWindow !== window { return true }
+        return webView.fullscreenState != .notInFullscreen ||
+            fullscreenWebViews.contains(ObjectIdentifier(webView))
     }
 
     func showActive() {
@@ -975,6 +1004,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         updateWebViewDisplay()
         updateWebFullscreenClipping()
+        updateWebCornerOverlay()
         syncChrome()
         scheduleReflow()      // a re-shown web view may have a stale layout width
     }
@@ -991,7 +1021,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             placeholderView.removeFromSuperview()
             t.webView.isHidden = false
         } else {
-            t.webView.isHidden = true
+            // A detached view may currently belong to WebKit's fullscreen
+            // window. Hiding it here blanks the video surface permanently.
+            // The placeholder is sufficient for genuinely pulled-out tabs.
             if placeholderView.superview != webContainer {
                 webContainer.addSubview(placeholderView)
                 placeholderView.pin(to: webContainer)
@@ -1498,7 +1530,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
         fullscreenObs[t.id] = t.webView.observe(\.fullscreenState, options: [.initial, .new]) { [weak self, weak t] webView, _ in
-            DispatchQueue.main.async { [weak self, weak t, weak webView] in
+            let applyState = { [weak self, weak t, weak webView] in
                 guard let self, let t, let webView else { return }
                 let key = ObjectIdentifier(webView)
                 if webView.fullscreenState == .notInFullscreen {
@@ -1519,6 +1551,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     self.updateWebFullscreenClipping()
                 }
             }
+            // WKWebView state changes normally arrive on main. Handle them in the
+            // same turn so no sidebar/title refresh can touch WebKit's detached
+            // fullscreen view before the ownership guard is installed.
+            if Thread.isMainThread { applyState() }
+            else { DispatchQueue.main.async(execute: applyState) }
         }
     }
 
@@ -1528,6 +1565,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         fullscreenObs[t.id] = nil
         fullscreenWebViews.remove(ObjectIdentifier(t.webView))
         updateWebFullscreenClipping()
+        updateWebCornerOverlay()
         popupDownloadCandidates.remove(t.id)
         aiNavWaiters.removeValue(forKey: t.id)?.resume()
         if nowPlayingTab?.id == t.id { nowPlayingTab = nil }

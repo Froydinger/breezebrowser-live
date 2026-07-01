@@ -30,6 +30,59 @@ class GradientBackgroundView: NSView {
     }
 }
 
+/// Paints only the four pixels-outside-a-rounded-rect corner wedges. This gives
+/// the web area rounded visual corners without clipping WKWebView or any ancestor
+/// of its hardware video layer (which breaks element fullscreen on macOS).
+final class RoundedContentOverlayView: NSView {
+    let radius: CGFloat = 10
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        NotificationCenter.default.addObserver(self, selector: #selector(refresh),
+                                               name: Theme.didChange, object: nil)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    @objc private func refresh() { needsDisplay = true }
+
+    override func updateLayer() {
+        guard let layer else { return }
+        layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+
+        let p = Theme.shared.palette
+        let clippedGradient = CALayer()
+        clippedGradient.frame = bounds
+
+        let gradient = CAGradientLayer()
+        gradient.frame = bounds
+        gradient.colors = [p.bgTop.cgColor, p.bg.cgColor, p.bgBottom.cgColor]
+        gradient.locations = [0, 0.55, 1]
+        gradient.startPoint = CGPoint(x: 0.1, y: 1)
+        gradient.endPoint = CGPoint(x: 0.9, y: 0)
+        clippedGradient.addSublayer(gradient)
+
+        let wash = CALayer()
+        wash.frame = bounds
+        wash.backgroundColor = p.accent.withAlphaComponent(0.12).cgColor
+        clippedGradient.addSublayer(wash)
+
+        let outsideCorners = CAShapeLayer()
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        path.addRoundedRect(in: bounds, cornerWidth: radius, cornerHeight: radius)
+        outsideCorners.path = path
+        outsideCorners.fillRule = .evenOdd
+        outsideCorners.fillColor = NSColor.black.cgColor
+        clippedGradient.mask = outsideCorners
+        layer.addSublayer(clippedGradient)
+    }
+}
+
 /// Render an SF Symbol tinted to an explicit color (baked in, not template) so it
 /// always shows regardless of the control's default tinting behavior.
 func tintedSymbol(_ name: String, point: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSImage? {
