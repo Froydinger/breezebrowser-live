@@ -82,8 +82,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var blockedPopups: Set<UUID> = []  // tabs with "Allow Popups" turned off
     var titleObs: [UUID: NSKeyValueObservation] = [:]
     var urlObs: [UUID: NSKeyValueObservation] = [:]
+    var fullscreenObs: [UUID: NSKeyValueObservation] = [:]
     var popupWindows: [UUID: NSWindow] = [:]
     var popupDownloadCandidates: Set<UUID> = []
+    var fullscreenWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
 
@@ -754,29 +756,54 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func buildWebArea() {
         webContainer.translatesAutoresizingMaskIntoConstraints = false
         webContainer.wantsLayer = true
-        // Rounded web area lives on the container, NOT the web view's own layer —
-        // clipping the web view itself turns fullscreen video into a black screen.
+        // Never clip an ancestor of WKWebView. WebKit removes the view to create
+        // element fullscreen, and beginning that transfer inside a clipped layer
+        // tree can produce a permanently blank hardware-video surface.
         webContainer.layer?.cornerRadius = 10
-        webContainer.layer?.masksToBounds = true
+        webContainer.layer?.masksToBounds = false
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
         newTab.onOpenShortcuts = { [weak self] in self?.openInternal(.settings, fragment: "help") }
         newTab.field.delegate = self
     }
 
-    // Rounded corners on the web area clip WebKit's hardware video overlay to a
-    // black rectangle once a video goes fullscreen (same root cause as the old
-    // Electron "flatten corners in fullscreen" fix). Flatten while fullscreen,
-    // restore the 10pt radius on exit. Driven by breezeFullscreenJS.
+    // Element fullscreen temporarily removes WKWebView from our hierarchy. While
+    // WebKit owns it, Breeze must not interpret that as a detached tab or try to
+    // hide/reparent it; doing so leaves the fullscreen player visually blank.
     var webFullscreen = false
     func setWebFullscreen(_ on: Bool) {
         guard on != webFullscreen else { return }
         webFullscreen = on
-        webContainer.layer?.masksToBounds = !on
         webContainer.layer?.cornerRadius = on ? 0 : 10
     }
 
+    func updateWebFullscreenClipping() {
+        guard let current else {
+            setWebFullscreen(false)
+            return
+        }
+        var visibleWebViews = [current.webView]
+        if let partnerId = current.splitPartnerId,
+           let partner = tabs.first(where: { $0.id == partnerId }) {
+            visibleWebViews.append(partner.webView)
+        }
+        let active = visibleWebViews.contains {
+            fullscreenWebViews.contains(ObjectIdentifier($0))
+        }
+        setWebFullscreen(active)
+    }
+
+    func isWebViewFullscreen(_ webView: WKWebView) -> Bool {
+        fullscreenWebViews.contains(ObjectIdentifier(webView))
+    }
+
     func showActive() {
+        // Apple removes a fullscreen WKWebView from our hierarchy until its
+        // fullscreenState returns to notInFullscreen. Never touch its ownership.
+        if let current, isWebViewFullscreen(current.webView) {
+            updateWebFullscreenClipping()
+            return
+        }
         // Detach assistant from webContainer before clearing (it's a shared instance)
         let assistantWasInChatTab = assistant.superview == webContainer
         if assistantWasInChatTab {
@@ -947,12 +974,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             webContainer.addSubview(primary); primary.pin(to: webContainer)
         }
         updateWebViewDisplay()
+        updateWebFullscreenClipping()
         syncChrome()
         scheduleReflow()      // a re-shown web view may have a stale layout width
     }
 
     func updateWebViewDisplay() {
         guard let t = current else { return }
+        if isWebViewFullscreen(t.webView) { return }
         if t.isNewTab || t.isChatTab || t.splitPartnerId != nil {
             placeholderView.removeFromSuperview()
             t.webView.isHidden = false
@@ -1168,7 +1197,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func setPerfMode(_ t: Tab, _ on: Bool) {
         t.perfMode = on
-        t.webView.layer?.cornerRadius = on ? 0 : 10
         refreshSidebar()
     }
     func togglePopups(_ t: Tab) {
@@ -1469,11 +1497,37 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.syncChrome(); self?.refreshSidebar()
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
+        fullscreenObs[t.id] = t.webView.observe(\.fullscreenState, options: [.initial, .new]) { [weak self, weak t] webView, _ in
+            DispatchQueue.main.async { [weak self, weak t, weak webView] in
+                guard let self, let t, let webView else { return }
+                let key = ObjectIdentifier(webView)
+                if webView.fullscreenState == .notInFullscreen {
+                    // fullscreenState reaches notInFullscreen just before WebKit
+                    // finishes putting the view back. Keep our ownership guard
+                    // briefly so a title/state refresh cannot mistake that gap for
+                    // a detached tab and hide the view, breaking the next entry.
+                    guard self.fullscreenWebViews.contains(key) else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak webView, weak t] in
+                        guard let self, let webView, let t,
+                              webView.fullscreenState == .notInFullscreen else { return }
+                        self.fullscreenWebViews.remove(key)
+                        self.updateWebFullscreenClipping()
+                        if self.current?.id == t.id { self.syncChrome() }
+                    }
+                } else {
+                    self.fullscreenWebViews.insert(key)
+                    self.updateWebFullscreenClipping()
+                }
+            }
+        }
     }
 
     private func tearDownClosedTab(_ t: Tab, blankPage: Bool = true) {
         titleObs[t.id] = nil
         urlObs[t.id] = nil
+        fullscreenObs[t.id] = nil
+        fullscreenWebViews.remove(ObjectIdentifier(t.webView))
+        updateWebFullscreenClipping()
         popupDownloadCandidates.remove(t.id)
         aiNavWaiters.removeValue(forKey: t.id)?.resume()
         if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
@@ -4413,9 +4467,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         if message.name == "breezeMedia" {
             handleMedia(message); return
-        }
-        if message.name == "breezeFullscreen" {
-            setWebFullscreen((message.body as? NSNumber)?.boolValue ?? false); return
         }
         guard let body = message.body as? [String: Any],
               let method = body["method"] as? String else { return }

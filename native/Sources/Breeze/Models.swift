@@ -19,17 +19,12 @@ let sharedConfig: WKWebViewConfiguration = {
     // Media (now-playing) detection — reports play/pause to the native side.
     c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
-    // Element-fullscreen detection — lets us flatten the rounded web-area corners
-    // while a video is fullscreen (rounded corners kill the HW video overlay → black).
-    c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
-        injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMsg")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
-    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeFullscreen")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
     return c
 }()
@@ -189,24 +184,6 @@ let breezeLinkMenuJS = """
 })();
 """
 
-// Reports HTML5 element-fullscreen enter/exit (YouTube's fullscreen button, etc.)
-// to the native side. Runs in every frame so cross-origin embeds (e.g. an
-// embedded YouTube iframe) are caught too. postMessage is a no-op if the handler
-// isn't registered (private tabs), so this can never throw.
-let breezeFullscreenJS = """
-(function () {
-  if (location.protocol === 'file:') return;
-  function report() {
-    var el = document.fullscreenElement || document.webkitFullscreenElement || document.webkitCurrentFullScreenElement;
-    try { window.webkit.messageHandlers.breezeFullscreen.postMessage(!!el); } catch (e) {}
-  }
-  document.addEventListener('fullscreenchange', report, true);
-  document.addEventListener('webkitfullscreenchange', report, true);
-  document.addEventListener('webkitbeginfullscreen', function () { report(); }, true);
-  document.addEventListener('webkitendfullscreen', function () { report(); }, true);
-})();
-"""
-
 let breezeKeyboardJS = """
 (function () {
   if (location.protocol === 'file:') return;
@@ -275,10 +252,8 @@ final class Tab {
             c.defaultWebpagePreferences.allowsContentJavaScript = true
             if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
             c.enablePictureInPictureAPI()
-            // Re-inject media + fullscreen scripts for private tabs
+            // Re-inject media script for private tabs
             c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
-                injectionTime: .atDocumentStart, forMainFrameOnly: false))
-            c.userContentController.addUserScript(WKUserScript(source: breezeFullscreenJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -297,10 +272,9 @@ final class Tab {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         webView.translatesAutoresizingMaskIntoConstraints = false
+        // WKWebView needs a backing layer for hardware video. Do not mutate that
+        // layer's clipping/corner properties; WebKit reparents it for fullscreen.
         webView.wantsLayer = true
-        // NOTE: do NOT set masksToBounds/cornerRadius on the web view's own layer —
-        // it clips WebKit's fullscreen video presentation to a black screen. The
-        // rounded-corner look is applied to the parent webContainer instead.
     }
 }
 
