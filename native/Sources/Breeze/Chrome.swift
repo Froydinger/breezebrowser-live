@@ -71,6 +71,9 @@ final class TabRowView: NSView, NSDraggingSource {
     private var active: Bool
     private var inSplit: Bool
     private var hovering = false
+    private var mouseDownPoint: NSPoint?
+    private var mouseDownEvent: NSEvent?
+    private var dragStarted = false
 
     init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false, inSplit: Bool = false, isPrivate: Bool = false) {
         self.active = active
@@ -211,34 +214,31 @@ final class TabRowView: NSView, NSDraggingSource {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        let closePoint = close.convert(point, from: self)
-        if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
-            onClose?()
-            return
-        }
-        // Select immediately on press. Waiting for mouseUp made tiny pointer
-        // movements start a drag session and swallow the selection event, forcing
-        // users to click the same tab two or three times.
-        if bounds.contains(point) {
-            onSelect?()
-            return  // selection rebuilds the sidebar; do not continue on this old row
-        }
-        super.mouseDown(with: event)
+        guard bounds.contains(point) else { return }
+        mouseDownPoint = point
+        mouseDownEvent = event
+        dragStarted = false
     }
 
     override func mouseUp(with event: NSEvent) {
+        defer { mouseDownPoint = nil; mouseDownEvent = nil; dragStarted = false }
+        guard !dragStarted, mouseDownPoint != nil else { return }
         let point = convert(event.locationInWindow, from: nil)
         let closePoint = close.convert(point, from: self)
         if close.bounds.insetBy(dx: -4, dy: -4).contains(closePoint) {
             onClose?()
             return
         }
-        super.mouseUp(with: event)
+        if bounds.contains(point) { onSelect?() }
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let dragPayload else { return }
-        beginSidebarDrag(from: self, event: event, payload: dragPayload, source: self)
+        guard !dragStarted, let start = mouseDownPoint,
+              let initialEvent = mouseDownEvent, let dragPayload else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - start.x, point.y - start.y) >= 4 else { return }
+        dragStarted = true
+        beginSidebarDrag(from: self, event: initialEvent, payload: dragPayload, source: self)
     }
 
     override var mouseDownCanMoveWindow: Bool { false }

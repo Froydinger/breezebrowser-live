@@ -225,6 +225,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.2', icon: 'check-check', title: 'Tabs Move Again', hotfix: true, major: false, items: [
+        '<b>Drag to Reorder Restored</b> — Sidebar tabs can be dragged into a new order again without sacrificing reliable first-click switching or close buttons.',
+        '<b>Spectra\'s New Home</b> — Breeze now sends every Spectra search to <code>spectrasearch.info</code>.' ] },
       { v: '5.1.1', icon: 'picture-in-picture', title: 'Fullscreen Stays Visible', hotfix: true, major: false, items: [
         '<b>YouTube Fullscreen Fixed</b> — Fullscreen video no longer turns into a blank black or white surface when opened from YouTube\'s button, double-click, or the F key.',
         '<b>Reliable Re-entry</b> — Entering, exiting, and reopening fullscreen repeatedly now preserves WebKit\'s video layer instead of corrupting later attempts.' ] },

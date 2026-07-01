@@ -4673,7 +4673,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func searchURL(for query: String) -> String {
         let e = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         switch Store.shared.string("searchEngine") {
-        case "spectra":    return "https://spectrasearch.online/search?q=\(e)"
+        case "spectra":    return "https://spectrasearch.info/search?q=\(e)"
         case "duckduckgo": return "https://duckduckgo.com/?q=\(e)"
         case "bing":       return "https://www.bing.com/search?q=\(e)"
         case "brave":      return "https://search.brave.com/search?q=\(e)"
