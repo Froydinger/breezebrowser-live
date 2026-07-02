@@ -111,6 +111,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let root = GradientBackgroundView()
     let sidebar = HoverReportView()
     let sidebarGlass = PassthroughVisualEffectView()
+    let sidebarPeekBG = GradientBackgroundView()   // identical bg to `root` for the floating peek
     let edgeHandle = HoverReportView()   // left-edge strip to peek the sidebar
     let webCornerOverlay = RoundedContentOverlayView()
     var webCornerConstraints: [NSLayoutConstraint] = []
@@ -150,6 +151,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var sidebarTopC: NSLayoutConstraint!
     var webContainerTopC: NSLayoutConstraint!
     var pinsTopC: NSLayoutConstraint!
+    weak var themeButton: HoverButton?        // footer theme toggle; refreshed from every theme change
     lazy var llm = CloudLLM(tools: self)    // Breeze Cloud backend; provider routing lives server-side.
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     let remindersView = RemindersView()
@@ -232,7 +234,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         topTrailC = addressWrap.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -54)
         topTrailC.isActive = true
 
-        sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
+        sidebarTopC = sidebar.topAnchor.constraint(equalTo: root.topAnchor)
         sidebarTopC.isActive = true
 
         NSLayoutConstraint.activate([
@@ -425,11 +427,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebarGlass.blendingMode = .withinWindow
         sidebarGlass.state = .active
         sidebarGlass.wantsLayer = true
-        sidebarGlass.layer?.cornerRadius = 18
+        sidebarGlass.layer?.cornerRadius = 12
         sidebarGlass.layer?.masksToBounds = true
         sidebarGlass.isHidden = true
         sidebar.addSubview(sidebarGlass)
         sidebarGlass.pin(to: sidebar)
+
+        // Floating-peek background: a copy of the window's gradient so the peeked
+        // sidebar is the exact same color as the docked UI (not a flat shade).
+        sidebarPeekBG.translatesAutoresizingMaskIntoConstraints = false
+        sidebarPeekBG.wantsLayer = true
+        sidebarPeekBG.layer?.cornerRadius = 12
+        sidebarPeekBG.layer?.masksToBounds = true
+        sidebarPeekBG.isHidden = true
+        sidebar.addSubview(sidebarPeekBG, positioned: .above, relativeTo: sidebarGlass)
+        sidebarPeekBG.pin(to: sidebar)
 
         // pins grid (4-wide rows)
         pinsStack.orientation = .vertical; pinsStack.spacing = 7; pinsStack.alignment = .leading
@@ -471,7 +483,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebar.addSubview(pinsStack)
         sidebar.addSubview(tabsScroll)
         sidebar.addSubview(bottomStack)
-        pinsTopC = pinsStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 12)
+        pinsTopC = pinsStack.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 44)
         NSLayoutConstraint.activate([
             pinsTopC,
             pinsStack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
@@ -513,8 +525,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let history = HoverButton(symbol: "clock")
         history.onTap = { [weak self] in self?.openInternal(.history) }
         let theme = HoverButton(symbol: "sun.max"); theme.onTap = { [weak self] in
-            self?.cycleThemeSetting(); self?.refreshThemeIcon(theme)
+            self?.cycleThemeSetting()
         }
+        themeButton = theme
         let row = NSStackView(views: [settings, theme, history, bookmarks, dl])
         row.spacing = 8; row.alignment = .centerY
         footer.addSubview(row)
@@ -532,13 +545,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         Store.shared.settings["theme"] = next; Store.shared.saveSettings()
         applySettingsChange()
+        if let themeButton { refreshThemeIcon(themeButton) }   // keep the icon in sync for keyboard + button paths
     }
 
     func refreshThemeIcon(_ b: HoverButton) {
         switch Theme.shared.mode {
         case .light:  b.symbol = "sun.max"
         case .dark:   b.symbol = "moon"
-        case .system: b.symbol = "desktopcomputer"
+        case .system: b.symbol = "computermouse"   // wireframe mouse = "follow the system"
         }
     }
 
@@ -907,14 +921,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             setSidebarHidden(true)
             
             sidebarTopC.isActive = false
-            sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
+            sidebarTopC = sidebar.topAnchor.constraint(equalTo: root.topAnchor)
             sidebarTopC.isActive = true
 
             webContainerTopC.isActive = false
             webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
             webContainerTopC.isActive = true
 
-            pinsTopC.constant = 12
+            pinsTopC.constant = 44
             
             // Deactivate sidebar constraints so it can stretch to fill the container
             assistantLeadingC.isActive = false
@@ -1036,14 +1050,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             topBar.isHidden = false
             
             sidebarTopC.isActive = false
-            sidebarTopC = sidebar.topAnchor.constraint(equalTo: topBar.bottomAnchor)
+            sidebarTopC = sidebar.topAnchor.constraint(equalTo: root.topAnchor)
             sidebarTopC.isActive = true
 
             webContainerTopC.isActive = false
             webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
             webContainerTopC.isActive = true
 
-            pinsTopC.constant = 12
+            pinsTopC.constant = 44
 
             primary.removeFromSuperview()
             webContainer.addSubview(primary); primary.pin(to: webContainer)
@@ -1304,11 +1318,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let rightTitle = pair.right.title.isEmpty ? "New Tab" : pair.right.title
         let selected = current?.id == pair.right.id ? pair.right : pair.left
         let row = TabRowView(title: "\(leftTitle)  +  \(rightTitle)",
-                             host: hostOf(selected.webView.url),
+                             host: hostOf(pair.left.webView.url),
                              active: current?.id == pair.left.id || current?.id == pair.right.id,
                              perf: pair.left.perfMode || pair.right.perfMode,
                              asleep: false, inSplit: true,
-                             isPrivate: pair.left.isPrivate || pair.right.isPrivate)
+                             isPrivate: pair.left.isPrivate || pair.right.isPrivate,
+                             secondHost: hostOf(pair.right.webView.url))
         row.onSelect = { [weak self, weak selected] in
             guard let self, let selected,
                   let index = self.tabs.firstIndex(where: { $0.id == selected.id }) else { return }
@@ -2241,7 +2256,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func setSidebarHidden(_ hidden: Bool, peek: Bool = false) {
         let showingPeek = peek && !hidden
         let wasPeeking = peeking
-        let peekWidth = min(sidebarWidth + 36, 496)
+        let peekWidth = sidebarWidth   // match the user's docked width exactly
 
         if showingPeek {
             peeking = true
@@ -2251,8 +2266,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if webLeadingC.isActive { webLeadingC.isActive = false }
             if !webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = true }
             sidebarWidthC.constant = peekWidth
-            sidebarGlass.isHidden = false
-            sidebar.layer?.cornerRadius = 18
+            // Match the docked UI exactly: paint the same window gradient, not a flat shade.
+            sidebarGlass.isHidden = true
+            sidebarPeekBG.isHidden = false
+            sidebarPeekBG.needsDisplay = true
+            sidebar.layer?.cornerRadius = 12
             sidebar.layer?.shadowColor = NSColor.black.cgColor
             sidebar.layer?.shadowOpacity = 0.32
             sidebar.layer?.shadowRadius = 24
@@ -2287,6 +2305,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }, completionHandler: { [weak self] in
                 guard let self, !self.peeking else { return }
                 self.sidebarGlass.isHidden = true
+                self.sidebarPeekBG.isHidden = true
                 self.sidebarWidthC.constant = self.sidebarWidth
                 self.sidebarLeft.constant = -self.sidebarWidth
                 self.sidebar.layer?.cornerRadius = 0
@@ -2311,9 +2330,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if !webLeadingC.isActive { webLeadingC.isActive = true }
         }
         if !wasPeeking { sidebarGlass.isHidden = true }
+        sidebarPeekBG.isHidden = true   // docked sidebar is transparent over the window bg
         sidebarResizer.isHidden = overlaying
         sidebarWidthC.constant = sidebarWidth
-        sidebar.layer?.cornerRadius = wasPeeking ? 18 : 0
+        sidebar.layer?.cornerRadius = wasPeeking ? 12 : 0
         sidebar.layer?.shadowColor = NSColor.black.cgColor
         sidebar.layer?.shadowOpacity = wasPeeking ? 0.32 : 0
         sidebar.layer?.shadowRadius = wasPeeking ? 24 : 0

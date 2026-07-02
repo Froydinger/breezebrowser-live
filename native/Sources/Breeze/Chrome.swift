@@ -62,6 +62,7 @@ final class TabRowView: NSView, NSDraggingSource {
     var onDropPayload: ((SidebarDragPayload, SidebarDropPlacement) -> Bool)?
     var menuProvider: (() -> [MenuEntry])?     // controller builds the full menu
     private let faviconView = NSImageView()
+    private let faviconView2 = NSImageView()   // second favicon for split-pair rows
     private let titleLabel = NSTextField(labelWithString: "")
     private let close = HoverButton(symbol: "xmark", size: 24, point: 10)
     private let perfBadge = NSTextField(labelWithString: "🚀")
@@ -75,7 +76,7 @@ final class TabRowView: NSView, NSDraggingSource {
     private var mouseDownEvent: NSEvent?
     private var dragStarted = false
 
-    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false, inSplit: Bool = false, isPrivate: Bool = false) {
+    init(title: String, host: String, active: Bool, perf: Bool = false, asleep: Bool = false, inSplit: Bool = false, isPrivate: Bool = false, secondHost: String? = nil) {
         self.active = active
         self.inSplit = inSplit
         super.init(frame: .zero)
@@ -91,6 +92,15 @@ final class TabRowView: NSView, NSDraggingSource {
             faviconView.image = NSImage(systemSymbolName: "eye.slash.fill", accessibilityDescription: nil)
         } else {
             faviconView.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        }
+
+        faviconView2.translatesAutoresizingMaskIntoConstraints = false
+        faviconView2.imageScaling = .scaleProportionallyDown
+        faviconView2.wantsLayer = true
+        faviconView2.layer?.cornerRadius = 4
+        faviconView2.isHidden = (secondHost == nil)
+        if secondHost != nil {
+            faviconView2.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         }
 
         titleLabel.stringValue = title
@@ -112,16 +122,24 @@ final class TabRowView: NSView, NSDraggingSource {
         privateBadge.isHidden = !isPrivate
         privateBadge.toolTip = "Private Tab"
 
-        addSubview(faviconView); addSubview(titleLabel); addSubview(perfBadge); addSubview(privateBadge); addSubview(close)
+        addSubview(faviconView); addSubview(faviconView2); addSubview(titleLabel); addSubview(perfBadge); addSubview(privateBadge); addSubview(close)
         titleTrailingToBadges = titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: privateBadge.leadingAnchor, constant: -4)
         titleTrailingToEdge = titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12)
+        // Split-pair rows show both pane favicons; single rows leave the title next to the one icon.
+        let titleLeading = secondHost == nil
+            ? titleLabel.leadingAnchor.constraint(equalTo: faviconView.trailingAnchor, constant: 9)
+            : titleLabel.leadingAnchor.constraint(equalTo: faviconView2.trailingAnchor, constant: 9)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(equalToConstant: 38),
             faviconView.widthAnchor.constraint(equalToConstant: 16),
             faviconView.heightAnchor.constraint(equalToConstant: 16),
             faviconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
             faviconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: faviconView.trailingAnchor, constant: 9),
+            faviconView2.widthAnchor.constraint(equalToConstant: 16),
+            faviconView2.heightAnchor.constraint(equalToConstant: 16),
+            faviconView2.leadingAnchor.constraint(equalTo: faviconView.trailingAnchor, constant: 4),
+            faviconView2.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLeading,
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             titleTrailingToEdge,
             privateBadge.trailingAnchor.constraint(equalTo: perfBadge.leadingAnchor, constant: -4),
@@ -138,6 +156,9 @@ final class TabRowView: NSView, NSDraggingSource {
                                                name: Theme.didChange, object: nil)
         if !isPrivate && !host.isEmpty {
             Favicons.shared.image(for: host) { [weak self] img in if let img { self?.faviconView.image = img } }
+        }
+        if let secondHost, !secondHost.isEmpty {
+            Favicons.shared.image(for: secondHost) { [weak self] img in if let img { self?.faviconView2.image = img } }
         }
         if asleep { faviconView.alphaValue = 0.5; titleLabel.alphaValue = 0.55 }   // dimmed when sleeping
     }

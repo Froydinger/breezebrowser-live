@@ -225,6 +225,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.6', icon: 'panel-left', title: 'A Consistent Sidebar', hotfix: true, major: false, items: [
+        '<b>Tabs Sit Right</b> — The docked sidebar now starts its tabs at the same height as split view, so the layout is consistent everywhere.',
+        '<b>Both Favicons in Splits</b> — A split-pair row shows both pages\' icons together instead of just the active one.',
+        '<b>Peek Matches Dock</b> — The hover-peek sidebar now uses your sidebar color and your saved docked width instead of a gray, oversized panel.' ] },
       { v: '5.1.5', icon: 'columns-2', title: 'Split View, Sorted', hotfix: true, major: false, items: [
         '<b>One Tab, Two Panes</b> — A split pair now shows as a single logical row in the sidebar instead of two duplicate entries, and clicking either pane just switches focus without rebuilding the layout.',
         '<b>Pinned Apps Stay Safe</b> — Splitting a pinned app clones it into a normal tab first, so rearranging or closing the split never disturbs the pin.',
