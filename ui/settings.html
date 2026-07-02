@@ -946,7 +946,7 @@
         b.classList.toggle('on', b.dataset.v === (settings.theme || 'light')));
       document.getElementById('clock24').checked = !!settings.clock24;
       document.getElementById('showGreeting').checked = settings.showGreeting !== false;
-      document.getElementById('searchEngine').value = settings.searchEngine || 'google';
+      document.getElementById('searchEngine').value = settings.searchEngine || 'spectra';
       document.getElementById('newTabInputMode').value = settings.newTabInputMode || 'ask';
       document.getElementById('pluginCreatorTools').checked = !!settings.pluginCreatorTools;
       const adMode = settings.adblockEnabled === false || settings.adblockMode === 'off'

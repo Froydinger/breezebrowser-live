@@ -73,7 +73,18 @@ final class Theme {
         case .light: return .light
         case .dark:  return .dark
         case .system:
-            let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            // During launch AppKit can report the previous effective appearance
+            // for one run-loop turn. That painted light labels/icons into a dark
+            // window until hover forced another theme read. The global interface
+            // style is already authoritative at launch; retain effectiveAppearance
+            // as the fallback for unusual/custom appearances.
+            let globalStyle = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
+            let dark: Bool
+            if let globalStyle {
+                dark = globalStyle.caseInsensitiveCompare("Dark") == .orderedSame
+            } else {
+                dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            }
             return dark ? .dark : .light
         }
     }

@@ -23,9 +23,12 @@ let sharedConfig: WKWebViewConfiguration = {
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: true))
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMsg")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
+    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeGeolocation")
     return c
 }()
 
@@ -210,6 +213,74 @@ let breezeKeyboardJS = """
 })();
 """
 
+// WKUIDelegate's public geolocation permission callback is macOS 27+. On the
+// supported macOS 14–26 releases, route the standard web API through native
+// Core Location so sites receive both Breeze's per-origin prompt and macOS's
+// Location Services prompt instead of an immediate POSITION_UNAVAILABLE error.
+let breezeGeolocationJS = """
+(function () {
+  if (location.protocol === 'file:' || window.__breezeGeolocationInstalled) return;
+  var geo = navigator.geolocation;
+  if (!geo) return;
+  window.__breezeGeolocationInstalled = true;
+  var callbacks = Object.create(null);
+  var nextWatch = 1;
+  function token(prefix) {
+    return prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+  function send(id, watch, success, error, options) {
+    callbacks[id] = { success: success, error: error, watch: watch };
+    try {
+      window.webkit.messageHandlers.breezeGeolocation.postMessage({
+        action: 'request', id: id, watch: watch,
+        highAccuracy: !!(options && options.enableHighAccuracy)
+      });
+    } catch (e) {
+      delete callbacks[id];
+      if (typeof error === 'function') error({ code: 2, message: 'Location is unavailable.' });
+    }
+  }
+  window.__breezeGeoResolve = function (id, ok, value) {
+    var cb = callbacks[id];
+    if (!cb) return;
+    if (!cb.watch || !ok) delete callbacks[id];
+    try {
+      if (ok) {
+        if (typeof cb.success === 'function') cb.success(value);
+      } else if (typeof cb.error === 'function') {
+        cb.error(value);
+      }
+    } catch (e) {}
+  };
+  var replacement = {
+    getCurrentPosition: function (success, error, options) {
+      send(token('once'), false, success, error, options || {});
+    },
+    watchPosition: function (success, error, options) {
+      var watchId = nextWatch++;
+      send('watch-' + watchId + '-' + token('geo'), true, success, error, options || {});
+      return watchId;
+    },
+    clearWatch: function (watchId) {
+      var prefix = 'watch-' + watchId + '-';
+      Object.keys(callbacks).forEach(function (id) {
+        if (id.indexOf(prefix) !== 0) return;
+        delete callbacks[id];
+        try { window.webkit.messageHandlers.breezeGeolocation.postMessage({ action: 'clear', id: id }); } catch (e) {}
+      });
+    }
+  };
+  try { Object.defineProperty(navigator, 'geolocation', { configurable: true, value: replacement }); }
+  catch (e) {
+    try {
+      geo.getCurrentPosition = replacement.getCurrentPosition;
+      geo.watchPosition = replacement.watchPosition;
+      geo.clearWatch = replacement.clearWatch;
+    } catch (_) {}
+  }
+})();
+"""
+
 func hostOf(_ url: URL?) -> String {
     guard let h = url?.host else { return "" }
     return h.hasPrefix("www.") ? String(h.dropFirst(4)) : h
@@ -259,7 +330,10 @@ final class Tab {
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
+            c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeGeolocation")
             config = c
         } else {
             config = sharedConfig

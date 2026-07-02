@@ -8,6 +8,7 @@ import UserNotifications
 import CoreImage
 import QuartzCore
 import CoreServices
+import CoreLocation
 
 let SIDEBAR_W: CGFloat = 200
 
@@ -15,7 +16,18 @@ enum BrowserInitialContent {
     case restoredSession, newTab, empty
 }
 
-final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSSearchFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, BrowserAITools {
+private final class PendingGeolocationRequest {
+    weak var webView: WKWebView?
+    let id: String
+    let watches: Bool
+    init(webView: WKWebView, id: String, watches: Bool) {
+        self.webView = webView
+        self.id = id
+        self.watches = watches
+    }
+}
+
+final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSSearchFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, CLLocationManagerDelegate, BrowserAITools {
     static let didUpdateState = Notification.Name("BrowserControllerDidUpdateState")
     static var sharedTabs: [Tab] = []
     static var sharedPins: [Pin] = []
@@ -25,6 +37,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var privatePins: [Pin] = []
     private var privateGroups: [TabGroup] = []
     private var privateNextGroupId = 1
+    private lazy var locationManager: CLLocationManager = {
+        let manager = CLLocationManager()
+        manager.delegate = self
+        return manager
+    }()
+    private var pendingGeolocation: [String: PendingGeolocationRequest] = [:]
 
     var tabs: [Tab] {
         get { isPrivateWindow ? privateTabs : BrowserController.sharedTabs }
@@ -92,6 +110,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // chrome
     let root = GradientBackgroundView()
     let sidebar = HoverReportView()
+    let sidebarGlass = PassthroughVisualEffectView()
     let edgeHandle = HoverReportView()   // left-edge strip to peek the sidebar
     let webCornerOverlay = RoundedContentOverlayView()
     var webCornerConstraints: [NSLayoutConstraint] = []
@@ -99,6 +118,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var peeking = false
     var sidebarLeft: NSLayoutConstraint!
     var sidebarWidthC: NSLayoutConstraint!
+    var webLeadingC: NSLayoutConstraint!
+    var webOverlayLeadingC: NSLayoutConstraint!
     var sidebarWidth: CGFloat = SIDEBAR_W
     let sidebarResizer = ColumnResizeView()
     let pinsStack = NSStackView()
@@ -216,16 +237,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             topBar.topAnchor.constraint(equalTo: root.topAnchor),
             topBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             topBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            topBar.heightAnchor.constraint(equalToConstant: 54),
+            topBar.heightAnchor.constraint(equalToConstant: 44),
         ])
+        webLeadingC = webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 6)
+        webOverlayLeadingC = webContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 6)
         NSLayoutConstraint.activate([
-            webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 6),
+            webLeadingC,
             webContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6),
         ])
         webTrailC = webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6)
         webTrailC.isActive = true
 
-        webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
+        webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
         webContainerTopC.isActive = true
         updateWebCornerOverlay()
 
@@ -267,7 +290,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         edgeHandle.onEnter = { [weak self] in
             guard let self, self.sidebarHidden else { return }
-            self.setSidebarHidden(false, peek: true); self.peeking = true
+            self.setSidebarHidden(false, peek: true)
         }
         sidebar.onExit = { [weak self] in
             guard let self, self.peeking else { return }
@@ -390,6 +413,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func buildSidebar() {
         sidebar.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.wantsLayer = true
+        sidebarGlass.translatesAutoresizingMaskIntoConstraints = false
+        sidebarGlass.material = .sidebar
+        sidebarGlass.blendingMode = .withinWindow
+        sidebarGlass.state = .active
+        sidebarGlass.wantsLayer = true
+        sidebarGlass.layer?.cornerRadius = 18
+        sidebarGlass.layer?.masksToBounds = true
+        sidebarGlass.isHidden = true
+        sidebar.addSubview(sidebarGlass)
+        sidebarGlass.pin(to: sidebar)
 
         // pins grid (4-wide rows)
         pinsStack.orientation = .vertical; pinsStack.spacing = 7; pinsStack.alignment = .leading
@@ -547,7 +581,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         forward.onTap = { [weak self] in self?.current?.webView.goForward() }
         reload.onTap = { [weak self] in self?.reloadCurrentTab() }
 
-        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 19
+        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 17
         addressWrap.translatesAutoresizingMaskIntoConstraints = false
         let copylink = HoverButton(symbol: "link", size: 22, point: 12)
         copylink.onTap = { [weak self] in if let t = self?.current { self?.copyLink(t) } }
@@ -591,8 +625,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             navLeadingC,
             nav.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 8),
-            addressWrap.centerYAnchor.constraint(equalTo: topBar.centerYAnchor, constant: 2),
-            addressWrap.heightAnchor.constraint(equalToConstant: 38),
+            addressWrap.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            addressWrap.heightAnchor.constraint(equalToConstant: 34),
         ])
 
         breezeCorner.isBordered = false
@@ -826,6 +860,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             fullscreenWebViews.contains(ObjectIdentifier(webView))
     }
 
+    func hasActiveElementFullscreen() -> Bool {
+        tabs.contains { isWebViewFullscreen($0.webView) }
+    }
+
     func showActive() {
         // Apple removes a fullscreen WKWebView from our hierarchy until its
         // fullscreenState returns to notInFullscreen. Never touch its ownership.
@@ -867,7 +905,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             sidebarTopC.isActive = true
 
             webContainerTopC.isActive = false
-            webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
+            webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
             webContainerTopC.isActive = true
 
             pinsTopC.constant = 12
@@ -994,7 +1032,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             sidebarTopC.isActive = true
 
             webContainerTopC.isActive = false
-            webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 6)
+            webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
             webContainerTopC.isActive = true
 
             pinsTopC.constant = 12
@@ -1045,6 +1083,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     @objc private func stateDidUpdate() {
+        guard !hasActiveElementFullscreen() else { return }
         refreshSidebar()
         syncChrome()
         updateWebViewDisplay()
@@ -1109,6 +1148,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func windowDidResize(_ n: Notification) {
+        guard !hasActiveElementFullscreen() else { return }
         splitLeftWidthC?.constant = max(webContainer.bounds.width, 1) * splitRatio - 3
         updateRainbowFrame()
         alignTrafficLights()
@@ -1122,7 +1162,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func alignTrafficLights() {
         let offsetX: CGFloat = 10
-        let offsetY: CGFloat = -11
+        let offsetY: CGFloat = -6
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type) else { continue }
             if trafficLightBaseFrames[type] == nil {
@@ -1544,7 +1584,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                               webView.fullscreenState == .notInFullscreen else { return }
                         self.fullscreenWebViews.remove(key)
                         self.updateWebFullscreenClipping()
-                        if self.current?.id == t.id { self.syncChrome() }
+                        if self.current?.id == t.id {
+                            self.syncChrome()
+                            self.refreshSidebar()
+                            self.scheduleReflow()
+                        }
                     }
                 } else {
                     self.fullscreenWebViews.insert(key)
@@ -1725,7 +1769,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func persistPins() { Store.shared.pins = pins; Store.shared.savePins() }
 
-    func refreshSidebar() { renderPins(); renderTabs() }
+    func refreshSidebar() {
+        guard !hasActiveElementFullscreen() else { return }
+        renderPins()
+        renderTabs()
+    }
 
     func closeOthers(keep t: Tab) {
         for other in tabs where other.id != t.id {
@@ -1803,7 +1851,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layoutSubtreeIfNeeded()
         DispatchQueue.main.async { [weak self, weak t] in
             guard let self, let t else { return }
-            if t.webView.superview == nil {
+            guard !self.isWebViewFullscreen(t.webView) else { return }
+            if t.webView.superview !== self.webContainer {
+                t.webView.removeFromSuperview()
                 self.webContainer.addSubview(t.webView)
                 t.webView.pin(to: self.webContainer)
             }
@@ -1944,6 +1994,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func syncChrome() {
+        guard !hasActiveElementFullscreen() else { return }
         // Chat tabs have no address bar or nav buttons — skip chrome sync to
         // avoid accessing views that may be detached during the tab transition.
         if current?.isChatTab == true { return }
@@ -1977,9 +2028,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// page its viewport changed forces those elements to re-layout. Fired after
     /// the chrome animation settles.
     func scheduleReflow() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in self?.reflowWebViews() }
+        guard !hasActiveElementFullscreen() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self] in
+            guard let self, !self.hasActiveElementFullscreen() else { return }
+            self.reflowWebViews()
+        }
     }
     func reflowWebViews() {
+        guard !hasActiveElementFullscreen() else { return }
         let js = "window.dispatchEvent(new Event('resize'));"
         for t in tabs where !t.isNewTab && !isInternal(t.webView) {
             t.webView.evaluateJavaScript(js, completionHandler: nil)
@@ -1991,23 +2047,106 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// The toggle button inside the sidebar: if the sidebar is only peeking
     /// (hover-revealed), clicking it DOCKS it open instead of hiding it again.
     func sidebarToggleClicked() {
-        if peeking { peeking = false; edgeHandle.isHidden = true }   // dock open
+        if peeking { setSidebarHidden(false) }                       // dock open
         else { setSidebarHidden(true) }                             // collapse
     }
 
     func setSidebarHidden(_ hidden: Bool, peek: Bool = false) {
-        sidebarHidden = hidden
-        if !peek { peeking = false }
-        edgeHandle.isHidden = !hidden          // edge strip is only live when hidden
-        if let current = current, current.splitPartnerId != nil {
-            leftPane.setLeftSpacingForTrafficLights(hidden)
-        }
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
-            sidebarLeft.constant = hidden ? -sidebarWidth : 0
-            sidebar.alphaValue = hidden ? 0 : 1
+        let showingPeek = peek && !hidden
+        let wasPeeking = peeking
+        let peekWidth = min(sidebarWidth + 36, 496)
+
+        if showingPeek {
+            peeking = true
+            sidebarHidden = true
+            edgeHandle.isHidden = true
+            sidebarResizer.isHidden = true
+            if webLeadingC.isActive { webLeadingC.isActive = false }
+            if !webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = true }
+            sidebarWidthC.constant = peekWidth
+            sidebarGlass.isHidden = false
+            sidebar.layer?.cornerRadius = 18
+            sidebar.layer?.shadowColor = NSColor.black.cgColor
+            sidebar.layer?.shadowOpacity = 0.32
+            sidebar.layer?.shadowRadius = 24
+            sidebar.layer?.shadowOffset = NSSize(width: 8, height: 0)
+            // Establish the offscreen start before beginning the quick hover-in.
+            sidebarLeft.constant = -peekWidth
+            sidebar.alphaValue = 0
             root.layoutSubtreeIfNeeded()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.12
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                ctx.allowsImplicitAnimation = true
+                sidebarLeft.constant = 0
+                sidebar.animator().alphaValue = 1
+                root.layoutSubtreeIfNeeded()
+            }
+            return
         }
+
+        if hidden && wasPeeking {
+            peeking = false
+            sidebarHidden = true
+            sidebarResizer.isHidden = true
+            // Keep the wide glass panel alive until the slide-out finishes.
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.15
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                ctx.allowsImplicitAnimation = true
+                sidebarLeft.constant = -peekWidth
+                sidebar.animator().alphaValue = 0
+                root.layoutSubtreeIfNeeded()
+            }, completionHandler: { [weak self] in
+                guard let self, !self.peeking else { return }
+                self.sidebarGlass.isHidden = true
+                self.sidebarWidthC.constant = self.sidebarWidth
+                self.sidebarLeft.constant = -self.sidebarWidth
+                self.sidebar.layer?.cornerRadius = 0
+                self.sidebar.layer?.shadowOpacity = 0
+                self.edgeHandle.isHidden = false
+                self.root.layoutSubtreeIfNeeded()
+            })
+            return
+        }
+
+        peeking = false
+        // A peek remains logically collapsed. The page stays full width while
+        // the saved-width sidebar floats above it until explicitly docked.
+        sidebarHidden = hidden
+        edgeHandle.isHidden = !hidden
+        let overlaying = hidden
+        if overlaying {
+            if webLeadingC.isActive { webLeadingC.isActive = false }
+            if !webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = true }
+        } else {
+            if webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = false }
+            if !webLeadingC.isActive { webLeadingC.isActive = true }
+        }
+        if !wasPeeking { sidebarGlass.isHidden = true }
+        sidebarResizer.isHidden = overlaying
+        sidebarWidthC.constant = sidebarWidth
+        sidebar.layer?.cornerRadius = wasPeeking ? 18 : 0
+        sidebar.layer?.shadowColor = NSColor.black.cgColor
+        sidebar.layer?.shadowOpacity = wasPeeking ? 0.32 : 0
+        sidebar.layer?.shadowRadius = wasPeeking ? 24 : 0
+        sidebar.layer?.shadowOffset = NSSize(width: 8, height: 0)
+        if let current = current, current.splitPartnerId != nil {
+            leftPane.setLeftSpacingForTrafficLights(sidebarHidden)
+        }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ctx.allowsImplicitAnimation = true
+            sidebarLeft.constant = hidden ? -sidebarWidth : 0
+            sidebar.animator().alphaValue = hidden ? 0 : 1
+            root.layoutSubtreeIfNeeded()
+        }, completionHandler: { [weak self] in
+            guard let self, !self.peeking else { return }
+            self.sidebarGlass.isHidden = true
+            self.sidebar.layer?.cornerRadius = 0
+            self.sidebar.layer?.shadowOpacity = 0
+        })
         scheduleReflow()
     }
 
@@ -3803,6 +3942,134 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    private func handleGeolocationMessage(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              let action = body["action"] as? String,
+              let id = body["id"] as? String,
+              let webView = message.webView else { return }
+        if action == "clear" {
+            pendingGeolocation.removeValue(forKey: id)
+            stopLocationUpdatesIfIdle()
+            return
+        }
+        guard action == "request" else { return }
+
+        let originText = originString(message.frameInfo.securityOrigin)
+        let isPrivateRequest = tabs.first(where: { $0.webView === webView })?.isPrivate == true
+        if let stored = storedPermission(origin: originText, permission: "geolocation") {
+            guard stored else {
+                resolveGeolocation(webView: webView, id: id, ok: false,
+                                   value: ["code": 1, "message": "Location access is blocked for this site."])
+                return
+            }
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "\(originText) wants to use your location"
+            alert.informativeText = "Breeze can allow this once, remember the choice for this site, or block it. You can change saved choices in Settings → Site Permissions."
+            alert.addButton(withTitle: "Allow Once")
+            alert.addButton(withTitle: "Always Allow")
+            alert.addButton(withTitle: "Block")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                break
+            case .alertSecondButtonReturn:
+                if !isPrivateRequest {
+                    setSitePermission(origin: originText, permission: "geolocation", allowed: true)
+                }
+            default:
+                if !isPrivateRequest {
+                    setSitePermission(origin: originText, permission: "geolocation", allowed: false)
+                }
+                resolveGeolocation(webView: webView, id: id, ok: false,
+                                   value: ["code": 1, "message": "Location access was denied."])
+                return
+            }
+        }
+
+        let watches = body["watch"] as? Bool ?? false
+        pendingGeolocation[id] = PendingGeolocationRequest(webView: webView, id: id, watches: watches)
+        locationManager.desiredAccuracy = (body["highAccuracy"] as? Bool == true)
+            ? kCLLocationAccuracyBest : kCLLocationAccuracyKilometer
+        beginLocationRequest()
+    }
+
+    private func beginLocationRequest() {
+        guard CLLocationManager.locationServicesEnabled() else {
+            failPendingGeolocation(code: 2, message: "Location Services are turned off on this Mac.")
+            return
+        }
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            locationManager.startUpdatingLocation()
+        case .denied, .restricted:
+            failPendingGeolocation(code: 1, message: "Breeze does not have access to Location Services. Enable it in System Settings → Privacy & Security → Location Services.")
+        @unknown default:
+            failPendingGeolocation(code: 2, message: "Location is unavailable.")
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard !pendingGeolocation.isEmpty else { return }
+        beginLocationRequest()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        let position: [String: Any] = [
+            "coords": [
+                "latitude": location.coordinate.latitude,
+                "longitude": location.coordinate.longitude,
+                "accuracy": location.horizontalAccuracy,
+                "altitude": location.verticalAccuracy >= 0 ? location.altitude as Any : NSNull(),
+                "altitudeAccuracy": location.verticalAccuracy >= 0 ? location.verticalAccuracy as Any : NSNull(),
+                "heading": location.course >= 0 ? location.course as Any : NSNull(),
+                "speed": location.speed >= 0 ? location.speed as Any : NSNull(),
+            ],
+            "timestamp": location.timestamp.timeIntervalSince1970 * 1000,
+        ]
+        for (id, request) in pendingGeolocation {
+            guard let webView = request.webView else {
+                pendingGeolocation.removeValue(forKey: id)
+                continue
+            }
+            resolveGeolocation(webView: webView, id: id, ok: true, value: position)
+            if !request.watches { pendingGeolocation.removeValue(forKey: id) }
+        }
+        stopLocationUpdatesIfIdle()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = (error as? CLError)?.code == .denied
+            ? "Location access was denied."
+            : "Your location could not be determined."
+        failPendingGeolocation(code: (error as? CLError)?.code == .denied ? 1 : 2, message: message)
+    }
+
+    private func failPendingGeolocation(code: Int, message: String) {
+        let requests = pendingGeolocation
+        pendingGeolocation.removeAll()
+        for (id, request) in requests {
+            if let webView = request.webView {
+                resolveGeolocation(webView: webView, id: id, ok: false,
+                                   value: ["code": code, "message": message])
+            }
+        }
+        locationManager.stopUpdatingLocation()
+    }
+
+    private func stopLocationUpdatesIfIdle() {
+        pendingGeolocation = pendingGeolocation.filter { $0.value.webView != nil }
+        if pendingGeolocation.isEmpty { locationManager.stopUpdatingLocation() }
+    }
+
+    private func resolveGeolocation(webView: WKWebView, id: String, ok: Bool, value: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: value),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.__breezeGeoResolve(\(id.debugDescription), \(ok ? "true" : "false"), \(json));")
+    }
+
     func clearAllBrowsingData() {
         let store = WKWebsiteDataStore.default()
         store.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { [weak self] records in
@@ -4490,6 +4757,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Bridge message handler ---------------------------------------
 
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "breezeGeolocation" {
+            handleGeolocationMessage(message)
+            return
+        }
         if message.name == "breezeLinkMenu",
            let body = message.body as? [String: Any] {
             let link = (body["url"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
@@ -4524,6 +4795,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     Store.shared.settings["accent"] = Theme.defaultAccent
                 } else {
                     Store.shared.settings[key] = args["value"]
+                }
+                if key == "searchEngine" {
+                    Store.shared.settings["searchEngineExplicit"] = true
                 }
                 Store.shared.saveSettings()
                 applySettingsChange(changedKey: key)
@@ -4715,7 +4989,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "duckduckgo": return "https://duckduckgo.com/?q=\(e)"
         case "bing":       return "https://www.bing.com/search?q=\(e)"
         case "brave":      return "https://search.brave.com/search?q=\(e)"
-        default:           return "https://www.google.com/search?q=\(e)"
+        default:           return "https://spectrasearch.info/search?q=\(e)"
         }
     }
 
@@ -4777,6 +5051,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let p = Theme.shared.palette
         addressWrap.layer?.backgroundColor = p.surface.cgColor
         address.textColor = p.text
+        address.placeholderAttributedString = NSAttributedString(
+            string: "Search or enter URL",
+            attributes: [.foregroundColor: p.textSoft]
+        )
+        if !isEditingTextField(address), let webView = current?.webView {
+            let url = (current?.isNewTab ?? false) ? "" : displayURL(webView)
+            address.attributedStringValue = styledAddress(url)
+        }
+        address.needsDisplay = true
+        // Tint within-window blur with the same accent wash used by the chrome
+        // background, so hover-peek reads as chrome floating over the page.
+        sidebarGlass.layer?.backgroundColor = p.accent.withAlphaComponent(p.isDark ? 0.10 : 0.08).cgColor
         updateFindBarAppearance()
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft

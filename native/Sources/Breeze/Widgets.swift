@@ -2,6 +2,10 @@
 
 import Cocoa
 
+final class PassthroughVisualEffectView: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// Painted gradient background matching `body` in style.css:
 /// a 7% accent wash over the 160° bg gradient.
 class GradientBackgroundView: NSView {
@@ -47,6 +51,14 @@ final class RoundedContentOverlayView: NSView {
 
     override var wantsUpdateLayer: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        // The corner mask is expressed in this view's bounds. Rebuild it when a
+        // normal window is maximized/restored so the new outer edges stay round.
+        if changed { needsDisplay = true }
+    }
 
     @objc private func refresh() { needsDisplay = true }
 

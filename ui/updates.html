@@ -225,6 +225,14 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.4', icon: 'shapes', title: 'A Lighter, Smarter Frame', hotfix: true, major: false, items: [
+        '<b>Fullscreen UI Freeze</b> — Breeze now pauses chrome refreshes and synthetic page reflows while WebKit owns fullscreen, protecting repeated video sessions.',
+        '<b>Reliable Navigation</b> — New-tab and address-bar submissions reclaim stranded web views so pages no longer load invisibly into a stale container.',
+        '<b>Location Permissions Work</b> — Sites can request location through Breeze with per-site choices and the real macOS Location Services prompt.',
+        '<b>Compact Chrome</b> — A thinner, evenly spaced toolbar aligns its traffic lights, controls, and address pill into one clean band.',
+        '<b>Floating Sidebar Peek</b> — Hovering the collapsed edge reveals a fast, animated teal-glass sidebar over the page without resizing it; docking still uses the saved width.',
+        '<b>Theme and Corners Polished</b> — Dark colors and URL styling update immediately, while maximized windows retain rounded web corners.',
+        '<b>Spectra by Default</b> — Breeze uses Spectra Search unless the user explicitly selects another engine.' ] },
       { v: '5.1.3', icon: 'picture-in-picture', title: 'Fullscreen Keeps Its Picture', hotfix: true, major: false, items: [
         '<b>Fullscreen Ownership Fixed</b> — Breeze now leaves a video view completely under WebKit\'s control while fullscreen, preventing the player from turning black after repeated entries.',
         '<b>Every Way In</b> — YouTube\'s fullscreen button, double-click, and the F key remain reliable across repeated enter-and-exit cycles.',

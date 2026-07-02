@@ -31,7 +31,8 @@ final class Store {
         "theme": "system",
         "accent": "#3aa6b9",
         "pinSize": "large",
-        "searchEngine": "google",
+        "searchEngine": "spectra",
+        "searchEngineExplicit": false,
         "newTabInputMode": "ask",
         "clock24": false,
         "showGreeting": true,
@@ -101,6 +102,14 @@ final class Store {
         if let data = try? Data(contentsOf: settingsURL),
            let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             for (k, v) in saved { s[k] = v }
+            // Google used to be written into every profile as the implicit
+            // default, making it indistinguishable from an intentional choice.
+            // Migrate that legacy implicit value once; future picker changes set
+            // searchEngineExplicit and are always preserved.
+            if saved["searchEngineExplicit"] == nil,
+               saved["searchEngine"] as? String == "google" {
+                s["searchEngine"] = "spectra"
+            }
         }
         s["accent"] = Store.defaults["accent"]
         if s["browserSoundVolumeDefaultVersion"] as? String != "5.0.9" {
