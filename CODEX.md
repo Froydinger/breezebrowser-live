@@ -72,7 +72,8 @@ native releases are now just normal GitHub "latest". Everything here is native.
   - `CloudLLM.swift` — the only AI backend. Provider routing lives server-side in
     Breeze Cloud; the app only embeds the Worker URL and client token at build time.
   - `Updater.swift` — native auto-updater (see Releasing below).
-  - `Models.swift` — Tab, Pin, sharedConfig (WKWebView config + Safari UA + the
+  - `Models.swift` — Tab, Pin, sharedConfig (native WKWebView user agent with the
+    installed Safari version appended for modern-site compatibility + the
     `breezeMedia`/bridge user scripts), Favicons.
   - `Store.swift` — settings/pins/history/bookmarks/chats persisted as JSON in
     `~/Library/Application Support/Breeze/`.

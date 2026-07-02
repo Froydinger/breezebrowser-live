@@ -3,7 +3,17 @@
 import Cocoa
 import WebKit
 
-let breezeDefaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15"
+// WKWebView intentionally omits Safari's product/version tokens from its native
+// user agent, which makes sites such as Google serve their legacy fallback UI.
+// Append only the installed Safari version while leaving WebKit in charge of the
+// device/OS/engine portion, so this stays current across macOS updates.
+let breezeSafariProductToken: String? = {
+    guard let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
+          let safariBundle = Bundle(url: safariURL),
+          let version = safariBundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+          !version.isEmpty else { return nil }
+    return "Version/\(version) Safari/605.1.15"
+}()
 
 let sharedConfig: WKWebViewConfiguration = {
     let c = WKWebViewConfiguration()
@@ -338,8 +348,8 @@ final class Tab {
         } else {
             config = sharedConfig
         }
+        config.applicationNameForUserAgent = breezeSafariProductToken
         webView = WKWebView(frame: .zero, configuration: config)
-        webView.customUserAgent = breezeDefaultUserAgent
         if #available(macOS 13.3, iOS 16.4, *) {
             webView.isInspectable = true
         }

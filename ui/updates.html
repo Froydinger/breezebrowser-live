@@ -225,6 +225,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.9', icon: 'refresh-cw', title: 'WebKit, Up to Date', hotfix: true, major: false, items: [
+        '<b>Current Site Compatibility</b> — Breeze now builds its browser identity from the WebKit and Safari version installed on your Mac instead of claiming an old fixed version, keeping modern sites styled and compatible as macOS updates.' ] },
       { v: '5.1.8', icon: 'panel-left', title: 'Sidebars in Step', hotfix: true, major: false, items: [
         '<b>Smooth from the First Frame</b> — Opening and closing the sidebar now keeps the page edge locked to the panel throughout the animation, eliminating the brief jump and repaint glitch.' ] },
       { v: '5.1.7', icon: 'check-check', title: 'System Theme, Fully in Sync', hotfix: true, major: false, items: [
