@@ -2310,6 +2310,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self.sidebarPeekBG.isHidden = true
                 self.sidebarWidthC.constant = self.sidebarWidth
                 self.sidebarLeft.constant = -self.sidebarWidth
+                self.webOverlayLeadingC.isActive = false
+                self.webLeadingC.isActive = true
+                self.webOverlayLeadingC.constant = 6
                 self.sidebar.layer?.cornerRadius = 0
                 self.sidebar.layer?.shadowOpacity = 0
                 self.edgeHandle.isHidden = false
@@ -2323,17 +2326,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // the saved-width sidebar floats above it until explicitly docked.
         sidebarHidden = hidden
         edgeHandle.isHidden = !hidden
-        let overlaying = hidden
-        if overlaying {
+        root.layoutSubtreeIfNeeded()
+        let dockingPeek = wasPeeking && !hidden
+        if dockingPeek {
+            // The page stayed full width while peeking. Animate that one overlay
+            // edge inward, then return to the sidebar-linked resting constraint.
+            webOverlayLeadingC.constant = webContainer.frame.minX
             if webLeadingC.isActive { webLeadingC.isActive = false }
             if !webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = true }
         } else {
+            // Normal open/close has one physical relationship: the page is tied
+            // to the sidebar's trailing edge, so AppKit cannot start them on
+            // different frames.
             if webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = false }
             if !webLeadingC.isActive { webLeadingC.isActive = true }
+            webOverlayLeadingC.constant = 6
         }
         if !wasPeeking { sidebarGlass.isHidden = true }
         sidebarPeekBG.isHidden = true   // docked sidebar is transparent over the window bg
-        sidebarResizer.isHidden = overlaying
+        sidebarResizer.isHidden = hidden
         sidebarWidthC.constant = sidebarWidth
         sidebar.layer?.cornerRadius = wasPeeking ? 12 : 0
         sidebar.layer?.shadowColor = NSColor.black.cgColor
@@ -2348,10 +2359,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             ctx.allowsImplicitAnimation = true
             sidebarLeft.constant = hidden ? -sidebarWidth : 0
+            if dockingPeek { webOverlayLeadingC.constant = sidebarWidth + 6 }
             sidebar.animator().alphaValue = hidden ? 0 : 1
             root.layoutSubtreeIfNeeded()
         }, completionHandler: { [weak self] in
-            guard let self, !self.peeking else { return }
+            guard let self, !self.peeking, self.sidebarHidden == hidden else { return }
+            if dockingPeek {
+                self.webOverlayLeadingC.isActive = false
+                self.webLeadingC.isActive = true
+                self.webOverlayLeadingC.constant = 6
+                self.root.layoutSubtreeIfNeeded()
+            }
             self.sidebarGlass.isHidden = true
             self.sidebar.layer?.cornerRadius = 0
             self.sidebar.layer?.shadowOpacity = 0
@@ -2395,28 +2413,35 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // If assistant is currently embedded in a chat tab, don't animate the sidebar panel
         if current?.isChatTab == true && !open { return }
         
-        if open { assistant.isHidden = false }
+        if open {
+            assistant.isHidden = false
+            assistant.setMode(history: false)   // always a normal chat; history is a button overlay
+            updateAIContextPills()
+            updateCreatorToolsAvailability()
+            prepareAIStatus()
+            assistant.resumeTipsIfEmpty()
+        }
         assistant.setFullscreen(false, clearLights: false)
         breezeCorner.isHidden = open
         let w: CGFloat = ASSISTANT_W
+        // Commit the complete offscreen/on-screen starting state before changing
+        // any constants, otherwise revealing Nav and resizing WebKit can land in
+        // the same first frame and flash at the old geometry.
+        root.layoutSubtreeIfNeeded()
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.22; ctx.allowsImplicitAnimation = true
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ctx.allowsImplicitAnimation = true
             assistantWidthC.constant = w
             assistantLeadingC.constant = open ? -w : 0
             webTrailC.constant = open ? -(w + 6) : -6
             topTrailC.constant = open ? -(w + 12) : -54
             self.root.layoutSubtreeIfNeeded()
-        }, completionHandler: {
-            if !open { self.assistant.isHidden = true }
+        }, completionHandler: { [weak self] in
+            guard let self, self.assistantOpen == open else { return }
+            if open { self.assistant.focusInput() }
+            else { self.assistant.isHidden = true }
         })
-        if open {
-            assistant.setMode(history: false)   // always a normal chat; history is a button overlay
-            updateAIContextPills()
-            updateCreatorToolsAvailability()
-            assistant.focusInput()
-            prepareAIStatus()
-            assistant.resumeTipsIfEmpty()
-        }
         scheduleReflow()
     }
 
