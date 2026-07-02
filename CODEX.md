@@ -74,7 +74,8 @@ native releases are now just normal GitHub "latest". Everything here is native.
   - `Updater.swift` — native auto-updater (see Releasing below).
   - `Models.swift` — Tab, Pin, sharedConfig (native WKWebView user agent with the
     installed Safari version appended for modern-site compatibility + the
-    `breezeMedia`/bridge user scripts), Favicons.
+    `breezeMedia`/bridge user scripts), Favicons. YouTube `/@handle/posts` pages
+    alone use the untouched native UA for their embedded Google account frame.
   - `Store.swift` — settings/pins/history/bookmarks/chats persisted as JSON in
     `~/Library/Application Support/Breeze/`.
   - `InternalPages.swift` — bundled `ui/*.html` (settings, updates, history,

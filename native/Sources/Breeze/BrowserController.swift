@@ -1739,7 +1739,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.refreshSidebar()
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
-        urlObs[t.id] = t.webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+        urlObs[t.id] = t.webView.observe(\.url, options: [.new]) { [weak self] webView, _ in
+            self?.syncYouTubePostsUserAgent(for: webView)
             self?.syncChrome(); self?.refreshSidebar()
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
@@ -2042,6 +2043,57 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
         comps.scheme = "https"
         return comps.url ?? url
+    }
+
+    /// YouTube's channel-post composer embeds an account frame that rejects the
+    /// Safari compatibility suffix used elsewhere for modern site styling. Keep
+    /// this exception deliberately limited to /@handle/posts pages.
+    func isYouTubeChannelPostsURL(_ url: URL) -> Bool {
+        var host = (url.host ?? "").lowercased()
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        guard host == "youtube.com" else { return false }
+        let parts = url.path.split(separator: "/", omittingEmptySubsequences: true)
+        return parts.count == 2 && parts[0].hasPrefix("@") && parts[1] == "posts"
+    }
+
+    /// Covers YouTube's client-side routing, where the URL can change without a
+    /// normal main-frame navigation-policy callback.
+    func syncYouTubePostsUserAgent(for webView: WKWebView) {
+        guard let url = webView.url else { return }
+        if isYouTubeChannelPostsURL(url) {
+            guard webView.customUserAgent == nil else { return }
+            resolveBreezeNativeUserAgent(from: webView) { [weak self, weak webView] nativeUA in
+                guard let self, let webView, let nativeUA,
+                      let currentURL = webView.url,
+                      self.isYouTubeChannelPostsURL(currentURL),
+                      webView.customUserAgent == nil else { return }
+                webView.customUserAgent = nativeUA
+                webView.reload()
+            }
+        } else if webView.customUserAgent != nil {
+            webView.customUserAgent = nil
+        }
+    }
+
+    /// Apply the posts-only UA before the request starts. Returns true when it
+    /// takes ownership of the asynchronous navigation decision.
+    func decideYouTubePostsUserAgent(for webView: WKWebView,
+                                     action: WKNavigationAction,
+                                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) -> Bool {
+        guard action.targetFrame?.isMainFrame == true,
+              let url = action.request.url else { return false }
+        let wantsNativeUA = isYouTubeChannelPostsURL(url)
+        if wantsNativeUA && webView.customUserAgent == nil {
+            resolveBreezeNativeUserAgent(from: webView) { [weak webView] nativeUA in
+                if let webView, let nativeUA { webView.customUserAgent = nativeUA }
+                decisionHandler(.allow)
+            }
+            return true
+        }
+        if !wantsNativeUA && webView.customUserAgent != nil {
+            webView.customUserAgent = nil
+        }
+        return false
     }
 
     func loadPreparedURL(_ rawURL: URL, in t: Tab, focus: Bool) {
@@ -4538,6 +4590,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // download silently never happens (the "can't download anything" bug).
         if #available(macOS 11.3, *), navigationAction.shouldPerformDownload {
             decisionHandler(.download)
+            return
+        }
+        if decideYouTubePostsUserAgent(for: w, action: navigationAction,
+                                       decisionHandler: decisionHandler) {
             return
         }
         decisionHandler(.allow)

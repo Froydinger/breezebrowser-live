@@ -225,6 +225,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.10', icon: 'check-check', title: 'YouTube Posts, Unblocked', hotfix: true, major: false, items: [
+        '<b>A Fix Only Where It Is Needed</b> — YouTube channel post pages now use WebKit\'s native site identity for their embedded Google account content, while Google and every other page keep Breeze\'s current versioned compatibility.' ] },
       { v: '5.1.9', icon: 'refresh-cw', title: 'WebKit, Up to Date', hotfix: true, major: false, items: [
         '<b>Current Site Compatibility</b> — Breeze now builds its browser identity from the WebKit and Safari version installed on your Mac instead of claiming an old fixed version, keeping modern sites styled and compatible as macOS updates.' ] },
       { v: '5.1.8', icon: 'panel-left', title: 'Sidebars in Step', hotfix: true, major: false, items: [

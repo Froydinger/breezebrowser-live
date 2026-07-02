@@ -15,6 +15,33 @@ let breezeSafariProductToken: String? = {
     return "Version/\(version) Safari/605.1.15"
 }()
 
+private var breezeNativeUserAgentCache: String?
+
+/// Resolve WKWebView's untouched device UA by removing only the compatibility
+/// suffix Breeze appends. This stays tied to the WebKit installed on the Mac.
+func resolveBreezeNativeUserAgent(from webView: WKWebView,
+                                  completion: @escaping (String?) -> Void) {
+    if let cached = breezeNativeUserAgentCache {
+        completion(cached)
+        return
+    }
+    webView.evaluateJavaScript("navigator.userAgent") { value, _ in
+        guard let full = value as? String,
+              let productToken = breezeSafariProductToken else {
+            completion(nil)
+            return
+        }
+        let suffix = " " + productToken
+        guard full.hasSuffix(suffix) else {
+            completion(nil)
+            return
+        }
+        let native = String(full.dropLast(suffix.count))
+        breezeNativeUserAgentCache = native
+        completion(native)
+    }
+}
+
 let sharedConfig: WKWebViewConfiguration = {
     let c = WKWebViewConfiguration()
     c.websiteDataStore = .default()
