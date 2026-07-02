@@ -131,7 +131,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let nowPlaying = NowPlayingView()
     var nowPlayingTab: Tab?
     var splitRatio: CGFloat = 0.5
+    var splitDragStartRatio: CGFloat = 0.5
     var splitLeftWidthC: NSLayoutConstraint?
+    var splitClickMonitor: Any?
     let splitDivider = ColumnResizeView()
     let leftPane = SplitPane()
     let rightPane = SplitPane()
@@ -202,6 +204,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         super.init()
         window.delegate = self
         window.isMovableByWindowBackground = true
+        splitClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            self?.activateSplitPane(at: event)
+            return event
+        }
 
         root.wantsLayer = true
         buildSidebar()
@@ -981,7 +987,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             webContainerTopC = webContainer.topAnchor.constraint(equalTo: root.topAnchor, constant: 6)
             webContainerTopC.isActive = true
 
-            pinsTopC.constant = 54
+            pinsTopC.constant = 44   // matches the 44pt top-bar clearance now that the frame sits higher
 
             let isCurrentOnRight = t.splitIsRight
             let leftTab = isCurrentOnRight ? s : t
@@ -993,6 +999,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             wireSplitPane(rightPane, tab: rightTab)
             leftPane.setURL(leftTab.isNewTab ? "" : (leftTab.webView.url?.absoluteString ?? ""))
             rightPane.setURL(rightTab.isNewTab ? "" : (rightTab.webView.url?.absoluteString ?? ""))
+            leftPane.setActive(leftTab.id == t.id)
+            rightPane.setActive(rightTab.id == t.id)
             leftPane.showsSidebarToggle = true
             rightPane.showsSidebarToggle = false
             leftPane.setLeftSpacingForTrafficLights(sidebarHidden)
@@ -1003,7 +1011,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 webContainer.addSubview($0); $0.translatesAutoresizingMaskIntoConstraints = false
             }
             let w = max(webContainer.bounds.width, 1)
-            let lw = leftPane.widthAnchor.constraint(equalToConstant: w * splitRatio - 7)
+            let lw = leftPane.widthAnchor.constraint(equalToConstant: splitLeftWidth(for: w))
             splitLeftWidthC = lw
             NSLayoutConstraint.activate([
                 leftPane.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
@@ -1111,16 +1119,92 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Split view ----------------------------------------------------
 
+    func splitPartner(for tab: Tab) -> Tab? {
+        guard let id = tab.splitPartnerId else { return nil }
+        return tabs.first { $0.id == id }
+    }
+
+    func orderedSplitPair(containing tab: Tab) -> (left: Tab, right: Tab)? {
+        guard let partner = splitPartner(for: tab) else { return nil }
+        return tab.splitIsRight ? (partner, tab) : (tab, partner)
+    }
+
+    /// Pinned apps remain single, stable app instances. Splitting one creates a
+    /// normal tab clone so closing/rearranging the split never mutates the pin.
+    func regularCloneForSplit(_ source: Tab) -> Tab? {
+        guard let url = source.webView.url else { return nil }
+        let clone = Tab(isPrivate: source.isPrivate)
+        clone.isNewTab = false
+        clone.title = source.title
+        clone.groupId = source.groupId
+        clone.pageZoom = source.pageZoom
+        wire(clone)
+        tabs.append(clone)
+        clone.webView.load(URLRequest(url: url))
+        return clone
+    }
+
+    func activateSplitPane(at event: NSEvent) {
+        guard event.window === window, let current,
+              let pair = orderedSplitPair(containing: current) else { return }
+        let point = webContainer.convert(event.locationInWindow, from: nil)
+        if leftPane.frame.contains(point) {
+            activateSplitTab(pair.left)
+        } else if rightPane.frame.contains(point) {
+            activateSplitTab(pair.right)
+        }
+    }
+
+    func activateSplitTab(_ tab: Tab) {
+        guard tab.splitPartnerId != nil,
+              let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        guard active != index else { return }
+        active = index
+        tab.lastActive = Date()
+        leftPane.setActive(!tab.splitIsRight)
+        rightPane.setActive(tab.splitIsRight)
+        refreshSidebar()
+        syncChrome()
+        if assistantOpen { updateAIContextPills() }
+    }
+
+    func splitLeftWidth(for containerWidth: CGFloat) -> CGFloat {
+        let width = max(containerWidth, 1)
+        let minimumPane = min(240, max(140, (width - 8) * 0.4))
+        return max(minimumPane, min(width - minimumPane - 8, width * splitRatio - 4))
+    }
+
     func enterSplit(_ t: Tab) {
-        guard let current = current, t.id != current.id else { return }
+        guard let selected = current, t.id != selected.id,
+              selected.splitPartnerId == nil, t.splitPartnerId == nil else { return }
         // Ensure both are fully populated
-        guard !current.isNewTab && !current.isChatTab && !t.isNewTab && !t.isChatTab else { return }
-        
-        current.splitPartnerId = t.id
-        current.splitIsRight = false
-        
-        t.splitPartnerId = current.id
-        t.splitIsRight = true
+        guard !selected.isNewTab && !selected.isChatTab && !t.isNewTab && !t.isChatTab else { return }
+
+        let left: Tab
+        if selected.pinUrl != nil {
+            guard let clone = regularCloneForSplit(selected) else { return }
+            left = clone
+        } else {
+            left = selected
+        }
+        let right: Tab
+        if t.pinUrl != nil {
+            guard let clone = regularCloneForSplit(t) else { return }
+            right = clone
+        } else {
+            right = t
+        }
+        guard left.id != right.id else { return }
+
+        // A pair is one logical sidebar item, so both partners share its group.
+        let pairGroup = left.groupId ?? right.groupId
+        left.groupId = pairGroup
+        right.groupId = pairGroup
+        left.splitPartnerId = right.id
+        left.splitIsRight = false
+        right.splitPartnerId = left.id
+        right.splitIsRight = true
+        if let index = tabs.firstIndex(where: { $0.id == left.id }) { active = index }
         
         showActive()
         refreshSidebar()
@@ -1141,15 +1225,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @objc func dragSplit(_ g: NSPanGestureRecognizer) {
         let w = max(webContainer.bounds.width, 1)
-        splitRatio = max(0.2, min(0.8, splitRatio + g.translation(in: webContainer).x / w))
-        g.setTranslation(.zero, in: webContainer)
-        splitLeftWidthC?.constant = w * splitRatio - 3
+        if g.state == .began { splitDragStartRatio = splitRatio }
+        let proposed = splitDragStartRatio + g.translation(in: webContainer).x / w
+        let minimumRatio = min(0.4, max(0.15, 240 / w))
+        splitRatio = max(minimumRatio, min(1 - minimumRatio, proposed))
+        splitLeftWidthC?.constant = splitLeftWidth(for: w)
         if g.state == .ended { scheduleReflow() }
     }
 
     func windowDidResize(_ n: Notification) {
         guard !hasActiveElementFullscreen() else { return }
-        splitLeftWidthC?.constant = max(webContainer.bounds.width, 1) * splitRatio - 3
+        splitLeftWidthC?.constant = splitLeftWidth(for: max(webContainer.bounds.width, 1))
         updateRainbowFrame()
         alignTrafficLights()
         scheduleReflow()
@@ -1178,6 +1264,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func windowWillClose(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
             if win === window {
+                if let monitor = splitClickMonitor {
+                    NSEvent.removeMonitor(monitor)
+                    splitClickMonitor = nil
+                }
                 for (_, w) in popupWindows {
                     w.close()
                 }
@@ -1205,6 +1295,50 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         row.menuProvider = { [weak self] in self?.tabMenu(for: t) ?? [] }
         row.dragPayload = SidebarDragPayload(kind: .tab, id: t.id.uuidString)
         row.onDropPayload = { [weak self] payload, placement in self?.dropSidebarPayload(payload, onTab: t.id, placement: placement) ?? false }
+        return row
+    }
+
+    func makeSplitTabRow(_ first: Tab, _ second: Tab) -> TabRowView {
+        let pair = first.splitIsRight ? (left: second, right: first) : (left: first, right: second)
+        let leftTitle = pair.left.title.isEmpty ? "New Tab" : pair.left.title
+        let rightTitle = pair.right.title.isEmpty ? "New Tab" : pair.right.title
+        let selected = current?.id == pair.right.id ? pair.right : pair.left
+        let row = TabRowView(title: "\(leftTitle)  +  \(rightTitle)",
+                             host: hostOf(selected.webView.url),
+                             active: current?.id == pair.left.id || current?.id == pair.right.id,
+                             perf: pair.left.perfMode || pair.right.perfMode,
+                             asleep: false, inSplit: true,
+                             isPrivate: pair.left.isPrivate || pair.right.isPrivate)
+        row.onSelect = { [weak self, weak selected] in
+            guard let self, let selected,
+                  let index = self.tabs.firstIndex(where: { $0.id == selected.id }) else { return }
+            if self.current?.splitPartnerId == selected.id || self.current?.id == selected.id {
+                self.activateSplitTab(selected)
+            } else {
+                self.select(index)
+            }
+        }
+        row.onClose = { [weak self, weak first] in
+            if let first { self?.closeSplitPair(containing: first) }
+        }
+        row.menuProvider = { [weak self, weak selected] in
+            guard let self, let selected else { return [] }
+            return [
+                .item("Focus Left Pane", { [weak self, weak pairLeft = pair.left] in
+                    if let pairLeft { self?.activateSplitTab(pairLeft) }
+                }),
+                .item("Focus Right Pane", { [weak self, weak pairRight = pair.right] in
+                    if let pairRight { self?.activateSplitTab(pairRight) }
+                }),
+                .separator,
+                .item("Exit Split View", { [weak self, weak selected] in
+                    if let selected { self?.exitSplit(selected) }
+                }),
+                .item("Close Split Pair", { [weak self, weak selected] in
+                    if let selected { self?.closeSplitPair(containing: selected) }
+                }),
+            ]
+        }
         return row
     }
 
@@ -1277,15 +1411,38 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func renderTabs() {
         tabsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        var rendered = Set<UUID>()
         func add(_ v: NSView) {
             tabsStack.addArrangedSubview(v)
             v.widthAnchor.constraint(equalTo: tabsStack.widthAnchor).isActive = true
+        }
+        func logicalCount(_ members: [Tab]) -> Int {
+            var seen = Set<UUID>()
+            var count = 0
+            for tab in members where !seen.contains(tab.id) {
+                count += 1
+                seen.insert(tab.id)
+                if let partner = splitPartner(for: tab), members.contains(where: { $0.id == partner.id }) {
+                    seen.insert(partner.id)
+                }
+            }
+            return count
+        }
+        func addLogicalTab(_ tab: Tab) {
+            guard !rendered.contains(tab.id) else { return }
+            rendered.insert(tab.id)
+            if let partner = splitPartner(for: tab) {
+                rendered.insert(partner.id)
+                add(makeSplitTabRow(tab, partner))
+            } else {
+                add(makeTabRow(tab))
+            }
         }
         // grouped tabs first, under collapsible headers
         for g in groups {
             let members = tabs.filter { $0.groupId == g.id }
             if members.isEmpty { continue }
-            let header = GroupHeaderView(name: g.name, count: members.count, collapsed: g.collapsed)
+            let header = GroupHeaderView(name: g.name, count: logicalCount(members), collapsed: g.collapsed)
             header.onToggle = { [weak self] in
                 guard let self, let gi = self.groups.firstIndex(where: { $0.id == g.id }) else { return }
                 self.groups[gi].collapsed.toggle(); self.renderTabs()
@@ -1294,10 +1451,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             header.dragPayload = SidebarDragPayload(kind: .group, id: "\(g.id)")
             header.onDropPayload = { [weak self] payload, placement in self?.dropSidebarPayload(payload, onGroup: g.id, placement: placement) ?? false }
             add(header)
-            if !g.collapsed { for t in members { add(makeTabRow(t)) } }
+            if !g.collapsed { for t in members { addLogicalTab(t) } }
         }
         // ungrouped, non-pinned tabs (pinned tabs are housed in their pin icon)
-        for t in tabs where t.groupId == nil && t.pinUrl == nil { add(makeTabRow(t)) }
+        for t in tabs where t.groupId == nil && t.pinUrl == nil { addLogicalTab(t) }
     }
 
     func dropSidebarPayload(_ payload: SidebarDragPayload, onPin targetURL: String, placement: SidebarDropPlacement) -> Bool {
@@ -1628,6 +1785,36 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return tab.webView.url?.absoluteString
         }
         Store.shared.saveOpenTabs()
+    }
+
+    func closeSplitPair(containing tab: Tab) {
+        guard let partner = splitPartner(for: tab) else {
+            closeTab(tab)
+            return
+        }
+        let pairIDs: Set<UUID> = [tab.id, partner.id]
+        let oldActiveID = current?.id
+        let firstIndex = tabs.enumerated()
+            .filter { pairIDs.contains($0.element.id) }
+            .map(\.offset).min() ?? active
+        tearDownClosedTab(tab)
+        tearDownClosedTab(partner)
+        tabs.removeAll { pairIDs.contains($0.id) }
+        persistOpenTabsSnapshot()
+        if tabs.isEmpty {
+            openNewTab()
+            return
+        }
+        if let oldActiveID, !pairIDs.contains(oldActiveID),
+           let keptIndex = tabs.firstIndex(where: { $0.id == oldActiveID }) {
+            active = keptIndex
+        } else {
+            active = min(firstIndex, tabs.count - 1)
+        }
+        showActive()
+        refreshSidebar()
+        updateNowPlaying()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
     }
 
     func closeTab(_ t: Tab) {

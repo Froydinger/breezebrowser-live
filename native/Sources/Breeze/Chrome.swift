@@ -275,6 +275,7 @@ final class SplitPane: NSView {
     let content = NSView()
     var onNavigate: ((String) -> Void)?
     var onSidebarToggle: (() -> Void)?
+    private var activePane = false
     var showsSidebarToggle = false {
         didSet {
             sidebarToggle.isHidden = !showsSidebarToggle
@@ -350,10 +351,16 @@ final class SplitPane: NSView {
     func setURL(_ s: String) {
         if !isEditingTextField(address) { address.stringValue = s }
     }
+    func setActive(_ active: Bool) {
+        activePane = active
+        applyTheme()
+    }
     @objc private func submit() { onNavigate?(address.stringValue) }
     @objc func applyTheme() {
         let p = Theme.shared.palette
         layer?.backgroundColor = p.surface.cgColor
+        layer?.borderWidth = activePane ? 1.5 : 0
+        layer?.borderColor = activePane ? p.accent.withAlphaComponent(0.8).cgColor : nil
         addressWrap.layer?.backgroundColor = p.surface.cgColor
         address.textColor = p.text
     }

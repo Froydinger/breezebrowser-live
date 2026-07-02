@@ -225,6 +225,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.1.5', icon: 'columns-2', title: 'Split View, Sorted', hotfix: true, major: false, items: [
+        '<b>One Tab, Two Panes</b> — A split pair now shows as a single logical row in the sidebar instead of two duplicate entries, and clicking either pane just switches focus without rebuilding the layout.',
+        '<b>Pinned Apps Stay Safe</b> — Splitting a pinned app clones it into a normal tab first, so rearranging or closing the split never disturbs the pin.',
+        '<b>Steadier Divider</b> — The split divider keeps one stable ratio with sensible minimum pane widths while dragging and resizing.',
+        '<b>Aligned Tabs</b> — Sidebar tabs in split view now start higher to line up with the lighter frame introduced in 5.1.4.' ] },
       { v: '5.1.4', icon: 'shapes', title: 'A Lighter, Smarter Frame', hotfix: true, major: false, items: [
         '<b>Fullscreen UI Freeze</b> — Breeze now pauses chrome refreshes and synthetic page reflows while WebKit owns fullscreen, protecting repeated video sessions.',
         '<b>Reliable Navigation</b> — New-tab and address-bar submissions reclaim stranded web views so pages no longer load invisibly into a stale container.',
