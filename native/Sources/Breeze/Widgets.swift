@@ -9,6 +9,15 @@ final class PassthroughVisualEffectView: NSVisualEffectView {
 /// Painted gradient background matching `body` in style.css:
 /// a 7% accent wash over the 160° bg gradient.
 class GradientBackgroundView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        NotificationCenter.default.addObserver(self, selector: #selector(themeChanged),
+                                               name: Theme.didChange, object: nil)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    @objc private func themeChanged() { needsDisplay = true }
+
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
         guard let layer = layer else { return }

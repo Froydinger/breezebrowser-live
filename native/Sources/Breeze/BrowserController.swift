@@ -205,6 +205,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         window.center()
         super.init()
         window.delegate = self
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange),
+                                               name: Theme.didChange, object: nil)
         window.isMovableByWindowBackground = true
         splitClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             self?.activateSplitPane(at: event)
@@ -5276,6 +5278,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         breezeCorner.image = navLogo()
         window.backgroundColor = p.bg
         root.needsDisplay = true
+    }
+
+    /// Refresh the surfaces owned by the controller when macOS changes its
+    /// effective appearance while Breeze is following the System theme.
+    @objc private func themeDidChange() {
+        applyChromeTheme()
+        broadcastToInternalPages()
     }
 
     // MARK: - WK delegates --------------------------------------------------

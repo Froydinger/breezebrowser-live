@@ -59,6 +59,30 @@ final class Theme {
     static let didChange = Notification.Name("BreezeThemeDidChange")
 
     private(set) var mode: ThemeMode = .system
+    private var systemIsDark: Bool
+    private var appearanceObservation: NSKeyValueObservation?
+
+    private init() {
+        let globalStyle = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
+        if let globalStyle {
+            systemIsDark = globalStyle.caseInsensitiveCompare("Dark") == .orderedSame
+        } else {
+            systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        }
+
+        // Explicit Breeze theme changes already call apply(). System appearance
+        // changes do not, so bridge AppKit's documented KVO signal into the same
+        // notification path after its effective appearance has settled.
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] app, _ in
+            DispatchQueue.main.async {
+                guard let self, self.mode == .system else { return }
+                let isDark = app.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                guard isDark != self.systemIsDark else { return }
+                self.systemIsDark = isDark
+                NotificationCenter.default.post(name: Theme.didChange, object: nil)
+            }
+        }
+    }
 
     static let defaultAccent = "#3aa6b9"
     static func hex(_ s: String) -> NSColor? {
@@ -73,19 +97,7 @@ final class Theme {
         case .light: return .light
         case .dark:  return .dark
         case .system:
-            // During launch AppKit can report the previous effective appearance
-            // for one run-loop turn. That painted light labels/icons into a dark
-            // window until hover forced another theme read. The global interface
-            // style is already authoritative at launch; retain effectiveAppearance
-            // as the fallback for unusual/custom appearances.
-            let globalStyle = UserDefaults.standard.string(forKey: "AppleInterfaceStyle")
-            let dark: Bool
-            if let globalStyle {
-                dark = globalStyle.caseInsensitiveCompare("Dark") == .orderedSame
-            } else {
-                dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            }
-            return dark ? .dark : .light
+            return systemIsDark ? .dark : .light
         }
     }
 

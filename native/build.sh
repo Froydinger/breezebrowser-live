@@ -65,8 +65,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>5.1.6</string>
-  <key>CFBundleShortVersionString</key><string>5.1.6</string>
+  <key>CFBundleVersion</key><string>5.1.7</string>
+  <key>CFBundleShortVersionString</key><string>5.1.7</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
