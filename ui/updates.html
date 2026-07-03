@@ -225,6 +225,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.0', icon: 'panel-right', title: 'The Right Edge, Respected', hotfix: true, major: false, items: [
+        '<b>Pages Always Know Where Breeze Ends</b> — After opening or closing Nav, toggling the sidebar, or switching tabs, Breeze now verifies that every page agrees on the exact width of the web area and heals any mismatch on the spot, so sites no longer lay out past the visible right edge.',
+        '<b>Stray Zoom, Snapped Back</b> — An accidental pinch or smart-zoom can no longer leave a page rendering oversized and clipped; Breeze re-asserts your intended zoom whenever the window chrome changes.' ] },
       { v: '5.1.10', icon: 'check-check', title: 'YouTube Posts, Unblocked', hotfix: true, major: false, items: [
         '<b>A Fix Only Where It Is Needed</b> — YouTube channel post pages now use WebKit\'s native site identity for their embedded Google account content, while Google and every other page keep Breeze\'s current versioned compatibility.' ] },
       { v: '5.1.9', icon: 'refresh-cw', title: 'WebKit, Up to Date', hotfix: true, major: false, items: [

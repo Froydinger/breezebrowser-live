@@ -2292,9 +2292,69 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
     func reflowWebViews() {
         guard !hasActiveElementFullscreen() else { return }
+        verifyChromeGeometry()
         let js = "window.dispatchEvent(new Event('resize'));"
         for t in tabs where !t.isNewTab && !isInternal(t.webView) {
             t.webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+        for t in visibleWebTabs() where !t.isNewTab && !isInternal(t.webView) {
+            verifyViewportWidth(of: t)
+        }
+    }
+
+    /// Re-assert the resting chrome constraints for the current mode. Animated
+    /// toggles that race each other (Nav + sidebar + tab switch landing in the
+    /// same beat) can strand a stale constant, which leaves the web area wider
+    /// than the visible page — sites then lay out past the window's right edge.
+    /// Idempotent when nothing drifted.
+    func verifyChromeGeometry() {
+        guard current?.isChatTab != true else { return }
+        let wantTrail: CGFloat = assistantOpen ? -(ASSISTANT_W + 6) : -6
+        if webTrailC.constant != wantTrail { webTrailC.constant = wantTrail }
+        let wantTop: CGFloat = assistantOpen ? -(ASSISTANT_W + 12) : -54
+        if topTrailC.constant != wantTop { topTrailC.constant = wantTop }
+        if !peeking && !sidebarHidden {
+            if webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = false }
+            if !webLeadingC.isActive { webLeadingC.isActive = true }
+            webOverlayLeadingC.constant = 6
+        }
+        root.layoutSubtreeIfNeeded()
+    }
+
+    /// The web view(s) the user can actually see: the current tab, plus its
+    /// split partner when a split pair is on screen.
+    func visibleWebTabs() -> [Tab] {
+        guard let current else { return [] }
+        var out = [current]
+        if let pid = current.splitPartnerId,
+           let partner = tabs.first(where: { $0.id == pid }) { out.append(partner) }
+        return out
+    }
+
+    /// Ask the page what width it believes it has and heal any disagreement.
+    /// WebKit can miss a frame change when a view is resized while detached or
+    /// hidden, or when an animated toggle is interrupted — the page then keeps
+    /// rendering to the old right edge and the overflow is clipped. A JS resize
+    /// event alone cannot fix that (it re-fires handlers but doesn't update the
+    /// viewport), so when the reported width is stale, force a genuine size
+    /// change and let Auto Layout restore the true width on the next pass.
+    func verifyViewportWidth(of t: Tab) {
+        let w = t.webView
+        guard w.superview != nil, !w.isHidden, w.frame.width > 1 else { return }
+        if w.magnification != t.pageZoom { w.magnification = t.pageZoom }   // stray gesture zoom
+        let expected = w.frame.width / max(t.pageZoom, 0.01)
+        w.evaluateJavaScript("window.innerWidth") { [weak self, weak w] value, _ in
+            guard let self, let w, !self.hasActiveElementFullscreen(),
+                  let n = value as? NSNumber else { return }
+            let reported = CGFloat(truncating: n)
+            guard abs(reported - expected) > 2, w.superview != nil else { return }
+            let size = w.frame.size
+            w.setFrameSize(NSSize(width: max(size.width - 2, 1), height: size.height))
+            DispatchQueue.main.async { [weak self, weak w] in
+                guard let self, let w, w.superview != nil else { return }
+                w.needsLayout = true
+                self.root.layoutSubtreeIfNeeded()
+            }
         }
     }
 
