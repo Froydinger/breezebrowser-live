@@ -818,7 +818,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // Never clip an ancestor of WKWebView. WebKit removes the view to create
         // element fullscreen, and beginning that transfer inside a clipped layer
         // tree can produce a permanently blank hardware-video surface.
-        webContainer.layer?.cornerRadius = 10
+        webContainer.layer?.cornerRadius = 0
         webContainer.layer?.masksToBounds = false
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
@@ -833,7 +833,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func setWebFullscreen(_ on: Bool) {
         guard on != webFullscreen else { return }
         webFullscreen = on
-        webContainer.layer?.cornerRadius = on ? 0 : 10
         updateWebCornerOverlay()
     }
 
@@ -4478,11 +4477,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if current?.id == t.id {
                 t.keepsMediaAlive = false
             } else {
-                // X dismisses without requesting a restore. Keep the user on their
-                // current tab and resume the video that AVKit pauses while closing.
-                t.keepsMediaAlive = true
-                t.isPlaying = true
-                t.webView.evaluateJavaScript("(function(){var v=document.querySelector('video');if(v&&v.paused)v.play().catch(function(){});})()")
+                if playing {
+                    // Restore (back to tab) button clicked. Switch focus to the tab.
+                    if let index = tabs.firstIndex(where: { $0.id == t.id }) {
+                        select(index)
+                    }
+                } else {
+                    // Close (X) button clicked. Keep user on current tab, video remains paused.
+                    t.keepsMediaAlive = true
+                    t.isPlaying = false
+                }
             }
         } else if playing {
             nowPlayingTab = t
@@ -4540,7 +4544,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         try { await v.requestPictureInPicture(); return 'ok'; }
         catch (e) { return 'error: ' + (e && e.name ? e.name : String(e)); }
         """
-        webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { _ in }
+        webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
+            switch result {
+            case .success(let val):
+                print("Breeze PiP JS success: \(String(describing: val))")
+            case .failure(let err):
+                print("Breeze PiP JS failure: \(err.localizedDescription)")
+            }
+        }
     }
     func backToNowPlaying() {
         guard let t = nowPlayingTab, let i = tabs.firstIndex(where: { $0.id == t.id }) else { return }

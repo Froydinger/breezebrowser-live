@@ -225,6 +225,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.1', icon: 'picture-in-picture', title: 'Video Restores and Fullscreen Fixed', hotfix: true, major: false, items: [
+        '<b>Element Fullscreen Restored</b> — Double-clicking videos or clicking their fullscreen buttons now opens clean video views instead of rendering a black screen.',
+        '<b>Smart Picture-in-Picture Exit</b> — Clicking the restore button in the top-right of the PiP floating window returns you directly to the original video tab.',
+        '<b>No Background Audio Stays</b> — Clicking the Close ("X") button on the PiP window now pauses video playback and stops audio output, instead of resuming it in the background.' ] },
       { v: '5.2.0', icon: 'panel-right', title: 'The Right Edge, Respected', hotfix: true, major: false, items: [
         '<b>Pages Always Know Where Breeze Ends</b> — After opening or closing Nav, toggling the sidebar, or switching tabs, Breeze now verifies that every page agrees on the exact width of the web area and heals any mismatch on the spot, so sites no longer lay out past the visible right edge.',
         '<b>Stray Zoom, Snapped Back</b> — An accidental pinch or smart-zoom can no longer leave a page rendering oversized and clipped; Breeze re-asserts your intended zoom whenever the window chrome changes.' ] },

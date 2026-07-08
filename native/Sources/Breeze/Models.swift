@@ -122,7 +122,11 @@ let breezeMediaJS = """
     var previous = lastPresentationMode;
     lastPresentationMode = mode;
     if (mode === 'picture-in-picture') report(!(v && v.paused), 'enter');
-    else if (previous === 'picture-in-picture') report(!(v && v.paused), 'leave');
+    else if (previous === 'picture-in-picture') {
+      setTimeout(function () {
+        report(!(v && v.paused), 'leave');
+      }, 0);
+    }
   }
   document.addEventListener('enterpictureinpicture', function (event) {
     var v = event.target;
@@ -132,7 +136,9 @@ let breezeMediaJS = """
   document.addEventListener('leavepictureinpicture', function (event) {
     var v = event.target;
     lastPresentationMode = presentationModeOf(v);
-    report(!(v && v.paused), 'leave');
+    setTimeout(function () {
+      report(!(v && v.paused), 'leave');
+    }, 0);
   }, true);
   document.addEventListener('webkitpresentationmodechanged', function (event) {
     reportPresentationMode(event.target);

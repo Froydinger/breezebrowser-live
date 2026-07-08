@@ -61,12 +61,9 @@ final class RoundedContentOverlayView: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    override func setFrameSize(_ newSize: NSSize) {
-        let changed = newSize != frame.size
-        super.setFrameSize(newSize)
-        // The corner mask is expressed in this view's bounds. Rebuild it when a
-        // normal window is maximized/restored so the new outer edges stay round.
-        if changed { needsDisplay = true }
+    override func layout() {
+        super.layout()
+        needsDisplay = true
     }
 
     @objc private func refresh() { needsDisplay = true }
@@ -93,6 +90,7 @@ final class RoundedContentOverlayView: NSView {
         clippedGradient.addSublayer(wash)
 
         let outsideCorners = CAShapeLayer()
+        outsideCorners.frame = bounds
         let path = CGMutablePath()
         path.addRect(bounds)
         path.addRoundedRect(in: bounds, cornerWidth: radius, cornerHeight: radius)
