@@ -125,7 +125,7 @@ let breezeMediaJS = """
     else if (previous === 'picture-in-picture') {
       setTimeout(function () {
         report(!(v && v.paused), 'leave');
-      }, 0);
+      }, 300);
     }
   }
   document.addEventListener('enterpictureinpicture', function (event) {
@@ -138,7 +138,7 @@ let breezeMediaJS = """
     lastPresentationMode = presentationModeOf(v);
     setTimeout(function () {
       report(!(v && v.paused), 'leave');
-    }, 0);
+    }, 300);
   }, true);
   document.addEventListener('webkitpresentationmodechanged', function (event) {
     reportPresentationMode(event.target);

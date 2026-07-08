@@ -900,15 +900,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.isHidden = true
             assistant.removeFromSuperview()
         }
+        var expectedBackgroundViews = Set<NSView>()
+        for tab in tabs {
+            if (tab.isInPiP || tab.keepsMediaAlive) && tab.id != current?.id {
+                expectedBackgroundViews.insert(tab.webView)
+                if tab.webView.superview != webContainer {
+                    tab.webView.removeFromSuperview()
+                    webContainer.addSubview(tab.webView, positioned: .below, relativeTo: nil)
+                    tab.webView.pin(to: webContainer)
+                }
+                tab.webView.isHidden = false
+                tab.webView.alphaValue = 1
+            }
+        }
         for subview in webContainer.subviews {
-            if let pipTab = tabs.first(where: { ($0.isInPiP || $0.keepsMediaAlive) && $0.webView === subview }), pipTab.id != current?.id {
-                // Keep PiP/background-media source views attached so playback can
-                // continue after native PiP closes. They stay behind the active tab
-                // in z-order, so the user only sees the current page.
-                pipTab.webView.isHidden = false
-                pipTab.webView.alphaValue = 1
-            } else {
-                subview.removeFromSuperview()
+            if subview !== current?.webView && subview !== newTab && !expectedBackgroundViews.contains(subview) {
+                if subview !== leftPane && subview !== rightPane && subview !== splitDivider {
+                    subview.removeFromSuperview()
+                }
             }
         }
         splitLeftWidthC = nil
@@ -4471,6 +4480,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             t.isInPiP = true
             t.keepsMediaAlive = false
             nowPlayingTab = t
+            showActive()
         } else if pipEvent == "leave" {
             t.isInPiP = false
             t.webView.alphaValue = 1
@@ -4488,6 +4498,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     t.isPlaying = false
                 }
             }
+            showActive()
         } else if playing {
             nowPlayingTab = t
         }
