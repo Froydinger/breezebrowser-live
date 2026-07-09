@@ -963,7 +963,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         let primary: NSView = t.isNewTab ? newTab : t.webView
-        if t.isNewTab { newTab.startClock() } else {
+        if t.isNewTab {
+            newTab.startClock()
+            window.makeFirstResponder(newTab.field)
+        } else {
             newTab.stopClock()
             t.webView.isHidden = false
             t.webView.alphaValue = 1

@@ -225,6 +225,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.3', icon: 'key-round', title: 'Editor Backspace and Auto-Focus', hotfix: true, major: false, items: [
+        '<b>Backspace in Editors Restored</b> — The keyboard event listener now traverses shadow boundaries and checks iframe elements, resolving a bug that blocked the backspace key inside Gutenberg and other rich-text web editors.',
+        '<b>Auto-Focused New Tabs</b> — Opening a new tab (via Command+T or clicking "+") now immediately focuses the ask/address input field so you can type without clicking.' ] },
       { v: '5.2.2', icon: 'picture-in-picture', title: 'Picture-in-Picture Restored and Polish', hotfix: true, major: false, items: [
         '<b>Native PiP Restore Repaired</b> — Clicking the native restore/return button on the floating PiP window now successfully exits PiP and returns focus back to the video tab.',
         '<b>Stabilized Background Tabs</b> — Web views for active PiP videos remain attached to the window hierarchy to support the native restore animation.',

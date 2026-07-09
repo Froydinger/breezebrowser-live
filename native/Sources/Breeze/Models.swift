@@ -237,13 +237,13 @@ let breezeKeyboardJS = """
     while (el && el !== document.documentElement) {
       if (el.isContentEditable) return true;
       var tag = (el.tagName || '').toLowerCase();
-      if (tag === 'textarea') return true;
+      if (tag === 'textarea' || tag === 'iframe') return true;
       if (tag === 'input') {
         var type = (el.getAttribute('type') || 'text').toLowerCase();
         return !/^(button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/i.test(type);
       }
       if ((el.getAttribute && el.getAttribute('role')) === 'textbox') return true;
-      el = el.parentElement;
+      el = el.parentElement || (el.parentNode && el.parentNode.host);
     }
     return false;
   }
