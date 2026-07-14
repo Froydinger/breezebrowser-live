@@ -88,6 +88,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var downloads: [DownloadItem] = []
     var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
     var pendingDownloadBroadcast: DispatchWorkItem?
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var sleepTimer: Timer?
+    private(set) var isClosing = false
     var contextLinkURL: URL?
     var contextImageURL: URL?
     var contextMediaURL: URL?
@@ -201,6 +204,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = isPrivateWindow ? "Breeze (Private)" : "Breeze"
+        // BrowserController owns this window. AppKit's legacy release-on-close
+        // behavior can otherwise leave the strongly-held Swift property dangling.
+        window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
         window.center()
         super.init()
@@ -393,14 +399,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         
         NotificationCenter.default.addObserver(self, selector: #selector(stateDidUpdate), name: BrowserController.didUpdateState, object: nil)
         
-        NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: nil) { [weak self] _ in
+        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: nil) { [weak self] _ in
             guard let self = self else { return }
             if Store.shared.settings["autoPip"] as? Bool != false, let t = self.current, t.isPlaying {
                 self.pip(for: t.webView, toggle: false)
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: nil) { [weak self] _ in
+        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: nil) { [weak self] _ in
             // Traffic lights hide until hover in fullscreen — reclaim the space we
             // normally reserve for them next to the sidebar/nav buttons.
             self?.navLeadingC?.constant = 12
@@ -408,13 +414,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self?.window.titlebarAppearsTransparent = false
                 self?.window.backgroundColor = .black
             }
-        }
+        })
 
-        NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
+        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
             self?.navLeadingC?.constant = 92   // restore the traffic-light gap when windowed
             self?.window.titlebarAppearsTransparent = true
             self?.window.backgroundColor = .windowBackgroundColor
-        }
+        })
     }
 
     var current: Tab? { tabs.indices.contains(active) ? tabs[active] : nil }
@@ -1118,6 +1124,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     @objc private func stateDidUpdate() {
+        guard !isClosing else { return }
         guard !hasActiveElementFullscreen() else { return }
         refreshSidebar()
         syncChrome()
@@ -1291,10 +1298,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func windowWillClose(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
             if win === window {
-                if let monitor = splitClickMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    splitClickMonitor = nil
-                }
+                beginWindowClosure()
                 for (_, w) in popupWindows {
                     w.close()
                 }
@@ -1743,6 +1747,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func wire(_ t: Tab) {
+        guard !isClosing else { return }
         t.webView.navigationDelegate = self
         t.webView.uiDelegate = self
         titleObs[t.id] = t.webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
@@ -1799,6 +1804,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         popupDownloadCandidates.remove(t.id)
         aiNavWaiters.removeValue(forKey: t.id)?.resume()
         if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
+        t.isPlaying = false
+        t.isInPiP = false
+        t.keepsMediaAlive = false
+        if #available(macOS 12.0, *) {
+            t.webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
+        }
         t.webView.stopLoading()
         t.webView.navigationDelegate = nil
         t.webView.uiDelegate = nil
@@ -1806,6 +1817,69 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if blankPage {
             t.webView.loadHTMLString("", baseURL: nil)
         }
+    }
+
+    /// Stop all callbacks as soon as AppKit starts closing the window. The app
+    /// broadcasts tab URL/title changes across controllers, so this guard must be
+    /// installed before a late redirect can repaint chrome owned by a closed window.
+    func beginWindowClosure() {
+        guard !isClosing else { return }
+        isClosing = true
+        NotificationCenter.default.removeObserver(self)
+        for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
+        lifecycleObservers.removeAll()
+        if let monitor = splitClickMonitor { NSEvent.removeMonitor(monitor) }
+        splitClickMonitor = nil
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        pendingDownloadBroadcast?.cancel()
+        pendingDownloadBroadcast = nil
+        newTab.stopClock()
+        assistant.stopTipRotation()
+        suggestionsPopover.hide()
+        locationManager.stopUpdatingLocation()
+        pendingGeolocation.removeAll()
+    }
+
+    /// Release this controller's ownership of shared tabs before another normal
+    /// window adopts them. Private tabs are never shared and are always destroyed.
+    func finalizeWindowClosure(preservingSharedTabs: Bool) {
+        beginWindowClosure()
+        for download in activeDownloads.values { download.cancel { _ in } }
+        activeDownloads.removeAll()
+        llm.shutdown()
+
+        if preservingSharedTabs && !isPrivateWindow {
+            for t in tabs { detachObserversAndDelegates(from: t) }
+            return
+        }
+
+        let closingTabs = tabs
+        for t in closingTabs { tearDownClosedTab(t) }
+        tabs.removeAll()
+        nowPlayingTab = nil
+        updateNowPlaying()
+        if !isPrivateWindow { persistOpenTabsSnapshot() }
+    }
+
+    /// Rebind shared WKWebViews after their previous owning window closes.
+    func adoptSharedTabsAfterWindowClose() {
+        guard !isClosing else { return }
+        for t in tabs { wire(t) }
+        active = min(active, max(0, tabs.count - 1))
+        if !tabs.isEmpty {
+            showActive()
+            refreshSidebar()
+            syncChrome()
+        }
+    }
+
+    private func detachObserversAndDelegates(from t: Tab) {
+        titleObs[t.id] = nil
+        urlObs[t.id] = nil
+        fullscreenObs[t.id] = nil
+        if t.webView.navigationDelegate === self { t.webView.navigationDelegate = nil }
+        if t.webView.uiDelegate === self { t.webView.uiDelegate = nil }
     }
 
     private func persistOpenTabsSnapshot() {
@@ -1914,7 +1988,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.sleptURL = nil
     }
     func startSleepTimer() {
-        Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in self?.sweepIdleTabs() }
+        sleepTimer?.invalidate()
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in self?.sweepIdleTabs() }
     }
     func sweepIdleTabs() {
         let hours = (Store.shared.settings["tabSleepHours"] as? NSNumber)?.doubleValue ?? 0
@@ -2261,6 +2336,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func syncChrome() {
+        guard !isClosing else { return }
         guard !hasActiveElementFullscreen() else { return }
         // Chat tabs have no address bar or nav buttons — skip chrome sync to
         // avoid accessing views that may be detached during the tab transition.
@@ -5423,6 +5499,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func applyChromeTheme() {
+        guard !isClosing else { return }
         let p = Theme.shared.palette
         addressWrap.layer?.backgroundColor = p.surface.cgColor
         address.textColor = p.text
@@ -5449,6 +5526,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Refresh the surfaces owned by the controller when macOS changes its
     /// effective appearance while Breeze is following the System theme.
     @objc private func themeDidChange() {
+        guard !isClosing else { return }
         applyChromeTheme()
         broadcastToInternalPages()
     }

@@ -80,9 +80,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     @objc func windowClosed(_ notification: Notification) {
-        if let win = notification.object as? NSWindow {
-            closedWindowIds.insert(ObjectIdentifier(win))
+        guard let win = notification.object as? NSWindow else { return }
+        closedWindowIds.insert(ObjectIdentifier(win))
+        guard let index = browsers.firstIndex(where: { $0.window === win }) else { return }
+
+        let closing = browsers.remove(at: index)
+        let survivor = closing.isPrivateWindow ? nil : browsers.first {
+            !$0.isPrivateWindow && isUsable($0)
         }
+        closing.finalizeWindowClosure(preservingSharedTabs: survivor != nil)
+        survivor?.adoptSharedTabsAfterWindowClose()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

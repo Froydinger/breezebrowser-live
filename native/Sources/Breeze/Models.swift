@@ -375,6 +375,7 @@ final class Tab {
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeGeolocation")
             config = c

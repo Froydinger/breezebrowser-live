@@ -225,6 +225,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.4', icon: 'shield-check', title: 'Private Windows Truly Close', hotfix: true, major: false, items: [
+        '<b>Long-Session Crash Fixed</b> — Closed browser windows no longer receive late tab, redirect, or WordPress editor URL updates that could crash Breeze while opening another tab.',
+        '<b>Private Media Fully Released</b> — Closing a private tab or window now suspends its media, stops and blanks its web view, cancels downloads, and releases its non-persistent browsing session.',
+        '<b>No Closed Windows Left Behind</b> — Breeze now removes closed window controllers, timers, observers, and other background work while safely handing shared tabs to any surviving normal window.' ] },
       { v: '5.2.3', icon: 'key-round', title: 'Editor Backspace and Auto-Focus', hotfix: true, major: false, items: [
         '<b>Backspace in Editors Restored</b> — The keyboard event listener now traverses shadow boundaries and checks iframe elements, resolving a bug that blocked the backspace key inside Gutenberg and other rich-text web editors.',
         '<b>Auto-Focused New Tabs</b> — Opening a new tab (via Command+T or clicking "+") now immediately focuses the ask/address input field so you can type without clicking.' ] },
