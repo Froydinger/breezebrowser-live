@@ -225,6 +225,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.7', icon: 'maximize', title: 'Tabs and Video Stay Put', hotfix: true, major: false, items: [
+        '<b>Sleeping Tabs Keep Their Names</b> — Sleeping a tab now preserves its real title and site identity instead of fading into “New Tab” until it wakes.',
+        '<b>Fullscreen Video Restored</b> — Breeze waits for macOS 27 to actually return the WebKit view after fullscreen, preventing black or white video surfaces during repeated fullscreen and PiP use.',
+        '<b>Update Prompt Crash Fixed</b> — Update notices now appear inside the Breeze window instead of ordering a separate modal window that could crash AppKit ViewBridge during extended browsing sessions.' ] },
       { v: '5.2.6', icon: 'picture-in-picture', title: 'Stable Window Controls on macOS 27', hotfix: true, major: false, items: [
         '<b>PiP and Fullscreen Stability</b> — Breeze now leaves macOS 27 traffic-light layout to AppKit, preventing the controls from turning into a blank strip after Picture in Picture, fullscreen, or other window transitions.',
         '<b>Native Window Behavior</b> — Close, minimize, and zoom controls remain fully native and continue following the active-window state managed by macOS.' ] },

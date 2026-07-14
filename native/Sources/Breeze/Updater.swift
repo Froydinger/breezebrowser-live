@@ -7,11 +7,76 @@
 
 import Cocoa
 
+private final class UpdaterBannerView: NSVisualEffectView {
+    private let primaryAction: () -> Void
+    private let secondaryAction: (() -> Void)?
+
+    init(title: String, message: String, primaryTitle: String,
+         secondaryTitle: String?, primaryAction: @escaping () -> Void,
+         secondaryAction: (() -> Void)?) {
+        self.primaryAction = primaryAction
+        self.secondaryAction = secondaryAction
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        material = .popover
+        blendingMode = .withinWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 14
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.textColor = .labelColor
+
+        let messageLabel = NSTextField(wrappingLabelWithString: message)
+        messageLabel.font = .systemFont(ofSize: 13)
+        messageLabel.textColor = .secondaryLabelColor
+        messageLabel.maximumNumberOfLines = 3
+
+        let primary = NSButton(title: primaryTitle, target: self, action: #selector(primaryTapped))
+        primary.bezelStyle = .rounded
+        primary.keyEquivalent = "\r"
+
+        let buttons = NSStackView()
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 8
+        if let secondaryTitle {
+            let secondary = NSButton(title: secondaryTitle, target: self, action: #selector(secondaryTapped))
+            secondary.bezelStyle = .rounded
+            buttons.addArrangedSubview(secondary)
+        }
+        buttons.addArrangedSubview(primary)
+
+        let stack = NSStackView(views: [titleLabel, messageLabel, buttons])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 7
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
+            messageLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    @objc private func primaryTapped() { primaryAction() }
+    @objc private func secondaryTapped() { secondaryAction?() }
+}
+
 final class Updater {
     static let shared = Updater()
     private let releasesAPI = URL(string: "https://api.github.com/repos/Froydinger/breezebrowser-live/releases?per_page=30")!
     private var timer: Timer?
     private var busy = false
+    private weak var banner: UpdaterBannerView?
 
     var currentVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
@@ -65,26 +130,22 @@ final class Updater {
     }
 
     private func alertUpToDate(failed: Bool) {
-        let a = NSAlert()
-        a.messageText = failed ? "Couldn't check for updates" : "You're up to date"
-        a.informativeText = failed ? "Please try again later." : "Breeze \(currentVersion) is the latest version."
-        a.addButton(withTitle: "OK")
-        a.runModal()
+        showBanner(title: failed ? "Couldn't check for updates" : "You're up to date",
+                   message: failed ? "Please try again later." : "Breeze \(currentVersion) is the latest version.",
+                   primaryTitle: "OK", secondaryTitle: nil, primaryAction: {})
     }
 
     private func promptAndInstall(version: String, zip: URL) {
         if Store.shared.settings["updateSounds"] as? Bool != false {
             NSSound(named: "Glass")?.play()
         }
-        let a = NSAlert()
-        a.messageText = "Breeze \(version) is available"
-        a.informativeText = "You're on \(currentVersion). Download and install the update now? Breeze will relaunch."
-        a.addButton(withTitle: "Update & Relaunch")
-        a.addButton(withTitle: "Later")
-        guard a.runModal() == .alertFirstButtonReturn else { return }
-        download(zip) { [weak self] local in
-            guard let self, let local else { self?.alertInstallFailed(); return }
-            self.install(zipURL: local)
+        showBanner(title: "Breeze \(version) is available",
+                   message: "You're on \(currentVersion). Install the update now? Breeze will relaunch.",
+                   primaryTitle: "Update & Relaunch", secondaryTitle: "Later") { [weak self] in
+            self?.download(zip) { [weak self] local in
+                guard let self, let local else { self?.alertInstallFailed(); return }
+                self.install(zipURL: local)
+            }
         }
     }
 
@@ -153,11 +214,46 @@ final class Updater {
     }
 
     private func alertInstallFailed() {
-        let a = NSAlert()
-        a.messageText = "Update couldn't be installed"
-        a.informativeText = "Please download the latest Breeze from the website and install it manually."
-        a.addButton(withTitle: "OK")
-        a.runModal()
+        showBanner(title: "Update couldn't be installed",
+                   message: "Please download the latest Breeze from the website and install it manually.",
+                   primaryTitle: "OK", secondaryTitle: nil, primaryAction: {})
+    }
+
+    /// Update notices stay inside the existing Breeze window. On macOS 27,
+    /// ordering an NSAlert while WebKit owns a fullscreen/PiP remote view can make
+    /// ViewBridge attach that stale view to the alert window and abort the app.
+    private func showBanner(title: String, message: String, primaryTitle: String,
+                            secondaryTitle: String?, primaryAction: @escaping () -> Void) {
+        precondition(Thread.isMainThread)
+        let browserWindows = NSApp.windows.filter {
+            $0.isVisible && $0.delegate is BrowserController
+        }
+        let targetWindow = browserWindows.first(where: \.isKeyWindow) ?? browserWindows.first
+        guard let host = targetWindow?.contentView else {
+            NSApp.requestUserAttention(.informationalRequest)
+            return
+        }
+        banner?.removeFromSuperview()
+        let view = UpdaterBannerView(
+            title: title, message: message, primaryTitle: primaryTitle,
+            secondaryTitle: secondaryTitle,
+            primaryAction: { [weak self] in
+                self?.banner?.removeFromSuperview()
+                primaryAction()
+            },
+            secondaryAction: secondaryTitle == nil ? nil : { [weak self] in
+                self?.banner?.removeFromSuperview()
+            }
+        )
+        host.addSubview(view, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: host.topAnchor, constant: 18),
+            view.centerXAnchor.constraint(equalTo: host.centerXAnchor),
+            view.widthAnchor.constraint(equalToConstant: 480),
+            view.leadingAnchor.constraint(greaterThanOrEqualTo: host.leadingAnchor, constant: 18),
+            view.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: -18),
+        ])
+        banner = view
     }
 
     @discardableResult

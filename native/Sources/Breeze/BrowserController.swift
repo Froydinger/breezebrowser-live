@@ -1327,7 +1327,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func makeTabRow(_ t: Tab) -> TabRowView {
         let i = tabs.firstIndex { $0.id == t.id } ?? 0
         let title = t.isChatTab ? "Nav Chat" : t.title
-        let host = t.isChatTab ? "nav" : hostOf(t.webView.url)
+        let sleepingURL = t.sleptURL.flatMap(URL.init(string:))
+        let host = t.isChatTab ? "nav" : hostOf(t.sleeping ? sleepingURL : t.webView.url)
         let inSplit = (t.splitPartnerId != nil)
         let row = TabRowView(title: title, host: host, active: i == active,
                              perf: t.perfMode, asleep: t.sleeping, inSplit: inSplit, isPrivate: t.isPrivate)
@@ -1761,6 +1762,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.webView.navigationDelegate = self
         t.webView.uiDelegate = self
         titleObs[t.id] = t.webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
+            // Discarding the page makes WebKit briefly publish an empty title.
+            // Keep the last real title as the sleeping tab's stable identity.
+            guard !t.sleeping else { return }
             t.title = (wv.title?.isEmpty == false) ? wv.title! : "New Tab"
             self?.refreshSidebar()
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
@@ -1775,24 +1779,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 guard let self, let t, let webView else { return }
                 let key = ObjectIdentifier(webView)
                 if webView.fullscreenState == .notInFullscreen {
-                    // fullscreenState reaches notInFullscreen just before WebKit
-                    // finishes putting the view back. Keep our ownership guard
-                    // briefly so a title/state refresh cannot mistake that gap for
-                    // a detached tab and hide the view, breaking the next entry.
                     guard self.fullscreenWebViews.contains(key) else { return }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self, weak webView, weak t] in
-                        guard let self, let webView, let t,
-                              webView.fullscreenState == .notInFullscreen else { return }
-                        self.fullscreenWebViews.remove(key)
-                        self.updateWebFullscreenClipping()
-                        if self.current?.id == t.id {
-                            self.syncChrome()
-                            self.refreshSidebar()
-                            self.scheduleReflow()
-                        }
-                    }
+                    self.finishElementFullscreenExit(webView, tab: t, key: key)
                 } else {
                     self.fullscreenWebViews.insert(key)
+                    webView.isHidden = false
+                    webView.alphaValue = 1
                     self.updateWebFullscreenClipping()
                 }
             }
@@ -1801,6 +1793,31 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             // fullscreen view before the ownership guard is installed.
             if Thread.isMainThread { applyState() }
             else { DispatchQueue.main.async(execute: applyState) }
+        }
+    }
+
+    /// `fullscreenState` returns to `.notInFullscreen` before macOS 27 has
+    /// necessarily moved the WKWebView out of WebKit's private fullscreen window.
+    /// Keep the ownership guard until the real host window confirms the transfer;
+    /// reparenting even one frame too early permanently blanks the video surface.
+    private func finishElementFullscreenExit(_ webView: WKWebView, tab: Tab,
+                                             key: ObjectIdentifier, attempt: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak webView, weak tab] in
+            guard let self, let webView, let tab,
+                  webView.fullscreenState == .notInFullscreen else { return }
+            if let host = webView.window, host !== self.window, attempt < 30 {
+                self.finishElementFullscreenExit(webView, tab: tab, key: key, attempt: attempt + 1)
+                return
+            }
+            self.fullscreenWebViews.remove(key)
+            self.updateWebFullscreenClipping()
+            if self.current?.id == tab.id {
+                webView.isHidden = false
+                webView.alphaValue = 1
+                self.syncChrome()
+                self.refreshSidebar()
+                self.scheduleReflow()
+            }
         }
     }
 
