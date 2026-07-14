@@ -225,6 +225,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.5', icon: 'check-check', title: 'Steadier Editing on macOS 27', hotfix: true, major: false, items: [
+        '<b>WordPress and Web Editors Stabilized</b> — Breeze now resigns WebKit text focus before switching, closing, or detaching tabs so delayed editor UI cannot target a stale view.',
+        '<b>macOS 27 Autocorrection Crash Avoided</b> — Breeze temporarily disables the unstable automatic-correction popover on macOS 27 while preserving normal typing and editor behavior.',
+        '<b>Traffic Lights Stay Aligned</b> — Window controls sit cleanly with the navigation row and return to that exact position after leaving fullscreen on macOS 27.' ] },
       { v: '5.2.4', icon: 'shield-check', title: 'Private Windows Truly Close', hotfix: true, major: false, items: [
         '<b>Long-Session Crash Fixed</b> — Closed browser windows no longer receive late tab, redirect, or WordPress editor URL updates that could crash Breeze while opening another tab.',
         '<b>Private Media Fully Released</b> — Closing a private tab or window now suspends its media, stops and blanks its web view, cancels downloads, and releases its non-persistent browsing session.',

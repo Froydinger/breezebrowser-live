@@ -77,6 +77,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var active = 0 {
         willSet {
             if newValue != active {
+                if let current {
+                    resignWebContentIfNeeded(current.webView)
+                }
                 if isEditingTextField(address) {
                     window.makeFirstResponder(nil)
                 }
@@ -420,6 +423,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.navLeadingC?.constant = 92   // restore the traffic-light gap when windowed
             self?.window.titlebarAppearsTransparent = true
             self?.window.backgroundColor = .windowBackgroundColor
+        })
+
+        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+            // macOS 27 restores the native title-bar buttons after the resize
+            // callbacks finish, overwriting Breeze's alignment. Reapply it on the
+            // next main-loop turn, once AppKit has committed the windowed frame.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isClosing else { return }
+                self.alignTrafficLights()
+            }
         })
     }
 
@@ -1281,7 +1294,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func alignTrafficLights() {
-        let offsetX: CGFloat = 10
+        let offsetX: CGFloat = 13
         let offsetY: CGFloat = -6
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type) else { continue }
@@ -1794,7 +1807,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    /// A WebKit editor can have an autocorrection panel request in flight. Make
+    /// its content view resign before removing the WKWebView from the hierarchy so
+    /// AppKit cancels that UI against the still-valid host window.
+    private func resignWebContentIfNeeded(_ webView: WKWebView) {
+        guard let responder = window.firstResponder as? NSView,
+              responder === webView || responder.isDescendant(of: webView) else { return }
+        window.makeFirstResponder(nil)
+    }
+
     private func tearDownClosedTab(_ t: Tab, blankPage: Bool = true) {
+        resignWebContentIfNeeded(t.webView)
         titleObs[t.id] = nil
         urlObs[t.id] = nil
         fullscreenObs[t.id] = nil
@@ -1825,6 +1848,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func beginWindowClosure() {
         guard !isClosing else { return }
         isClosing = true
+        window.makeFirstResponder(nil)
         NotificationCenter.default.removeObserver(self)
         for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
         lifecycleObservers.removeAll()

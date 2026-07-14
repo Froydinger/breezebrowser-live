@@ -100,6 +100,23 @@ extension WKWebViewConfiguration {
     }
 }
 
+extension WKWebView {
+    /// macOS 27 currently lets an asynchronous WebKit autocorrection request
+    /// outlive the view it belongs to. AppKit then tries to attach the correction
+    /// panel's remote view to a stale window and aborts in ViewBridge. Keep the
+    /// workaround limited to that OS and only toggle the setting when WebKit says
+    /// it is enabled, so creating additional tabs cannot accidentally turn it on.
+    func disableUnstableAutomaticCorrectionIfNeeded() {
+        guard #available(macOS 27.0, *) else { return }
+        let action = NSSelectorFromString("toggleAutomaticSpellingCorrection:")
+        guard responds(to: action) else { return }
+        let item = NSMenuItem(title: "", action: action, keyEquivalent: "")
+        item.target = self
+        guard validateUserInterfaceItem(item), item.state == .on else { return }
+        _ = perform(action, with: nil)
+    }
+}
+
 let breezeMediaJS = """
 (function () {
   if (location.protocol === 'file:') return;
@@ -384,6 +401,7 @@ final class Tab {
         }
         config.applicationNameForUserAgent = breezeSafariProductToken
         webView = WKWebView(frame: .zero, configuration: config)
+        webView.disableUnstableAutomaticCorrectionIfNeeded()
         if #available(macOS 13.3, iOS 16.4, *) {
             webView.isInspectable = true
         }
