@@ -225,6 +225,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.6', icon: 'picture-in-picture', title: 'Stable Window Controls on macOS 27', hotfix: true, major: false, items: [
+        '<b>PiP and Fullscreen Stability</b> — Breeze now leaves macOS 27 traffic-light layout to AppKit, preventing the controls from turning into a blank strip after Picture in Picture, fullscreen, or other window transitions.',
+        '<b>Native Window Behavior</b> — Close, minimize, and zoom controls remain fully native and continue following the active-window state managed by macOS.' ] },
       { v: '5.2.5', icon: 'check-check', title: 'Steadier Editing on macOS 27', hotfix: true, major: false, items: [
         '<b>WordPress and Web Editors Stabilized</b> — Breeze now resigns WebKit text focus before switching, closing, or detaching tabs so delayed editor UI cannot target a stale view.',
         '<b>macOS 27 Autocorrection Crash Avoided</b> — Breeze temporarily disables the unstable automatic-correction popover on macOS 27 while preserving normal typing and editor behavior.',

@@ -425,15 +425,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.window.backgroundColor = .windowBackgroundColor
         })
 
-        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
-            // macOS 27 restores the native title-bar buttons after the resize
-            // callbacks finish, overwriting Breeze's alignment. Reapply it on the
-            // next main-loop turn, once AppKit has committed the windowed frame.
-            DispatchQueue.main.async { [weak self] in
-                guard let self, !self.isClosing else { return }
-                self.alignTrafficLights()
-            }
-        })
     }
 
     var current: Tab? { tabs.indices.contains(active) ? tabs[active] : nil }
@@ -1294,6 +1285,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func alignTrafficLights() {
+        // macOS 27 groups the standard buttons inside an AppKit-managed title-bar
+        // host that may be rebuilt during PiP, fullscreen, and window transitions.
+        // Moving its private button views can leave the host rendered as a blank
+        // strip, so let AppKit own their frames on that OS.
+        guard #unavailable(macOS 27.0) else { return }
+
         let offsetX: CGFloat = 13
         let offsetY: CGFloat = -6
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
