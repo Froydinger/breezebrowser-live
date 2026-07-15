@@ -155,10 +155,14 @@ final class NewTabView: GradientBackgroundView {
     private let logo = NSImageView()
     private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
-    private let shortcutsButton = NSButton(title: "Shortcuts", target: nil, action: nil)
+    private let inputHint = NSStackView()
+    private let askReturnKey = NSTextField(labelWithString: "↩")
+    private let askHint = NSTextField(labelWithString: "Ask")
+    private let shiftKey = NSTextField(labelWithString: "⇧")
+    private let searchReturnKey = NSTextField(labelWithString: "↩")
+    private let searchHint = NSTextField(labelWithString: "Search")
     let field = NSTextField()
     var onSubmit: ((String, Bool) -> Void)?
-    var onOpenShortcuts: (() -> Void)?
     private var timer: Timer?
 
     override init(frame: NSRect) {
@@ -177,11 +181,31 @@ final class NewTabView: GradientBackgroundView {
         greeting.alignment = .center
         greeting.translatesAutoresizingMaskIntoConstraints = false
 
-        shortcutsButton.translatesAutoresizingMaskIntoConstraints = false
-        shortcutsButton.isBordered = false
-        shortcutsButton.font = .systemFont(ofSize: 11.5, weight: .semibold)
-        shortcutsButton.target = self
-        shortcutsButton.action = #selector(openShortcuts)
+        inputHint.translatesAutoresizingMaskIntoConstraints = false
+        inputHint.orientation = .horizontal
+        inputHint.alignment = .centerY
+        inputHint.spacing = 5
+        [askReturnKey, shiftKey, searchReturnKey].forEach { key in
+            key.font = .systemFont(ofSize: 10.5, weight: .semibold)
+            key.alignment = .center
+            key.wantsLayer = true
+            key.layer?.cornerRadius = 4
+            key.layer?.borderWidth = 1
+            key.translatesAutoresizingMaskIntoConstraints = false
+            key.widthAnchor.constraint(equalToConstant: 21).isActive = true
+            key.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        }
+        [askHint, searchHint].forEach {
+            $0.font = .systemFont(ofSize: 11.5, weight: .medium)
+        }
+        let separator = NSTextField(labelWithString: "·")
+        separator.font = .systemFont(ofSize: 11.5, weight: .medium)
+        inputHint.addArrangedSubview(askReturnKey)
+        inputHint.addArrangedSubview(askHint)
+        inputHint.addArrangedSubview(separator)
+        inputHint.addArrangedSubview(shiftKey)
+        inputHint.addArrangedSubview(searchReturnKey)
+        inputHint.addArrangedSubview(searchHint)
 
         field.placeholderString = "Ask Breeze, or type a URL"
         field.font = .systemFont(ofSize: 16)
@@ -204,7 +228,7 @@ final class NewTabView: GradientBackgroundView {
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
 
-        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap); addSubview(shortcutsButton)
+        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap); addSubview(inputHint)
         let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 560)
         widthC.priority = .defaultHigh
         let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
@@ -234,8 +258,8 @@ final class NewTabView: GradientBackgroundView {
             field.topAnchor.constraint(equalTo: fieldWrap.topAnchor, constant: 16),
             field.bottomAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: -16),
 
-            shortcutsButton.centerXAnchor.constraint(equalTo: centerXAnchor),
-            shortcutsButton.topAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: 10),
+            inputHint.centerXAnchor.constraint(equalTo: centerXAnchor),
+            inputHint.topAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: 12),
         ])
         self.fieldWrap = fieldWrap
         applyTheme(); tick()
@@ -284,7 +308,12 @@ final class NewTabView: GradientBackgroundView {
         let softColor = p.isDark ? p.text.withAlphaComponent(0.62) : p.text.withAlphaComponent(0.68)
         clock.textColor = clockColor
         greeting.textColor = softColor
-        shortcutsButton.contentTintColor = p.text.withAlphaComponent(p.isDark ? 0.50 : 0.56)
+        let hintColor = p.text.withAlphaComponent(p.isDark ? 0.50 : 0.56)
+        inputHint.arrangedSubviews.compactMap { $0 as? NSTextField }.forEach { $0.textColor = hintColor }
+        [askReturnKey, shiftKey, searchReturnKey].forEach { key in
+            key.layer?.backgroundColor = p.text.withAlphaComponent(p.isDark ? 0.06 : 0.035).cgColor
+            key.layer?.borderColor = p.text.withAlphaComponent(p.isDark ? 0.20 : 0.15).cgColor
+        }
         field.textColor = p.text
         field.placeholderAttributedString = NSAttributedString(
             string: "Ask Breeze, or type a URL",
@@ -299,8 +328,6 @@ final class NewTabView: GradientBackgroundView {
         fieldWrap.layer?.shadowRadius = p.isDark ? 18 : 16
         fieldWrap.layer?.shadowOffset = CGSize(width: 0, height: -6)
     }
-
-    @objc private func openShortcuts() { onOpenShortcuts?() }
 
     func tick() {
         let now = Date()

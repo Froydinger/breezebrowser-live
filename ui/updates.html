@@ -22,6 +22,7 @@
       --bg: #151618; --bg-alt: #1c1d21; --card: rgba(255,255,255,0.07); --text: #ececf0;
       --soft: rgba(236,236,240,0.62); --faint: rgba(236,236,240,0.34); --line: rgba(255,255,255,0.1);
       --shadow: 0 22px 70px rgba(0,0,0,0.28);
+      color-scheme: dark;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -225,6 +226,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.8', icon: 'refresh-cw', title: 'Pages Open Where They Belong', hotfix: true, major: false, items: [
+        '<b>First Navigation Renders</b> — Typing a site into the top address bar from New Tab, Nav Chat, onboarding, or another Breeze page now opens the page on the first attempt instead of leaving a blank WebKit surface.',
+        '<b>HTML Stays in the Browser</b> — Internal-to-web navigations are treated as display intent, so normal HTML renders in its tab instead of being mistakenly saved to Downloads.',
+        '<b>Cleaner Fullscreen and PiP</b> — Fullscreen ownership is isolated from ordinary navigation and chrome updates, while Picture in Picture uses a smaller, more reliable state model.',
+        '<b>Native Window Edges</b> — Web pages now run flush to the sidebar, right edge, and bottom edge so AppKit supplies the natural outer-window rounding without clipping WebKit.',
+        '<b>Dark Internal Pages</b> — Onboarding and What’s New now initialize and update with Breeze’s active theme, with improved light-mode Tasks badge contrast.',
+        '<b>Clear Ask and Search Keys</b> — New Tab and Nav Chat now show compact Return and Shift keycaps for Ask and Search instead of a Shortcuts link.' ] },
       { v: '5.2.7', icon: 'maximize', title: 'Tabs and Video Stay Put', hotfix: true, major: false, items: [
         '<b>Sleeping Tabs Keep Their Names</b> — Sleeping a tab now preserves its real title and site identity instead of fading into “New Tab” until it wakes.',
         '<b>Fullscreen Video Restored</b> — Breeze waits for macOS 27 to actually return the WebKit view after fullscreen, preventing black or white video surfaces during repeated fullscreen and PiP use.',
@@ -418,10 +426,12 @@
 
     // Theme live updates
     if (window.breezeInternal) {
-      breezeInternal.onTheme && breezeInternal.onTheme((t) => {
+      const applyTheme = (t) => {
         const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
-      });
+      };
+      applyTheme(breezeInternal.theme);
+      breezeInternal.onTheme && breezeInternal.onTheme(applyTheme);
     }
   </script>
 </body>

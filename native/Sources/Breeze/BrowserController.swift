@@ -110,8 +110,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var popupWindows: [UUID: NSWindow] = [:]
     var popupDownloadCandidates: Set<UUID> = []
     var fullscreenWebViews: Set<ObjectIdentifier> = []
+    var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
+    var addressSubmissionPending = false
 
     // chrome
     let root = GradientBackgroundView()
@@ -119,8 +121,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let sidebarGlass = PassthroughVisualEffectView()
     let sidebarPeekBG = GradientBackgroundView()   // identical bg to `root` for the floating peek
     let edgeHandle = HoverReportView()   // left-edge strip to peek the sidebar
-    let webCornerOverlay = RoundedContentOverlayView()
-    var webCornerConstraints: [NSLayoutConstraint] = []
     var sidebarHidden = false
     var peeking = false
     var sidebarLeft: NSLayoutConstraint!
@@ -258,18 +258,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             topBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             topBar.heightAnchor.constraint(equalToConstant: 44),
         ])
-        webLeadingC = webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: 6)
-        webOverlayLeadingC = webContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 6)
+        webLeadingC = webContainer.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor)
+        webOverlayLeadingC = webContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor)
         NSLayoutConstraint.activate([
             webLeadingC,
-            webContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -6),
+            webContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
-        webTrailC = webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -6)
+        webTrailC = webContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor)
         webTrailC.isActive = true
 
         webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
         webContainerTopC.isActive = true
-        updateWebCornerOverlay()
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
@@ -358,6 +357,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         
         window.makeKeyAndOrderFront(nil)
         alignTrafficLights()
+        // AppKit performs one final native title-bar layout after activation.
+        // Reapply from the saved native frames once that pass has completed.
+        DispatchQueue.main.async { [weak self] in self?.alignTrafficLights() }
 
         // load persisted state + apply settings
         pins = isPrivateWindow ? [] : Store.shared.pins
@@ -423,6 +425,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.navLeadingC?.constant = 92   // restore the traffic-light gap when windowed
             self?.window.titlebarAppearsTransparent = true
             self?.window.backgroundColor = .windowBackgroundColor
+        })
+
+        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+            // AppKit may rebuild the title-bar host during fullscreen. Capture its
+            // new native frames before restoring Breeze's calibrated placement.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isClosing else { return }
+                self.trafficLightBaseFrames.removeAll()
+                self.alignTrafficLights()
+            }
         })
 
     }
@@ -832,74 +844,30 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layer?.masksToBounds = false
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
-        newTab.onOpenShortcuts = { [weak self] in self?.openInternal(.settings, fragment: "help") }
         newTab.field.delegate = self
     }
 
-    // Element fullscreen temporarily removes WKWebView from our hierarchy. While
-    // WebKit owns it, Breeze must not interpret that as a detached tab or try to
-    // hide/reparent it; doing so leaves the fullscreen player visually blank.
-    var webFullscreen = false
-    func setWebFullscreen(_ on: Bool) {
-        guard on != webFullscreen else { return }
-        webFullscreen = on
-        updateWebCornerOverlay()
-    }
-
-    func updateWebCornerOverlay() {
-        let shouldShow = !webFullscreen
-        if shouldShow {
-            guard webCornerOverlay.superview == nil else { return }
-            root.addSubview(webCornerOverlay, positioned: .above, relativeTo: webContainer)
-            webCornerConstraints = [
-                webCornerOverlay.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
-                webCornerOverlay.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
-                webCornerOverlay.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                webCornerOverlay.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
-            ]
-            NSLayoutConstraint.activate(webCornerConstraints)
-        } else if webCornerOverlay.superview != nil {
-            NSLayoutConstraint.deactivate(webCornerConstraints)
-            webCornerConstraints.removeAll()
-            webCornerOverlay.removeFromSuperview()
-        }
-    }
-
-    func updateWebFullscreenClipping() {
-        guard let current else {
-            setWebFullscreen(false)
-            return
-        }
-        var visibleWebViews = [current.webView]
-        if let partnerId = current.splitPartnerId,
-           let partner = tabs.first(where: { $0.id == partnerId }) {
-            visibleWebViews.append(partner.webView)
-        }
-        let active = visibleWebViews.contains {
-            fullscreenWebViews.contains(ObjectIdentifier($0))
-        }
-        setWebFullscreen(active)
-    }
-
-    func isWebViewFullscreen(_ webView: WKWebView) -> Bool {
-        // WebKit moves an element-fullscreen WKWebView into a private window.
-        // That hierarchy move can lead fullscreenState by a run-loop turn, so
-        // the hosting window is the earliest reliable ownership signal. Never
-        // hide or reparent a view while that private window owns it.
-        if let hostWindow = webView.window, hostWindow !== window { return true }
+    func isElementFullscreen(_ webView: WKWebView) -> Bool {
         return webView.fullscreenState != .notInFullscreen ||
             fullscreenWebViews.contains(ObjectIdentifier(webView))
     }
 
+    /// Actual view ownership is narrower than logical fullscreen state. Use this
+    /// only before changing the AppKit hierarchy—never to gate navigation or UI.
+    func webKitOwnsFullscreenView(_ webView: WKWebView) -> Bool {
+        if isElementFullscreen(webView) { return true }
+        guard webView.url != nil, let host = webView.window else { return false }
+        return host !== window
+    }
+
     func hasActiveElementFullscreen() -> Bool {
-        tabs.contains { isWebViewFullscreen($0.webView) }
+        visibleWebTabs().contains { isElementFullscreen($0.webView) }
     }
 
     func showActive() {
         // Apple removes a fullscreen WKWebView from our hierarchy until its
         // fullscreenState returns to notInFullscreen. Never touch its ownership.
-        if let current, isWebViewFullscreen(current.webView) {
-            updateWebFullscreenClipping()
+        if let current, webKitOwnsFullscreenView(current.webView) {
             return
         }
         // Detach assistant from webContainer before clearing (it's a shared instance)
@@ -912,7 +880,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         var expectedBackgroundViews = Set<NSView>()
         for tab in tabs {
-            if (tab.isInPiP || tab.keepsMediaAlive) && tab.id != current?.id {
+            if tab.isInPiP && tab.id != current?.id {
                 expectedBackgroundViews.insert(tab.webView)
                 if tab.webView.superview != webContainer {
                     tab.webView.removeFromSuperview()
@@ -932,6 +900,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         splitLeftWidthC = nil
         guard let t = current else { return }
+
+        // Keep the current tab's WKWebView joined to this window even while a
+        // native New Tab or Chat surface covers it. The remote WebKit renderer is
+        // then established before the first top-bar navigation, so revealing the
+        // page never races its initial attachment.
+        if t.splitPartnerId == nil, (t.isNewTab || t.isChatTab),
+           t.webView.superview !== webContainer {
+            t.webView.removeFromSuperview()
+            webContainer.addSubview(t.webView, positioned: .below, relativeTo: nil)
+            t.webView.pin(to: webContainer)
+            t.webView.isHidden = false
+            t.webView.alphaValue = 1
+            webContainer.layoutSubtreeIfNeeded()
+        }
 
         // Chat tabs embed the assistant panel directly in the web container
         if t.isChatTab {
@@ -959,7 +941,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             // Collapse the right-side assistant panel space completely
             assistantOpen = false
             breezeCorner.isHidden = false
-            webTrailC.constant = -6
+            webTrailC.constant = 0
             topTrailC.constant = -54
             root.layoutSubtreeIfNeeded()
             
@@ -1002,7 +984,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 assistant.setFullscreen(false, clearLights: false)
                 breezeCorner.isHidden = false
                 assistantLeadingC.constant = 0
-                webTrailC.constant = -6
+                webTrailC.constant = 0
                 topTrailC.constant = -54
                 root.layoutSubtreeIfNeeded()
                 scheduleReflow()
@@ -1086,15 +1068,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             webContainer.addSubview(primary); primary.pin(to: webContainer)
         }
         updateWebViewDisplay()
-        updateWebFullscreenClipping()
-        updateWebCornerOverlay()
         syncChrome()
         scheduleReflow()      // a re-shown web view may have a stale layout width
     }
 
     func updateWebViewDisplay() {
         guard let t = current else { return }
-        if isWebViewFullscreen(t.webView) { return }
+        if webKitOwnsFullscreenView(t.webView) { return }
         if t.isNewTab || t.isChatTab || t.splitPartnerId != nil {
             placeholderView.removeFromSuperview()
             t.webView.isHidden = false
@@ -1284,12 +1264,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         updateRainbowFrame()
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.alignTrafficLights() }
+    }
+
+    func windowDidUpdate(_ notification: Notification) {
+        // Screen-control indicators and other AppKit title-bar accessories can
+        // rebuild the native button host without moving/resizing the window.
+        // Reapply from the saved native frames after any such update.
+        alignTrafficLights()
+    }
+
     func alignTrafficLights() {
-        // macOS 27 groups the standard buttons inside an AppKit-managed title-bar
-        // host that may be rebuilt during PiP, fullscreen, and window transitions.
-        // Moving its private button views can leave the host rendered as a blank
-        // strip, so let AppKit own their frames on that OS.
-        guard #unavailable(macOS 27.0) else { return }
+        // Never touch AppKit's button host while it is transitioning. macOS 27
+        // rebuilds that host for fullscreen; didExitFullScreen recaptures it.
+        guard !window.styleMask.contains(.fullScreen) else { return }
 
         let offsetX: CGFloat = 13
         let offsetY: CGFloat = -6
@@ -1774,7 +1763,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.syncChrome(); self?.refreshSidebar()
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
-        fullscreenObs[t.id] = t.webView.observe(\.fullscreenState, options: [.initial, .new]) { [weak self, weak t] webView, _ in
+        fullscreenObs[t.id] = t.webView.observe(\.fullscreenState, options: [.new]) { [weak self, weak t] webView, _ in
             let applyState = { [weak self, weak t, weak webView] in
                 guard let self, let t, let webView else { return }
                 let key = ObjectIdentifier(webView)
@@ -1785,7 +1774,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     self.fullscreenWebViews.insert(key)
                     webView.isHidden = false
                     webView.alphaValue = 1
-                    self.updateWebFullscreenClipping()
                 }
             }
             // WKWebView state changes normally arrive on main. Handle them in the
@@ -1810,7 +1798,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 return
             }
             self.fullscreenWebViews.remove(key)
-            self.updateWebFullscreenClipping()
             if self.current?.id == tab.id {
                 webView.isHidden = false
                 webView.alphaValue = 1
@@ -1836,14 +1823,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         urlObs[t.id] = nil
         fullscreenObs[t.id] = nil
         fullscreenWebViews.remove(ObjectIdentifier(t.webView))
-        updateWebFullscreenClipping()
-        updateWebCornerOverlay()
+        displayNavigationWebViews.remove(ObjectIdentifier(t.webView))
         popupDownloadCandidates.remove(t.id)
         aiNavWaiters.removeValue(forKey: t.id)?.resume()
         if nowPlayingTab?.id == t.id { nowPlayingTab = nil }
         t.isPlaying = false
         t.isInPiP = false
-        t.keepsMediaAlive = false
         if #available(macOS 12.0, *) {
             t.webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
         }
@@ -1997,7 +1982,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         active = i
         if let t = current {
-            t.keepsMediaAlive = false
             t.lastActive = Date()
             if t.sleeping { wake(t) }
         }
@@ -2222,6 +2206,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func loadPreparedURL(_ rawURL: URL, in t: Tab, focus: Bool) {
         let url = httpsUpgraded(rawURL)
+        let wasPlaceholder = t.isNewTab || t.isChatTab
         t.isNewTab = false
         t.isChatTab = false
         t.sleeping = false
@@ -2231,21 +2216,45 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layoutSubtreeIfNeeded()
         DispatchQueue.main.async { [weak self, weak t] in
             guard let self, let t else { return }
-            guard !self.isWebViewFullscreen(t.webView) else { return }
+            guard wasPlaceholder || !self.isElementFullscreen(t.webView) else { return }
             if t.webView.superview !== self.webContainer {
                 t.webView.removeFromSuperview()
                 self.webContainer.addSubview(t.webView)
                 t.webView.pin(to: self.webContainer)
             }
             t.webView.isHidden = false
+            t.webView.alphaValue = 1
+            self.webContainer.layoutSubtreeIfNeeded()
+            self.displayNavigationWebViews.insert(ObjectIdentifier(t.webView))
             t.webView.load(URLRequest(url: url))
             if focus { self.window.makeFirstResponder(t.webView) }
         }
     }
 
     @objc func addressSubmit() {
+        let text = address.currentEditor()?.string ?? address.stringValue
         let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-        submitQuery(address.stringValue, isCmdEnter: isCmd)
+        queueAddressSubmission(text, isCmdEnter: isCmd)
+    }
+
+    /// NSTextField can deliver Return through both its field-editor delegate and
+    /// target/action. Defer the resulting navigation until AppKit finishes the
+    /// current key event, and coalesce those two callbacks into one submission.
+    private func queueAddressSubmission(_ text: String, isCmdEnter: Bool,
+                                        forceGoogleSearch: Bool = false) {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !addressSubmissionPending else { return }
+        addressSubmissionPending = true
+        suggestionsPopover.hide()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.addressSubmissionPending = false
+            if forceGoogleSearch {
+                self.navigate(self.searchURL(for: query))
+            } else {
+                self.submitQuery(query, isCmdEnter: isCmdEnter)
+            }
+        }
     }
 
     /// Friendly address for internal pages: file://…/ui/settings.html → breeze://settings
@@ -2434,14 +2443,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Idempotent when nothing drifted.
     func verifyChromeGeometry() {
         guard current?.isChatTab != true else { return }
-        let wantTrail: CGFloat = assistantOpen ? -(ASSISTANT_W + 6) : -6
+        let wantTrail: CGFloat = assistantOpen ? -ASSISTANT_W : 0
         if webTrailC.constant != wantTrail { webTrailC.constant = wantTrail }
         let wantTop: CGFloat = assistantOpen ? -(ASSISTANT_W + 12) : -54
         if topTrailC.constant != wantTop { topTrailC.constant = wantTop }
         if !peeking && !sidebarHidden {
             if webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = false }
             if !webLeadingC.isActive { webLeadingC.isActive = true }
-            webOverlayLeadingC.constant = 6
+            webOverlayLeadingC.constant = 0
         }
         root.layoutSubtreeIfNeeded()
     }
@@ -2549,7 +2558,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self.sidebarLeft.constant = -self.sidebarWidth
                 self.webOverlayLeadingC.isActive = false
                 self.webLeadingC.isActive = true
-                self.webOverlayLeadingC.constant = 6
+                self.webOverlayLeadingC.constant = 0
                 self.sidebar.layer?.cornerRadius = 0
                 self.sidebar.layer?.shadowOpacity = 0
                 self.edgeHandle.isHidden = false
@@ -2577,7 +2586,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             // different frames.
             if webOverlayLeadingC.isActive { webOverlayLeadingC.isActive = false }
             if !webLeadingC.isActive { webLeadingC.isActive = true }
-            webOverlayLeadingC.constant = 6
+            webOverlayLeadingC.constant = 0
         }
         if !wasPeeking { sidebarGlass.isHidden = true }
         sidebarPeekBG.isHidden = true   // docked sidebar is transparent over the window bg
@@ -2596,7 +2605,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             ctx.allowsImplicitAnimation = true
             sidebarLeft.constant = hidden ? -sidebarWidth : 0
-            if dockingPeek { webOverlayLeadingC.constant = sidebarWidth + 6 }
+            if dockingPeek { webOverlayLeadingC.constant = sidebarWidth }
             sidebar.animator().alphaValue = hidden ? 0 : 1
             root.layoutSubtreeIfNeeded()
         }, completionHandler: { [weak self] in
@@ -2604,7 +2613,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if dockingPeek {
                 self.webOverlayLeadingC.isActive = false
                 self.webLeadingC.isActive = true
-                self.webOverlayLeadingC.constant = 6
+                self.webOverlayLeadingC.constant = 0
                 self.root.layoutSubtreeIfNeeded()
             }
             self.sidebarGlass.isHidden = true
@@ -2671,7 +2680,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             ctx.allowsImplicitAnimation = true
             assistantWidthC.constant = w
             assistantLeadingC.constant = open ? -w : 0
-            webTrailC.constant = open ? -(w + 6) : -6
+            webTrailC.constant = open ? -w : 0
             topTrailC.constant = open ? -(w + 12) : -54
             self.root.layoutSubtreeIfNeeded()
         }, completionHandler: { [weak self] in
@@ -4595,25 +4604,19 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let title = body["title"] as? String, !title.isEmpty { t.mediaTitle = title }
         if pipEvent == "enter" {
             t.isInPiP = true
-            t.keepsMediaAlive = false
             nowPlayingTab = t
             showActive()
         } else if pipEvent == "leave" {
             t.isInPiP = false
             t.webView.alphaValue = 1
-            if current?.id == t.id {
-                t.keepsMediaAlive = false
-            } else {
-                if playing {
-                    // Restore (back to tab) button clicked. Switch focus to the tab.
-                    if let index = tabs.firstIndex(where: { $0.id == t.id }) {
-                        select(index)
-                    }
-                } else {
-                    // Close (X) button clicked. Keep user on current tab, video remains paused.
-                    t.keepsMediaAlive = true
-                    t.isPlaying = false
+            if current?.id != t.id, playing {
+                // Restore (back to tab) button clicked. Switch focus to the tab.
+                if let index = tabs.firstIndex(where: { $0.id == t.id }) {
+                    select(index)
                 }
+            } else if !playing {
+                // Closing PiP leaves the background tab paused and detached.
+                t.isPlaying = false
             }
             showActive()
         } else if playing {
@@ -4787,7 +4790,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // Linked File" set shouldPerformDownload. WebKit won't save the file
         // unless we answer .download here — otherwise it just navigates and the
         // download silently never happens (the "can't download anything" bug).
-        if #available(macOS 11.3, *), navigationAction.shouldPerformDownload {
+        let displayNavigation = displayNavigationWebViews.contains(ObjectIdentifier(w))
+        if #available(macOS 11.3, *), navigationAction.shouldPerformDownload, !displayNavigation {
             decisionHandler(.download)
             return
         }
@@ -4802,10 +4806,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if shouldDownloadResponse(navigationResponse.response) {
+            displayNavigationWebViews.remove(ObjectIdentifier(w))
             decisionHandler(.download)
             return
         }
-        decisionHandler(navigationResponse.canShowMIMEType ? .allow : .download)
+        let mime = navigationResponse.response.mimeType?.lowercased() ?? ""
+        let displayNavigation = displayNavigationWebViews.contains(ObjectIdentifier(w))
+        if displayNavigation || isKnownDisplayableMIMEType(mime) || navigationResponse.canShowMIMEType {
+            decisionHandler(.allow)
+        } else {
+            decisionHandler(.download)
+        }
     }
     func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         trackDownload(download, from: w)
@@ -4892,6 +4903,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if headers["content-disposition"]?.contains("attachment") == true { return true }
         if headers["content-type"]?.contains("application/octet-stream") == true { return true }
         return false
+    }
+
+    func isKnownDisplayableMIMEType(_ mime: String) -> Bool {
+        if mime.hasPrefix("text/") || mime.hasPrefix("image/") ||
+            mime.hasPrefix("audio/") || mime.hasPrefix("video/") { return true }
+        return [
+            "application/xhtml+xml", "application/xml", "application/json",
+            "application/ld+json", "application/pdf", "image/svg+xml"
+        ].contains(mime)
     }
 
     func startExplicitDownload(_ url: URL, in webView: WKWebView) {
@@ -5229,7 +5249,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if (window.__bzOnSettings) window.__bzOnSettings(window.__bzSettings);
         (function(){var s=document.getElementById('bz-accent-fix')||document.createElement('style');
           s.id='bz-accent-fix';
-          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,.badge{color:\(onText) !important;}';
+          s.textContent='#settings-nav button.on,.seg button.on,.dz-btn:hover,#make-default,.tag,#aiCloudStatus{color:\(onText) !important;}';
           if(!s.parentNode)document.head.appendChild(s);})();
         """
     }
@@ -5572,6 +5592,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - WK delegates --------------------------------------------------
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
+        displayNavigationWebViews.remove(ObjectIdentifier(w))
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }),
            let resume = pendingMediaResume.removeValue(forKey: tab.id) {
@@ -5606,6 +5627,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
+        displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFailProvisionalNavigation: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
         showLoadFailureIfNeeded(for: w, error: error)
         syncChrome()
@@ -5614,6 +5636,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError error: Error) {
+        displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFail: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
         showLoadFailureIfNeeded(for: w, error: error)
         syncChrome()
@@ -5649,6 +5672,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         w.loadHTMLString(html, baseURL: failing.deletingLastPathComponent())
     }
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
+        displayNavigationWebViews.remove(ObjectIdentifier(w))
         w.magnification = tabs.first(where: { $0.webView === w })?.pageZoom ?? 1.0
         if let tab = tabs.first(where: { $0.webView === w }),
            popupDownloadCandidates.contains(tab.id),
@@ -5809,10 +5833,24 @@ extension BrowserController: AddressSuggestionsDelegate {
             suggestionsPopover.show(relativeTo: field, items: items, preferredEdge: edge)
         }
     }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField, field === address,
+              let movement = obj.userInfo?["NSTextMovement"] as? NSNumber,
+              movement.intValue == 0x10 else { return }
+        let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+        queueAddressSubmission(field.stringValue, isCmdEnter: isCmd)
+    }
+
+    private func isFieldSubmitCommand(_ selector: Selector) -> Bool {
+        selector == #selector(NSResponder.insertNewline(_:)) ||
+            selector == NSSelectorFromString("insertNewlineIgnoringFieldEditor:") ||
+            selector == NSSelectorFromString("insertLineBreak:")
+    }
     
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if control === findField {
-            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            if isFieldSubmitCommand(commandSelector) {
                 findNextMatch()
                 return true
             } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
@@ -5822,7 +5860,7 @@ extension BrowserController: AddressSuggestionsDelegate {
         }
         if control === address || control === newTab.field {
             let shiftSearch = (NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false) &&
-                commandSelector == #selector(NSResponder.insertNewline(_:))
+                isFieldSubmitCommand(commandSelector)
             if suggestionsPopover.isShown {
                 if commandSelector == #selector(NSResponder.moveUp(_:)) {
                     suggestionsPopover.moveSelectionUp()
@@ -5830,7 +5868,7 @@ extension BrowserController: AddressSuggestionsDelegate {
                 } else if commandSelector == #selector(NSResponder.moveDown(_:)) {
                     suggestionsPopover.moveSelectionDown()
                     return true
-                } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                } else if isFieldSubmitCommand(commandSelector) {
                     if shiftSearch {
                         submitField(control, textView: textView, forceGoogleSearch: true)
                         return true
@@ -5844,7 +5882,7 @@ extension BrowserController: AddressSuggestionsDelegate {
                     suggestionsPopover.hide()
                     return true
                 }
-            } else if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            } else if isFieldSubmitCommand(commandSelector) {
                 submitField(control, textView: textView, forceGoogleSearch: shiftSearch)
                 return true
             }
@@ -5857,6 +5895,10 @@ extension BrowserController: AddressSuggestionsDelegate {
         let text = textView.string
         let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
         suggestionsPopover.hide()
+        if field === address {
+            queueAddressSubmission(text, isCmdEnter: isCmd, forceGoogleSearch: forceGoogleSearch)
+            return
+        }
         if field === newTab.field {
             field.stringValue = ""
             newTab.updateFieldHeight()
