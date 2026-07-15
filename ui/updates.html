@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.3.0', icon: 'maximize', title: 'Fullscreen, the Native Way', hotfix: false, major: true, items: [
+        '<b>Reliable Video Fullscreen</b> — Breeze now leaves YouTube and other video fullscreen presentation entirely to WebKit, eliminating the custom CSS and window substitutions that could produce audio, captions, and controls over a black video surface.',
+        '<b>Safe Repeated Transitions</b> — Fullscreen exit cleanup waits until WebKit has actually returned the live web view and ignores stale callbacks from earlier cycles, keeping the active tab and video renderer intact.',
+        '<b>Stable Window Controls</b> — Traffic lights always return to one absolute calibrated position after fullscreen, preventing accumulated drift while moving the group three pixels left for cleaner alignment.',
+        '<b>Polished Ask and Search Keys</b> — Return and Shift symbols now sit visually centered inside their compact New Tab keycaps.' ] },
       { v: '5.2.9', icon: 'download', title: 'An Update Prompt That Belongs', hotfix: true, major: false, items: [
         '<b>Native Mac Structure</b> — Update notices now use native AppKit typography, controls, keyboard defaults, and accessibility while staying safely inside the Breeze window.',
         '<b>Breeze Visual Language</b> — The compact centered card follows the active Breeze palette, accent, rounded surfaces, and dark mode instead of presenting a stretched gray panel.',

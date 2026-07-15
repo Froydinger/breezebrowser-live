@@ -313,6 +313,14 @@ final class NewTabView: GradientBackgroundView {
         [askReturnKey, shiftKey, searchReturnKey].forEach { key in
             key.layer?.backgroundColor = p.text.withAlphaComponent(p.isDark ? 0.06 : 0.035).cgColor
             key.layer?.borderColor = p.text.withAlphaComponent(p.isDark ? 0.20 : 0.15).cgColor
+            key.attributedStringValue = NSAttributedString(
+                string: key.stringValue,
+                attributes: [
+                    .font: key.font ?? NSFont.systemFont(ofSize: 10.5, weight: .semibold),
+                    .foregroundColor: hintColor,
+                    .baselineOffset: -1.5
+                ]
+            )
         }
         field.textColor = p.text
         field.placeholderAttributedString = NSAttributedString(

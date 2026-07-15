@@ -110,6 +110,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var popupWindows: [UUID: NSWindow] = [:]
     var popupDownloadCandidates: Set<UUID> = []
     var fullscreenWebViews: Set<ObjectIdentifier> = []
+    var fullscreenTransitionGeneration: [ObjectIdentifier: UInt] = [:]
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -428,11 +429,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         })
 
         lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
-            // AppKit may rebuild the title-bar host during fullscreen. Capture its
-            // new native frames before restoring Breeze's calibrated placement.
+            // AppKit may rebuild the title-bar host during fullscreen, but the
+            // saved coordinates remain the window's one calibrated source of
+            // truth. Recapturing here can sample already-offset frames and apply
+            // the offset twice on every fullscreen cycle.
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.isClosing else { return }
-                self.trafficLightBaseFrames.removeAll()
                 self.alignTrafficLights()
             }
         })
@@ -1277,10 +1279,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func alignTrafficLights() {
         // Never touch AppKit's button host while it is transitioning. macOS 27
-        // rebuilds that host for fullscreen; didExitFullScreen recaptures it.
+        // rebuilds that host for fullscreen; didExitFullScreen reapplies it.
         guard !window.styleMask.contains(.fullScreen) else { return }
 
-        let offsetX: CGFloat = 13
+        let offsetX: CGFloat = 10
         let offsetY: CGFloat = -6
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type) else { continue }
@@ -1767,13 +1769,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let applyState = { [weak self, weak t, weak webView] in
                 guard let self, let t, let webView else { return }
                 let key = ObjectIdentifier(webView)
+                let generation = (self.fullscreenTransitionGeneration[key] ?? 0) &+ 1
+                self.fullscreenTransitionGeneration[key] = generation
                 if webView.fullscreenState == .notInFullscreen {
                     guard self.fullscreenWebViews.contains(key) else { return }
-                    self.finishElementFullscreenExit(webView, tab: t, key: key)
+                    self.finishElementFullscreenExit(webView, tab: t, key: key,
+                                                     generation: generation)
                 } else {
+                    // WebKit exclusively owns the WKWebView for the entire native
+                    // fullscreen transition. Track state only; do not mutate the
+                    // view or its layer while WebKit is preparing the transfer.
                     self.fullscreenWebViews.insert(key)
-                    webView.isHidden = false
-                    webView.alphaValue = 1
                 }
             }
             // WKWebView state changes normally arrive on main. Handle them in the
@@ -1786,24 +1792,34 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     /// `fullscreenState` returns to `.notInFullscreen` before macOS 27 has
     /// necessarily moved the WKWebView out of WebKit's private fullscreen window.
-    /// Keep the ownership guard until the real host window confirms the transfer;
-    /// reparenting even one frame too early permanently blanks the video surface.
+    /// Rapid double-click toggles can begin another complete cycle before an older
+    /// delayed exit check fires, so every check is also tied to its exact KVO
+    /// generation. Never let stale cleanup from cycle N release cycle N+1's guard.
     private func finishElementFullscreenExit(_ webView: WKWebView, tab: Tab,
-                                             key: ObjectIdentifier, attempt: Int = 0) {
+                                             key: ObjectIdentifier, generation: UInt,
+                                             attempt: Int = 0) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak webView, weak tab] in
             guard let self, let webView, let tab,
+                  self.fullscreenTransitionGeneration[key] == generation,
                   webView.fullscreenState == .notInFullscreen else { return }
-            if let host = webView.window, host !== self.window, attempt < 30 {
-                self.finishElementFullscreenExit(webView, tab: tab, key: key, attempt: attempt + 1)
+            guard webView.window === self.window else {
+                // A nil window is the transfer gap, not proof that ownership has
+                // returned. Keep waiting, but never force-reparent a failed view.
+                if attempt < 80 {
+                    self.finishElementFullscreenExit(webView, tab: tab, key: key,
+                                                     generation: generation,
+                                                     attempt: attempt + 1)
+                }
                 return
             }
             self.fullscreenWebViews.remove(key)
+            self.fullscreenTransitionGeneration.removeValue(forKey: key)
             if self.current?.id == tab.id {
                 webView.isHidden = false
                 webView.alphaValue = 1
+                self.webContainer.layoutSubtreeIfNeeded()
                 self.syncChrome()
                 self.refreshSidebar()
-                self.scheduleReflow()
             }
         }
     }
@@ -1822,7 +1838,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         titleObs[t.id] = nil
         urlObs[t.id] = nil
         fullscreenObs[t.id] = nil
-        fullscreenWebViews.remove(ObjectIdentifier(t.webView))
+        let fullscreenKey = ObjectIdentifier(t.webView)
+        fullscreenWebViews.remove(fullscreenKey)
+        fullscreenTransitionGeneration.removeValue(forKey: fullscreenKey)
         displayNavigationWebViews.remove(ObjectIdentifier(t.webView))
         popupDownloadCandidates.remove(t.id)
         aiNavWaiters.removeValue(forKey: t.id)?.resume()
