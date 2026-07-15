@@ -7,9 +7,15 @@
 
 import Cocoa
 
-private final class UpdaterBannerView: NSVisualEffectView {
+private final class UpdaterBannerView: NSView {
     private let primaryAction: () -> Void
     private let secondaryAction: (() -> Void)?
+    private let card = NSVisualEffectView()
+    private let accentBar = NSView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let messageLabel = NSTextField(wrappingLabelWithString: "")
+    private let primaryButton = NSButton()
+    private var secondaryButton: NSButton?
 
     init(title: String, message: String, primaryTitle: String,
          secondaryTitle: String?, primaryAction: @escaping () -> Void,
@@ -18,26 +24,48 @@ private final class UpdaterBannerView: NSVisualEffectView {
         self.secondaryAction = secondaryAction
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        material = .popover
-        blendingMode = .withinWindow
-        state = .active
         wantsLayer = true
-        layer?.cornerRadius = 14
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(title)
 
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.textColor = .labelColor
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.material = .popover
+        card.blendingMode = .withinWindow
+        card.state = .active
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 18
+        card.layer?.borderWidth = 1
+        card.layer?.shadowOpacity = 0.22
+        card.layer?.shadowRadius = 22
+        card.layer?.shadowOffset = NSSize(width: 0, height: -8)
+        addSubview(card)
 
-        let messageLabel = NSTextField(wrappingLabelWithString: message)
+        accentBar.translatesAutoresizingMaskIntoConstraints = false
+        accentBar.wantsLayer = true
+        card.addSubview(accentBar)
+
+        let icon = NSImageView()
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.image = breezeLogo()
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.setAccessibilityElement(false)
+
+        titleLabel.stringValue = title
+        titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        messageLabel.stringValue = message
         messageLabel.font = .systemFont(ofSize: 13)
-        messageLabel.textColor = .secondaryLabelColor
         messageLabel.maximumNumberOfLines = 3
+        messageLabel.lineBreakMode = .byWordWrapping
 
-        let primary = NSButton(title: primaryTitle, target: self, action: #selector(primaryTapped))
-        primary.bezelStyle = .rounded
-        primary.keyEquivalent = "\r"
+        primaryButton.title = primaryTitle
+        primaryButton.target = self
+        primaryButton.action = #selector(primaryTapped)
+        primaryButton.bezelStyle = .rounded
+        primaryButton.controlSize = .large
+        primaryButton.keyEquivalent = "\r"
 
         let buttons = NSStackView()
         buttons.orientation = .horizontal
@@ -46,26 +74,72 @@ private final class UpdaterBannerView: NSVisualEffectView {
         if let secondaryTitle {
             let secondary = NSButton(title: secondaryTitle, target: self, action: #selector(secondaryTapped))
             secondary.bezelStyle = .rounded
+            secondary.controlSize = .large
+            secondary.keyEquivalent = "\u{1b}"
             buttons.addArrangedSubview(secondary)
+            secondaryButton = secondary
         }
-        buttons.addArrangedSubview(primary)
+        buttons.addArrangedSubview(primaryButton)
 
-        let stack = NSStackView(views: [titleLabel, messageLabel, buttons])
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 7
-        addSubview(stack)
+        let copy = NSStackView(views: [titleLabel, messageLabel])
+        copy.translatesAutoresizingMaskIntoConstraints = false
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 5
+
+        let header = NSStackView(views: [icon, copy])
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.orientation = .horizontal
+        header.alignment = .top
+        header.spacing = 14
+
+        card.addSubview(header)
+        card.addSubview(buttons)
+        buttons.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -14),
-            messageLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            card.centerXAnchor.constraint(equalTo: centerXAnchor),
+            card.topAnchor.constraint(equalTo: topAnchor, constant: 28),
+            card.widthAnchor.constraint(equalToConstant: 460),
+            card.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 18),
+            card.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -18),
+
+            accentBar.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            accentBar.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            accentBar.topAnchor.constraint(equalTo: card.topAnchor),
+            accentBar.heightAnchor.constraint(equalToConstant: 3),
+
+            header.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 22),
+            header.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -22),
+            header.topAnchor.constraint(equalTo: card.topAnchor, constant: 22),
+            icon.widthAnchor.constraint(equalToConstant: 38),
+            icon.heightAnchor.constraint(equalToConstant: 38),
+            messageLabel.widthAnchor.constraint(equalTo: copy.widthAnchor),
+
+            buttons.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -22),
+            buttons.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 18),
+            buttons.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
         ])
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
+                                               name: Theme.didChange, object: nil)
+        applyTheme()
     }
 
     required init?(coder: NSCoder) { nil }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func applyTheme() {
+        let p = Theme.shared.palette
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(p.isDark ? 0.22 : 0.10).cgColor
+        card.layer?.borderColor = p.accent.withAlphaComponent(p.isDark ? 0.34 : 0.24).cgColor
+        card.layer?.shadowColor = NSColor.black.cgColor
+        accentBar.layer?.backgroundColor = p.accent.cgColor
+        titleLabel.textColor = p.text
+        messageLabel.textColor = p.textSoft
+        primaryButton.bezelColor = p.accent
+        primaryButton.contentTintColor = .white
+        secondaryButton?.contentTintColor = p.text
+    }
 
     @objc private func primaryTapped() { primaryAction() }
     @objc private func secondaryTapped() { secondaryAction?() }
@@ -247,11 +321,10 @@ final class Updater {
         )
         host.addSubview(view, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: host.topAnchor, constant: 18),
-            view.centerXAnchor.constraint(equalTo: host.centerXAnchor),
-            view.widthAnchor.constraint(equalToConstant: 480),
-            view.leadingAnchor.constraint(greaterThanOrEqualTo: host.leadingAnchor, constant: 18),
-            view.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor, constant: -18),
+            view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            view.topAnchor.constraint(equalTo: host.topAnchor),
+            view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
         ])
         banner = view
     }

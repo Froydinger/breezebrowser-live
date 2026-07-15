@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.2.9', icon: 'download', title: 'An Update Prompt That Belongs', hotfix: true, major: false, items: [
+        '<b>Native Mac Structure</b> — Update notices now use native AppKit typography, controls, keyboard defaults, and accessibility while staying safely inside the Breeze window.',
+        '<b>Breeze Visual Language</b> — The compact centered card follows the active Breeze palette, accent, rounded surfaces, and dark mode instead of presenting a stretched gray panel.',
+        '<b>Fullscreen-Safe</b> — The prompt still avoids creating a separate alert window, preserving the WebKit fullscreen and Picture in Picture crash protection added in 5.2.7.' ] },
       { v: '5.2.8', icon: 'refresh-cw', title: 'Pages Open Where They Belong', hotfix: true, major: false, items: [
         '<b>First Navigation Renders</b> — Typing a site into the top address bar from New Tab, Nav Chat, onboarding, or another Breeze page now opens the page on the first attempt instead of leaving a blank WebKit surface.',
         '<b>HTML Stays in the Browser</b> — Internal-to-web navigations are treated as display intent, so normal HTML renders in its tab instead of being mistakenly saved to Downloads.',
