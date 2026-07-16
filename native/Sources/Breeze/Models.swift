@@ -197,8 +197,10 @@ let breezeElementFullscreenJS: String = {
   window.__breezeFullscreenInstalled = true;
 
   var target = null;
+  var visualTarget = null;
   var styleNode = null;
-  var targetHadMarker = false;
+  var visualTargetHadMarker = false;
+  var suppressedNodesAdded = [];
   var rootHadClass = false;
 
   function send(action) {
@@ -218,6 +220,8 @@ let breezeElementFullscreenJS: String = {
       'html.__breeze-fullscreen,html.__breeze-fullscreen body{' +
       'width:100%!important;height:100%!important;margin:0!important;' +
       'overflow:hidden!important;background:#000!important}' +
+      '[data-breeze-fullscreen-suppressed]{visibility:hidden!important;' +
+      'pointer-events:none!important}' +
       '[data-breeze-fullscreen-target]{position:fixed!important;inset:0!important;' +
       'width:100vw!important;height:100vh!important;min-width:100vw!important;' +
       'min-height:100vh!important;max-width:none!important;max-height:none!important;' +
@@ -226,16 +230,57 @@ let breezeElementFullscreenJS: String = {
     (document.head || document.documentElement).appendChild(styleNode);
   }
 
+  function largestVisibleVideo() {
+    var best = null;
+    var bestArea = 0;
+    var videos = document.querySelectorAll('video');
+    for (var i = 0; i < videos.length; i++) {
+      var rect = videos[i].getBoundingClientRect();
+      var style = getComputedStyle(videos[i]);
+      var area = Math.max(0, rect.width) * Math.max(0, rect.height);
+      if (style.display !== 'none' && style.visibility !== 'hidden' && area > bestArea) {
+        best = videos[i];
+        bestArea = area;
+      }
+    }
+    return best;
+  }
+
+  function resolveVisualTarget(requested) {
+    var isRootRequest = requested === document.documentElement || requested === document.body;
+    if (!isRootRequest) return requested;
+    var video = largestVisibleVideo();
+    if (!video) return requested;
+    return video.closest('#movie_player, .html5-video-player, [data-testid*="player"], ' +
+      '[class*="video-player"], [class*="videoPlayer"], #player') || video;
+  }
+
   function enter(el) {
     if (!el || !el.setAttribute) return Promise.reject(new TypeError('Invalid fullscreen element'));
     if (target === el) return Promise.resolve();
     if (target) exit(false);
     target = el;
+    visualTarget = resolveVisualTarget(el);
     installStyle();
     rootHadClass = document.documentElement.classList.contains('__breeze-fullscreen');
-    targetHadMarker = target.hasAttribute('data-breeze-fullscreen-target');
+    visualTargetHadMarker = visualTarget.hasAttribute('data-breeze-fullscreen-target');
     document.documentElement.classList.add('__breeze-fullscreen');
-    target.setAttribute('data-breeze-fullscreen-target', '');
+    suppressedNodesAdded = [];
+    var branch = visualTarget;
+    var parent = branch.parentElement;
+    while (parent && parent !== document.documentElement) {
+      var siblings = parent.children;
+      for (var i = 0; i < siblings.length; i++) {
+        var sibling = siblings[i];
+        if (sibling !== branch && !sibling.hasAttribute('data-breeze-fullscreen-suppressed')) {
+          sibling.setAttribute('data-breeze-fullscreen-suppressed', '');
+          suppressedNodesAdded.push(sibling);
+        }
+      }
+      branch = parent;
+      parent = parent.parentElement;
+    }
+    visualTarget.setAttribute('data-breeze-fullscreen-target', '');
     send('enter');
     dispatchChange();
     return Promise.resolve();
@@ -243,9 +288,16 @@ let breezeElementFullscreenJS: String = {
 
   function exit(notifyNative) {
     if (!target) return Promise.resolve();
-    var oldTarget = target;
+    var oldVisualTarget = visualTarget;
     target = null;
-    if (!targetHadMarker) oldTarget.removeAttribute('data-breeze-fullscreen-target');
+    visualTarget = null;
+    if (oldVisualTarget && !visualTargetHadMarker) {
+      oldVisualTarget.removeAttribute('data-breeze-fullscreen-target');
+    }
+    for (var i = 0; i < suppressedNodesAdded.length; i++) {
+      suppressedNodesAdded[i].removeAttribute('data-breeze-fullscreen-suppressed');
+    }
+    suppressedNodesAdded = [];
     if (!rootHadClass) document.documentElement.classList.remove('__breeze-fullscreen');
     if (styleNode) { styleNode.remove(); styleNode = null; }
     if (notifyNative !== false) send('exit');

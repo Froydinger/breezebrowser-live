@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.3.2', icon: 'maximize', title: 'The Video, Not the Tab', hotfix: true, major: false, items: [
+        '<b>Video-Only Fullscreen</b> — YouTube document-level fullscreen requests now resolve visually to the active player instead of stretching the entire watch page across the screen.',
+        '<b>Clean Player Surface</b> — Headers, recommendations, comments, and other page branches stay out of fullscreen while the player and its controls remain intact.',
+        '<b>Compositor-Safe Isolation</b> — Breeze preserves the working 5.3.1 video surface path and never clips, reparents, transforms, or hides the player’s ancestor chain.' ] },
       { v: '5.3.1', icon: 'play', title: 'Fullscreen That Survives Pause', hotfix: true, major: false, items: [
         '<b>Pause Without Black Video</b> — On macOS 27, Breeze now avoids the WKWebView fullscreen transfer that could lose the hardware video surface after Space, pause, or seek while leaving audio and controls alive.',
         '<b>One Stable Video Surface</b> — The requested player fills the screen while its original WKWebView and compositor stay attached to the same Breeze window, eliminating the detach-and-reparent failure entirely.',
