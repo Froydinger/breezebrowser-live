@@ -27,6 +27,19 @@ private final class PendingGeolocationRequest {
     }
 }
 
+private struct SiteFullscreenChromeState {
+    let topBarHidden: Bool
+    let sidebarHidden: Bool
+    let edgeHandleHidden: Bool
+    let sidebarResizerHidden: Bool
+    let breezeCornerHidden: Bool
+    let assistantHidden: Bool
+    let leftPaneHidden: Bool
+    let rightPaneHidden: Bool
+    let splitDividerHidden: Bool
+    let webTrailConstant: CGFloat
+}
+
 final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSSearchFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, CLLocationManagerDelegate, BrowserAITools {
     static let didUpdateState = Notification.Name("BrowserControllerDidUpdateState")
     static var sharedTabs: [Tab] = []
@@ -111,6 +124,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var popupDownloadCandidates: Set<UUID> = []
     var fullscreenWebViews: Set<ObjectIdentifier> = []
     var fullscreenTransitionGeneration: [ObjectIdentifier: UInt] = [:]
+    weak var siteFullscreenTab: Tab?
+    var siteFullscreenActive = false
+    var siteFullscreenExitPending = false
+    var siteFullscreenEnteredAppFullscreen = false
+    private var siteFullscreenChromeState: SiteFullscreenChromeState?
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -422,10 +440,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
         })
 
+        lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+            guard let self, self.siteFullscreenActive,
+                  self.siteFullscreenExitPending,
+                  self.siteFullscreenEnteredAppFullscreen else { return }
+            self.window.toggleFullScreen(nil)
+        })
+
         lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
             self?.navLeadingC?.constant = 92   // restore the traffic-light gap when windowed
             self?.window.titlebarAppearsTransparent = true
             self?.window.backgroundColor = .windowBackgroundColor
+            guard let self, self.siteFullscreenActive else { return }
+            self.siteFullscreenExitPending = true
+            self.siteFullscreenTab?.webView.evaluateJavaScript(
+                "window.__breezeExitFullscreenFromNative && window.__breezeExitFullscreenFromNative()"
+            )
         })
 
         lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
@@ -436,6 +466,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.isClosing else { return }
                 self.alignTrafficLights()
+                if self.siteFullscreenActive {
+                    self.finishSiteFullscreenExit()
+                }
             }
         })
 
@@ -849,6 +882,127 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         newTab.field.delegate = self
     }
 
+    /// macOS 27's native WKWebView element-fullscreen window loses the decoded
+    /// video surface after pause/seek. This path leaves the WKWebView and its
+    /// compositor attached to Breeze's window, expands only its existing host,
+    /// and uses ordinary AppKit window fullscreen around it.
+    private func handleSiteFullscreen(_ message: WKScriptMessage) {
+        guard #available(macOS 27.0, *),
+              let webView = message.webView,
+              let tab = tabs.first(where: { $0.webView === webView }),
+              let body = message.body as? [String: Any],
+              let action = body["action"] as? String else { return }
+        if action == "enter" {
+            enterSiteFullscreen(tab: tab)
+        } else if action == "exit", siteFullscreenTab?.id == tab.id {
+            requestSiteFullscreenExit()
+        }
+    }
+
+    private func enterSiteFullscreen(tab: Tab) {
+        guard !siteFullscreenActive, current?.id == tab.id,
+              !tab.isNewTab, !tab.isChatTab else { return }
+
+        siteFullscreenChromeState = SiteFullscreenChromeState(
+            topBarHidden: topBar.isHidden,
+            sidebarHidden: sidebar.isHidden,
+            edgeHandleHidden: edgeHandle.isHidden,
+            sidebarResizerHidden: sidebarResizer.isHidden,
+            breezeCornerHidden: breezeCorner.isHidden,
+            assistantHidden: assistant.isHidden,
+            leftPaneHidden: leftPane.isHidden,
+            rightPaneHidden: rightPane.isHidden,
+            splitDividerHidden: splitDivider.isHidden,
+            webTrailConstant: webTrailC.constant
+        )
+        siteFullscreenTab = tab
+        siteFullscreenActive = true
+        siteFullscreenExitPending = false
+        siteFullscreenEnteredAppFullscreen = !window.styleMask.contains(.fullScreen)
+
+        topBar.isHidden = true
+        sidebar.isHidden = true
+        edgeHandle.isHidden = true
+        sidebarResizer.isHidden = true
+        breezeCorner.isHidden = true
+        assistant.isHidden = true
+        webTrailC.constant = 0
+
+        webLeadingC.isActive = false
+        webOverlayLeadingC.isActive = true
+        webContainerTopC.isActive = false
+        webContainerTopC = webContainer.topAnchor.constraint(equalTo: root.topAnchor)
+        webContainerTopC.isActive = true
+
+        // A split tab keeps the WKWebView inside its existing pane; expand that
+        // pane instead of reparenting the video-bearing view.
+        if tab.splitPartnerId != nil, let splitLeftWidthC {
+            if tab.splitIsRight {
+                leftPane.isHidden = true
+                splitDivider.isHidden = true
+                splitLeftWidthC.constant = 0
+            } else {
+                rightPane.isHidden = true
+                splitDivider.isHidden = true
+                splitLeftWidthC.constant = max(webContainer.bounds.width, root.bounds.width)
+            }
+        }
+        root.layoutSubtreeIfNeeded()
+        window.makeFirstResponder(tab.webView)
+
+        if siteFullscreenEnteredAppFullscreen {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.siteFullscreenActive else { return }
+                self.window.toggleFullScreen(nil)
+            }
+        }
+    }
+
+    private func requestSiteFullscreenExit() {
+        guard siteFullscreenActive, !siteFullscreenExitPending else { return }
+        siteFullscreenExitPending = true
+        guard siteFullscreenEnteredAppFullscreen else {
+            finishSiteFullscreenExit()
+            return
+        }
+        if window.styleMask.contains(.fullScreen) {
+            window.toggleFullScreen(nil)
+        }
+        // If entry is still animating, didEnterFullScreen completes the exit.
+    }
+
+    private func finishSiteFullscreenExit() {
+        guard siteFullscreenActive else { return }
+        let tab = siteFullscreenTab
+        tab?.webView.evaluateJavaScript(
+            "window.__breezeExitFullscreenFromNative && window.__breezeExitFullscreenFromNative()"
+        )
+
+        if let state = siteFullscreenChromeState {
+            topBar.isHidden = state.topBarHidden
+            sidebar.isHidden = state.sidebarHidden
+            edgeHandle.isHidden = state.edgeHandleHidden
+            sidebarResizer.isHidden = state.sidebarResizerHidden
+            breezeCorner.isHidden = state.breezeCornerHidden
+            assistant.isHidden = state.assistantHidden
+            leftPane.isHidden = state.leftPaneHidden
+            rightPane.isHidden = state.rightPaneHidden
+            splitDivider.isHidden = state.splitDividerHidden
+            webTrailC.constant = state.webTrailConstant
+        }
+        webOverlayLeadingC.isActive = false
+        webLeadingC.isActive = true
+
+        siteFullscreenActive = false
+        siteFullscreenExitPending = false
+        siteFullscreenEnteredAppFullscreen = false
+        siteFullscreenTab = nil
+        siteFullscreenChromeState = nil
+
+        showActive()
+        if let tab { refreshMediaStateAfterFullscreen(tab, webView: tab.webView) }
+    }
+
     func isElementFullscreen(_ webView: WKWebView) -> Bool {
         return webView.fullscreenState != .notInFullscreen ||
             fullscreenWebViews.contains(ObjectIdentifier(webView))
@@ -863,10 +1017,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func hasActiveElementFullscreen() -> Bool {
-        visibleWebTabs().contains { isElementFullscreen($0.webView) }
+        siteFullscreenActive || visibleWebTabs().contains { isElementFullscreen($0.webView) }
     }
 
     func showActive() {
+        guard !siteFullscreenActive else { return }
         // Apple removes a fullscreen WKWebView from our hierarchy until its
         // fullscreenState returns to notInFullscreen. Never touch its ownership.
         if let current, webKitOwnsFullscreenView(current.webView) {
@@ -1814,6 +1969,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             }
             self.fullscreenWebViews.remove(key)
             self.fullscreenTransitionGeneration.removeValue(forKey: key)
+            self.refreshMediaStateAfterFullscreen(tab, webView: webView)
             if self.current?.id == tab.id {
                 webView.isHidden = false
                 webView.alphaValue = 1
@@ -1821,6 +1977,33 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self.syncChrome()
                 self.refreshSidebar()
             }
+        }
+    }
+
+    /// Fullscreen play/pause events deliberately do not update native chrome.
+    /// Read the final media state only after WebKit has returned the WKWebView to
+    /// Breeze's window, so Now Playing can update without disturbing the video
+    /// compositor while it is owned by WebKit's private fullscreen window.
+    private func refreshMediaStateAfterFullscreen(_ tab: Tab, webView: WKWebView) {
+        let js = """
+        (function () {
+          var media = Array.from(document.querySelectorAll('video,audio'));
+          var active = media.find(function (m) { return !m.paused && !m.ended; }) || media[0];
+          if (!active) return null;
+          return { playing: !active.paused && !active.ended, title: document.title || '' };
+        })()
+        """
+        webView.evaluateJavaScript(js) { [weak self, weak tab, weak webView] value, _ in
+            guard let self, let tab, let webView,
+                  webView.window === self.window,
+                  self.tabs.contains(where: { $0.id == tab.id }),
+                  let state = value as? [String: Any],
+                  let playing = state["playing"] as? Bool else { return }
+            tab.isPlaying = playing
+            if !playing { tab.lastMediaPauseAt = Date() }
+            if let title = state["title"] as? String, !title.isEmpty { tab.mediaTitle = title }
+            if playing { self.nowPlayingTab = tab }
+            self.updateNowPlaying()
         }
     }
 
@@ -4620,6 +4803,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         t.isPlaying = playing
         if let title = body["title"] as? String, !title.isEmpty { t.mediaTitle = title }
+        // Defensive native guard for pages/frames whose legacy fullscreen API
+        // does not expose document.fullscreenElement to the injected script.
+        // Keep the state, but never touch AppKit UI while WebKit owns the view.
+        if pipEvent == nil &&
+            (webKitOwnsFullscreenView(wv) || (siteFullscreenActive && siteFullscreenTab?.id == t.id)) {
+            return
+        }
         if pipEvent == "enter" {
             t.isInPiP = true
             nowPlayingTab = t
@@ -5299,6 +5489,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let selection = body["selection"] as? String ?? ""
             let editable = body["editable"] as? Bool ?? false
             showPageMenu(link: link, image: image, media: media, mediaKind: mediaKind, pageURL: page, pageTitle: title, selection: selection, editable: editable)
+            return
+        }
+        if message.name == "breezeFullscreen" {
+            handleSiteFullscreen(message)
             return
         }
         if message.name == "breezeMedia" {

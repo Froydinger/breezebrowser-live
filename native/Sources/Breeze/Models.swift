@@ -47,7 +47,14 @@ let sharedConfig: WKWebViewConfiguration = {
     c.websiteDataStore = .default()
     c.mediaTypesRequiringUserActionForPlayback = []
     c.defaultWebpagePreferences.allowsContentJavaScript = true
-    if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
+    if #available(macOS 27.0, *) {
+        // WebKit's native element-fullscreen transfer can lose the hardware-video
+        // surface after pause/seek on macOS 27. Breeze keeps the WKWebView attached
+        // and supplies an in-window fullscreen path on that OS instead.
+        c.preferences.isElementFullscreenEnabled = false
+    } else if #available(macOS 13.3, *) {
+        c.preferences.isElementFullscreenEnabled = true
+    }
     c.enablePictureInPictureAPI()
     // Internal-page bridge (defined only on file:// pages — see breezeBridgeJS).
     let script = WKUserScript(source: breezeBridgeJS, injectionTime: .atDocumentStart,
@@ -55,6 +62,8 @@ let sharedConfig: WKWebViewConfiguration = {
     c.userContentController.addUserScript(script)
     // Media (now-playing) detection — reports play/pause to the native side.
     c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    c.userContentController.addUserScript(WKUserScript(source: breezeElementFullscreenJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -64,6 +73,7 @@ let sharedConfig: WKWebViewConfiguration = {
         injectionTime: .atDocumentStart, forMainFrameOnly: true))
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMsg")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
+    c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeFullscreen")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeGeolocation")
     return c
@@ -125,10 +135,21 @@ let breezeMediaJS = """
     if (pip) body.pip = pip;
     try { window.webkit.messageHandlers.breezeMedia.postMessage(body); } catch (e) {}
   }
-  document.addEventListener('play', function () { report(true); }, true);
-  document.addEventListener('playing', function () { report(true); }, true);
-  document.addEventListener('pause', function () { report(false); }, true);
-  document.addEventListener('ended', function () { report(false); }, true);
+  function elementFullscreenActive() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement ||
+      document.webkitCurrentFullScreenElement || document.webkitIsFullScreen);
+  }
+  function reportPlayback(playing) {
+    // A play/pause message causes native Now Playing UI to update. Do not cross
+    // that JS/AppKit boundary while WebKit has detached this view into its private
+    // fullscreen window; Breeze resynchronizes the media state after the view is
+    // safely back in its original window.
+    if (!elementFullscreenActive()) report(playing);
+  }
+  document.addEventListener('play', function () { reportPlayback(true); }, true);
+  document.addEventListener('playing', function () { reportPlayback(true); }, true);
+  document.addEventListener('pause', function () { reportPlayback(false); }, true);
+  document.addEventListener('ended', function () { reportPlayback(false); }, true);
   var lastPresentationMode = '';
   function presentationModeOf(v) {
     return (v && (v.webkitPresentationMode || v.presentationMode)) || '';
@@ -162,6 +183,105 @@ let breezeMediaJS = """
   }, true);
 })();
 """
+
+/// macOS 27 has a WebKit regression in the native element-fullscreen window:
+/// pausing or seeking a hardware-decoded video can permanently drop its visual
+/// surface while controls and audio remain alive. Keep the page and its video in
+/// the original WKWebView, make the requested element fill that viewport, and let
+/// BrowserController fullscreen the existing application window around it.
+let breezeElementFullscreenJS: String = {
+    guard #available(macOS 27.0, *) else { return "" }
+    return """
+(function () {
+  if (location.protocol === 'file:' || window.__breezeFullscreenInstalled) return;
+  window.__breezeFullscreenInstalled = true;
+
+  var target = null;
+  var styleNode = null;
+  var targetHadMarker = false;
+  var rootHadClass = false;
+
+  function send(action) {
+    try { window.webkit.messageHandlers.breezeFullscreen.postMessage({ action: action }); } catch (e) {}
+  }
+
+  function dispatchChange() {
+    try { document.dispatchEvent(new Event('fullscreenchange')); } catch (e) {}
+    try { document.dispatchEvent(new Event('webkitfullscreenchange')); } catch (e) {}
+  }
+
+  function installStyle() {
+    if (styleNode) return;
+    styleNode = document.createElement('style');
+    styleNode.id = '__breeze-fullscreen-style';
+    styleNode.textContent =
+      'html.__breeze-fullscreen,html.__breeze-fullscreen body{' +
+      'width:100%!important;height:100%!important;margin:0!important;' +
+      'overflow:hidden!important;background:#000!important}' +
+      '[data-breeze-fullscreen-target]{position:fixed!important;inset:0!important;' +
+      'width:100vw!important;height:100vh!important;min-width:100vw!important;' +
+      'min-height:100vh!important;max-width:none!important;max-height:none!important;' +
+      'margin:0!important;border:0!important;border-radius:0!important;' +
+      'transform:none!important;z-index:2147483647!important;background:#000!important}';
+    (document.head || document.documentElement).appendChild(styleNode);
+  }
+
+  function enter(el) {
+    if (!el || !el.setAttribute) return Promise.reject(new TypeError('Invalid fullscreen element'));
+    if (target === el) return Promise.resolve();
+    if (target) exit(false);
+    target = el;
+    installStyle();
+    rootHadClass = document.documentElement.classList.contains('__breeze-fullscreen');
+    targetHadMarker = target.hasAttribute('data-breeze-fullscreen-target');
+    document.documentElement.classList.add('__breeze-fullscreen');
+    target.setAttribute('data-breeze-fullscreen-target', '');
+    send('enter');
+    dispatchChange();
+    return Promise.resolve();
+  }
+
+  function exit(notifyNative) {
+    if (!target) return Promise.resolve();
+    var oldTarget = target;
+    target = null;
+    if (!targetHadMarker) oldTarget.removeAttribute('data-breeze-fullscreen-target');
+    if (!rootHadClass) document.documentElement.classList.remove('__breeze-fullscreen');
+    if (styleNode) { styleNode.remove(); styleNode = null; }
+    if (notifyNative !== false) send('exit');
+    dispatchChange();
+    return Promise.resolve();
+  }
+
+  function defineGetter(name, getter) {
+    try { Object.defineProperty(document, name, { configurable: true, get: getter }); } catch (e) {}
+  }
+  defineGetter('fullscreenElement', function () { return target; });
+  defineGetter('webkitFullscreenElement', function () { return target; });
+  defineGetter('webkitCurrentFullScreenElement', function () { return target; });
+  defineGetter('fullscreenEnabled', function () { return true; });
+  defineGetter('webkitFullscreenEnabled', function () { return true; });
+  defineGetter('webkitIsFullScreen', function () { return !!target; });
+
+  function request() { return enter(this); }
+  try { Element.prototype.requestFullscreen = request; } catch (e) {}
+  try { Element.prototype.webkitRequestFullscreen = request; } catch (e) {}
+  try { Element.prototype.webkitRequestFullScreen = request; } catch (e) {}
+  try { document.exitFullscreen = function () { return exit(true); }; } catch (e) {}
+  try { document.webkitExitFullscreen = function () { return exit(true); }; } catch (e) {}
+  try { document.webkitCancelFullScreen = function () { return exit(true); }; } catch (e) {}
+
+  window.__breezeExitFullscreenFromNative = function () { return exit(false); };
+  document.addEventListener('keydown', function (event) {
+    if (!target || event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    exit(true);
+  }, true);
+  window.addEventListener('pagehide', function () { if (target) send('exit'); }, true);
+})();
+"""
+}()
 
 let breezeLinkMenuJS = """
 (function () {
@@ -380,10 +500,16 @@ final class Tab {
             c.websiteDataStore = .nonPersistent()
             c.mediaTypesRequiringUserActionForPlayback = []
             c.defaultWebpagePreferences.allowsContentJavaScript = true
-            if #available(macOS 13.3, *) { c.preferences.isElementFullscreenEnabled = true }
+            if #available(macOS 27.0, *) {
+                c.preferences.isElementFullscreenEnabled = false
+            } else if #available(macOS 13.3, *) {
+                c.preferences.isElementFullscreenEnabled = true
+            }
             c.enablePictureInPictureAPI()
             // Re-inject media script for private tabs
             c.userContentController.addUserScript(WKUserScript(source: breezeMediaJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.addUserScript(WKUserScript(source: breezeElementFullscreenJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -392,11 +518,15 @@ final class Tab {
             c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
+            c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeFullscreen")
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeGeolocation")
             config = c
         } else {
             config = sharedConfig
+        }
+        if #available(macOS 27.0, *) {
+            config.preferences.isElementFullscreenEnabled = false
         }
         config.applicationNameForUserAgent = breezeSafariProductToken
         webView = WKWebView(frame: .zero, configuration: config)
@@ -407,9 +537,9 @@ final class Tab {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         webView.translatesAutoresizingMaskIntoConstraints = false
-        // WKWebView needs a backing layer for hardware video. Do not mutate that
-        // layer's clipping/corner properties; WebKit reparents it for fullscreen.
-        webView.wantsLayer = true
+        // WKWebView owns its compositor layers. Forcing a host-created layer here
+        // is unnecessary under the layer-backed root and can interfere with the
+        // hardware-video surface lifecycle.
     }
 }
 
