@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.4.0', icon: 'zap', title: 'Downloads, Auth & Navigation', major: true, items: [
+        '<b>Pages Stay Pages</b> — HTML, text, XML, JSON, and other displayable main-page responses now remain in the browser instead of being saved as <code>inner.html</code> downloads.',
+        '<b>Native HTTP Authentication</b> — Protected staging sites, router panels, and local services can now request HTTP Basic or Digest credentials in a native sign-in prompt.',
+        '<b>More Reliable First Navigation</b> — New-tab web views are attached and sized before their first request, reducing blank first loads when opening a URL or search.' ] },
       { v: '5.3.2', icon: 'maximize', title: 'The Video, Not the Tab', hotfix: true, major: false, items: [
         '<b>Video-Only Fullscreen</b> — YouTube document-level fullscreen requests now resolve visually to the active player instead of stretching the entire watch page across the screen.',
         '<b>Clean Player Surface</b> — Headers, recommendations, comments, and other page branches stay out of fullscreen while the player and its controls remain intact.',

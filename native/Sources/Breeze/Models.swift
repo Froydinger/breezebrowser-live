@@ -581,7 +581,7 @@ final class Tab {
             config.preferences.isElementFullscreenEnabled = false
         }
         config.applicationNameForUserAgent = breezeSafariProductToken
-        webView = WKWebView(frame: .zero, configuration: config)
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.disableUnstableAutomaticCorrectionIfNeeded()
         if #available(macOS 13.3, iOS 16.4, *) {
             webView.isInspectable = true

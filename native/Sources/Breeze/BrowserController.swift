@@ -1048,8 +1048,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 tab.webView.alphaValue = 1
             }
         }
+        let isNewTabActive = current?.isNewTab == true
         for subview in webContainer.subviews {
-            if subview !== current?.webView && subview !== newTab && !expectedBackgroundViews.contains(subview) {
+            if subview !== current?.webView && (!isNewTabActive || subview !== newTab) && !expectedBackgroundViews.contains(subview) {
                 if subview !== leftPane && subview !== rightPane && subview !== splitDivider {
                     subview.removeFromSuperview()
                 }
@@ -2407,29 +2408,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func loadPreparedURL(_ rawURL: URL, in t: Tab, focus: Bool) {
         let url = httpsUpgraded(rawURL)
-        let wasPlaceholder = t.isNewTab || t.isChatTab
+        let wasChat = t.isChatTab
         t.isNewTab = false
         t.isChatTab = false
         t.sleeping = false
         t.sleptURL = nil
+        if wasChat {
+            setSidebarHidden(Store.shared.bool("sidebarHidden"))
+        }
+        displayNavigationWebViews.insert(ObjectIdentifier(t.webView))
+        // Establish the WebKit renderer while the view is already attached to
+        // this window, avoiding a blank first frame during new-tab navigation.
         showActive()
         t.webView.isHidden = false
-        webContainer.layoutSubtreeIfNeeded()
-        DispatchQueue.main.async { [weak self, weak t] in
-            guard let self, let t else { return }
-            guard wasPlaceholder || !self.isElementFullscreen(t.webView) else { return }
-            if t.webView.superview !== self.webContainer {
-                t.webView.removeFromSuperview()
-                self.webContainer.addSubview(t.webView)
-                t.webView.pin(to: self.webContainer)
-            }
-            t.webView.isHidden = false
-            t.webView.alphaValue = 1
-            self.webContainer.layoutSubtreeIfNeeded()
-            self.displayNavigationWebViews.insert(ObjectIdentifier(t.webView))
-            t.webView.load(URLRequest(url: url))
-            if focus { self.window.makeFirstResponder(t.webView) }
-        }
+        t.webView.alphaValue = 1
+        t.webView.load(URLRequest(url: url))
+        if focus { window.makeFirstResponder(t.webView) }
     }
 
     @objc func addressSubmit() {
@@ -5013,17 +5007,58 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // route undisplayable responses to a download
     func webView(_ w: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        if shouldDownloadResponse(navigationResponse.response) {
+        if shouldDownloadResponse(navigationResponse.response,
+                                  isMainFrame: navigationResponse.isForMainFrame) {
             displayNavigationWebViews.remove(ObjectIdentifier(w))
             decisionHandler(.download)
             return
         }
         let mime = navigationResponse.response.mimeType?.lowercased() ?? ""
         let displayNavigation = displayNavigationWebViews.contains(ObjectIdentifier(w))
-        if displayNavigation || isKnownDisplayableMIMEType(mime) || navigationResponse.canShowMIMEType {
+        if displayNavigation || isKnownDisplayableMIMEType(mime) ||
+            navigationResponse.canShowMIMEType || navigationResponse.isForMainFrame {
             decisionHandler(.allow)
         } else {
             decisionHandler(.download)
+        }
+    }
+
+    func webView(_ w: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let method = challenge.protectionSpace.authenticationMethod
+        guard method == NSURLAuthenticationMethodHTTPBasic ||
+                method == NSURLAuthenticationMethodHTTPDigest else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+
+        let host = challenge.protectionSpace.host
+        let realm = challenge.protectionSpace.realm ?? host
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Authentication Required"
+            alert.informativeText = "The server \(host) (\(realm)) requires a username and password."
+
+            let userField = NSTextField(frame: NSRect(x: 0, y: 26, width: 240, height: 24))
+            userField.placeholderString = "Username"
+            let passField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+            passField.placeholderString = "Password"
+
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
+            container.addSubview(userField)
+            container.addSubview(passField)
+            alert.accessoryView = container
+            alert.addButton(withTitle: "Log In")
+            alert.addButton(withTitle: "Cancel")
+
+            if alert.runModal() == .alertFirstButtonReturn {
+                let credential = URLCredential(user: userField.stringValue,
+                                               password: passField.stringValue,
+                                               persistence: .forSession)
+                completionHandler(.useCredential, credential)
+            } else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
         }
     }
     func webView(_ w: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
@@ -5102,14 +5137,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return false
     }
 
-    func shouldDownloadResponse(_ response: URLResponse) -> Bool {
+    func shouldDownloadResponse(_ response: URLResponse, isMainFrame: Bool = false) -> Bool {
         if let url = response.url, isGoogleDriveConfirmedDownload(url) { return true }
         guard let http = response as? HTTPURLResponse else { return false }
         let headers = http.allHeaderFields.reduce(into: [String: String]()) { out, pair in
             out[String(describing: pair.key).lowercased()] = String(describing: pair.value).lowercased()
         }
         if headers["content-disposition"]?.contains("attachment") == true { return true }
-        if headers["content-type"]?.contains("application/octet-stream") == true { return true }
+        if headers["content-type"]?.contains("application/octet-stream") == true {
+            return !isMainFrame
+        }
         return false
     }
 
@@ -5977,6 +6014,14 @@ extension BrowserController: AddressSuggestionsDelegate {
 
     func controlTextDidBeginEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, field === address else { return }
+        if current?.isNewTab == true {
+            window.makeFirstResponder(newTab.field)
+            return
+        }
+        if current?.isChatTab == true {
+            assistant.focusInput()
+            return
+        }
         // Edit at full opacity — drop the dimmed-slug styling while typing.
         field.textColor = Theme.shared.palette.text
         field.stringValue = field.stringValue
