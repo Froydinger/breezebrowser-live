@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.4.2', icon: 'zap', title: 'Subresource & Image Rendering Fix', hotfix: true, major: false, items: [
+        '<b>Subresource Image & Media Rendering</b> — Fixed issue where embedded images, CDNs, and media subframes on social sites like Threads and Twitter could turn into blank boxes by ensuring subframe responses are never mistakenly routed to downloads.',
+        '<b>Clean Navigation Flow</b> — Unified startup and new-tab navigation pipeline for fast, reliable page loading.' ] },
       { v: '5.4.1', icon: 'refresh-cw', title: 'Reliable Starts & Web Apps', hotfix: true, major: false, items: [
         '<b>First Load, First Time</b> — The launch tab stays on Breeze’s New Tab surface until its destination is ready, with a controlled retry and a real error page instead of a blank or <code>about:blank</code> result.',
         '<b>Google Photos Repair</b> — Existing profiles automatically repair stale Google Photos caches and service-worker data once, while preserving cookies, sign-ins, local storage, and photo-library access.',

@@ -5183,7 +5183,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let mime = navigationResponse.response.mimeType?.lowercased() ?? ""
         let displayNavigation = displayNavigationWebViews.contains(ObjectIdentifier(w))
         if displayNavigation || isKnownDisplayableMIMEType(mime) ||
-            navigationResponse.canShowMIMEType || navigationResponse.isForMainFrame {
+            navigationResponse.canShowMIMEType || navigationResponse.isForMainFrame || !navigationResponse.isForMainFrame {
             decisionHandler(.allow)
         } else {
             decisionHandler(.download)
@@ -5311,9 +5311,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             out[String(describing: pair.key).lowercased()] = String(describing: pair.value).lowercased()
         }
         if headers["content-disposition"]?.contains("attachment") == true { return true }
-        if headers["content-type"]?.contains("application/octet-stream") == true {
-            return !isMainFrame
-        }
         return false
     }
 
