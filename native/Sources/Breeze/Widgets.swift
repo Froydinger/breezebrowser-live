@@ -6,6 +6,90 @@ final class PassthroughVisualEffectView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// Compact, non-modal offer shown when the current site also has an installed
+/// Safari web app. Breeze remains the default destination; the app opens only
+/// after an explicit click.
+final class WebAppOfferView: NSVisualEffectView {
+    var onOpen: (() -> Void)?
+    var onDismiss: (() -> Void)?
+
+    private let appIcon = NSImageView()
+    private let message = NSTextField(labelWithString: "")
+    private let openButton = NSButton()
+    private let closeButton = HoverButton(symbol: "xmark", size: 24, point: 10)
+
+    init(appName: String, icon: NSImage) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        material = .popover
+        blendingMode = .withinWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 15
+        layer?.borderWidth = 1
+        layer?.shadowOpacity = 0.18
+        layer?.shadowRadius = 16
+        layer?.shadowOffset = NSSize(width: 0, height: -5)
+
+        appIcon.translatesAutoresizingMaskIntoConstraints = false
+        appIcon.image = icon
+        appIcon.imageScaling = .scaleProportionallyUpOrDown
+
+        message.translatesAutoresizingMaskIntoConstraints = false
+        message.stringValue = "\(appName) is installed for this site."
+        message.font = .systemFont(ofSize: 13, weight: .medium)
+        message.lineBreakMode = .byTruncatingTail
+
+        openButton.translatesAutoresizingMaskIntoConstraints = false
+        openButton.title = "Open in \(appName)"
+        openButton.bezelStyle = .rounded
+        openButton.controlSize = .regular
+        openButton.target = self
+        openButton.action = #selector(openTapped)
+
+        closeButton.onTap = { [weak self] in self?.onDismiss?() }
+
+        addSubview(appIcon)
+        addSubview(message)
+        addSubview(openButton)
+        addSubview(closeButton)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 54),
+            widthAnchor.constraint(lessThanOrEqualToConstant: 540),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 390),
+            appIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            appIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            appIcon.widthAnchor.constraint(equalToConstant: 32),
+            appIcon.heightAnchor.constraint(equalToConstant: 32),
+            message.leadingAnchor.constraint(equalTo: appIcon.trailingAnchor, constant: 10),
+            message.centerYAnchor.constraint(equalTo: centerYAnchor),
+            openButton.leadingAnchor.constraint(greaterThanOrEqualTo: message.trailingAnchor, constant: 14),
+            openButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            closeButton.leadingAnchor.constraint(equalTo: openButton.trailingAnchor, constant: 6),
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -9),
+            closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
+                                               name: Theme.didChange, object: nil)
+        applyTheme()
+    }
+
+    required init?(coder: NSCoder) { nil }
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func openTapped() { onOpen?() }
+
+    @objc private func applyTheme() {
+        let p = Theme.shared.palette
+        layer?.borderColor = p.accent.withAlphaComponent(p.isDark ? 0.34 : 0.22).cgColor
+        layer?.shadowColor = NSColor.black.cgColor
+        message.textColor = p.text
+        openButton.bezelColor = p.accent
+        openButton.contentTintColor = .white
+    }
+}
+
 /// Painted gradient background matching `body` in style.css:
 /// a 7% accent wash over the 160° bg gradient.
 class GradientBackgroundView: NSView {

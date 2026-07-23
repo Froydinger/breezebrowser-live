@@ -16,6 +16,14 @@ enum BrowserInitialContent {
     case restoredSession, newTab, empty
 }
 
+private struct InstalledSafariWebApp {
+    let appURL: URL
+    let bundleID: String
+    let name: String
+    let startURL: URL
+    let scopePath: String
+}
+
 private final class PendingGeolocationRequest {
     weak var webView: WKWebView?
     let id: String
@@ -133,6 +141,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
     var addressSubmissionPending = false
+    private var startupTabID: UUID?
+    private var startupRendererWarmupStarted = false
+    private var startupRendererReady = false
+    private var pendingStartupNavigation: (url: URL, tabID: UUID, focus: Bool)?
+    private var startupNavigationRequest: URLRequest?
+    private var startupNavigationRetryUsed = false
+    private var googlePhotosRepairInFlight = false
+    private lazy var installedSafariWebApps = discoverInstalledSafariWebApps()
+    private var dismissedWebAppOffers = Set<String>()
+    private weak var webAppOffer: WebAppOfferView?
 
     // chrome
     let root = GradientBackgroundView()
@@ -415,6 +433,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         } else {
             active = 0
             showActive()
+        }
+        if let current, current.isNewTab {
+            startupTabID = current.id
+            warmStartupRenderer()
         }
         startSleepTimer()
         initReminders()
@@ -2406,8 +2428,105 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return false
     }
 
+    /// Start the launch tab's WebContent process while the native New Tab is
+    /// visible. Later tabs inherit an already-running process; without this warmup,
+    /// a large established WebKit profile can lose the very first real request.
+    private func warmStartupRenderer() {
+        guard !startupRendererWarmupStarted,
+              let startupTabID,
+              let tab = tabs.first(where: { $0.id == startupTabID }) else { return }
+        startupRendererWarmupStarted = true
+        root.layoutSubtreeIfNeeded()
+        webContainer.layoutSubtreeIfNeeded()
+        tab.webView.evaluateJavaScript("void 0") { [weak self] _, _ in
+            DispatchQueue.main.async { self?.finishStartupRendererWarmup() }
+        }
+        // A terminated or overloaded WebContent process must never hold a user's
+        // navigation indefinitely. Continue after one second even without a reply.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.finishStartupRendererWarmup()
+        }
+    }
+
+    private func finishStartupRendererWarmup() {
+        guard !startupRendererReady else { return }
+        startupRendererReady = true
+        guard let pending = pendingStartupNavigation,
+              let tab = tabs.first(where: { $0.id == pending.tabID }) else {
+            pendingStartupNavigation = nil
+            return
+        }
+        pendingStartupNavigation = nil
+        prepareGooglePhotosIfNeeded(pending.url, in: tab, focus: pending.focus)
+    }
+
     func loadPreparedURL(_ rawURL: URL, in t: Tab, focus: Bool) {
         let url = httpsUpgraded(rawURL)
+        if t.id == startupTabID && !startupRendererReady {
+            pendingStartupNavigation = (url, t.id, focus)
+            warmStartupRenderer()
+            return
+        }
+        prepareGooglePhotosIfNeeded(url, in: t, focus: focus)
+    }
+
+    /// Existing Breeze profiles can retain a broken Google Photos service worker
+    /// or fetch cache even though the same site works in a fresh BreezeTest
+    /// profile. Repair only transient data once; cookies, logins, local storage,
+    /// and IndexedDB remain untouched.
+    private func prepareGooglePhotosIfNeeded(_ url: URL, in tab: Tab, focus: Bool) {
+        guard url.host?.lowercased() == "photos.google.com",
+              !Store.shared.bool("googlePhotosTransientRepairV1"),
+              !googlePhotosRepairInFlight else {
+            performPreparedURLLoad(url, in: tab, focus: focus)
+            return
+        }
+        googlePhotosRepairInFlight = true
+        let store = tab.webView.configuration.websiteDataStore
+        let transientTypes: Set<String> = [
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+            WKWebsiteDataTypeServiceWorkerRegistrations,
+            WKWebsiteDataTypeFetchCache,
+        ]
+        store.fetchDataRecords(ofTypes: transientTypes) { [weak self, weak tab] records in
+            guard let self, let tab else { return }
+            let googleRecords = records.filter {
+                let name = $0.displayName.lowercased()
+                return name == "google.com" || name == "photos.google.com" ||
+                    name.hasSuffix(".photos.google.com")
+            }
+            let finish = {
+                Store.shared.settings["googlePhotosTransientRepairV1"] = true
+                Store.shared.saveSettings()
+                self.googlePhotosRepairInFlight = false
+                guard self.tabs.contains(where: { $0.id == tab.id }) else { return }
+                self.performPreparedURLLoad(url, in: tab, focus: focus)
+            }
+            if googleRecords.isEmpty {
+                finish()
+            } else {
+                store.removeData(ofTypes: transientTypes, for: googleRecords,
+                                 completionHandler: finish)
+            }
+        }
+    }
+
+    private func performPreparedURLLoad(_ url: URL, in t: Tab, focus: Bool) {
+        let request = URLRequest(url: url)
+        if t.id == startupTabID {
+            startupNavigationRequest = request
+            startupNavigationRetryUsed = false
+            displayNavigationWebViews.insert(ObjectIdentifier(t.webView))
+            t.sleeping = false
+            t.sleptURL = nil
+            t.webView.load(request)
+            address.attributedStringValue = styledAddress(url.absoluteString)
+            scheduleStartupNavigationRecovery(for: t)
+            return
+        }
+
         let wasChat = t.isChatTab
         t.isNewTab = false
         t.isChatTab = false
@@ -2422,8 +2541,56 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         showActive()
         t.webView.isHidden = false
         t.webView.alphaValue = 1
-        t.webView.load(URLRequest(url: url))
+        t.webView.load(request)
         if focus { window.makeFirstResponder(t.webView) }
+    }
+
+    private func scheduleStartupNavigationRecovery(for tab: Tab) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self, weak tab] in
+            guard let self, let tab,
+                  tab.id == self.startupTabID,
+                  let request = self.startupNavigationRequest,
+                  self.tabs.contains(where: { $0.id == tab.id }),
+                  !self.startupNavigationRetryUsed else { return }
+            self.startupNavigationRetryUsed = true
+            tab.webView.stopLoading()
+            var retry = request
+            retry.cachePolicy = .reloadIgnoringLocalCacheData
+            tab.webView.load(retry)
+            self.scheduleStartupNavigationFailure(for: tab, request: request)
+        }
+    }
+
+    private func scheduleStartupNavigationFailure(for tab: Tab, request: URLRequest) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self, weak tab] in
+            guard let self, let tab,
+                  tab.id == self.startupTabID,
+                  self.startupNavigationRequest != nil,
+                  self.tabs.contains(where: { $0.id == tab.id }) else { return }
+            tab.webView.stopLoading()
+            self.finishStartupNavigationIfNeeded(tab.webView)
+            let error = NSError(
+                domain: NSURLErrorDomain,
+                code: NSURLErrorTimedOut,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "The page did not finish loading.",
+                    NSURLErrorFailingURLErrorKey: request.url as Any,
+                ]
+            )
+            self.showLoadFailureIfNeeded(for: tab.webView, error: error)
+        }
+    }
+
+    private func finishStartupNavigationIfNeeded(_ webView: WKWebView) {
+        guard let tab = tabs.first(where: { $0.webView === webView }),
+              tab.id == startupTabID,
+              startupNavigationRequest != nil else { return }
+        startupNavigationRequest = nil
+        startupTabID = nil
+        tab.isNewTab = false
+        tab.isChatTab = false
+        showActive()
+        window.makeFirstResponder(webView)
     }
 
     @objc func addressSubmit() {
@@ -5159,6 +5326,82 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ].contains(mime)
     }
 
+    private func discoverInstalledSafariWebApps() -> [InstalledSafariWebApp] {
+        let appsDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications", isDirectory: true)
+        guard let appURLs = try? FileManager.default.contentsOfDirectory(
+            at: appsDirectory,
+            includingPropertiesForKeys: [.isApplicationKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var found: [InstalledSafariWebApp] = []
+        for appURL in appURLs where appURL.pathExtension.lowercased() == "app" {
+            guard let bundle = Bundle(url: appURL),
+                  let bundleID = bundle.bundleIdentifier,
+                  bundleID.hasPrefix("com.apple.Safari.WebApp."),
+                  bundle.object(forInfoDictionaryKey: "LSTemplateApplication") as? Bool == true,
+                  let manifest = bundle.object(forInfoDictionaryKey: "Manifest") as? [String: Any],
+                  let start = manifest["start_url"] as? String,
+                  let startURL = URL(string: start),
+                  let startHost = startURL.host, !startHost.isEmpty else { continue }
+            let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+                ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+                ?? appURL.deletingPathExtension().lastPathComponent
+            let rawScope = manifest["scope"] as? String ?? "/"
+            let scopeURL = URL(string: rawScope, relativeTo: startURL)?.absoluteURL
+            let scopePath = scopeURL?.path.isEmpty == false ? scopeURL!.path : "/"
+            found.append(InstalledSafariWebApp(appURL: appURL, bundleID: bundleID,
+                                               name: name, startURL: startURL,
+                                               scopePath: scopePath))
+        }
+        return found
+    }
+
+    private func installedSafariWebApp(for url: URL) -> InstalledSafariWebApp? {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host?.lowercased() else { return nil }
+        return installedSafariWebApps.first {
+            $0.startURL.host?.lowercased() == host && url.path.hasPrefix($0.scopePath)
+        }
+    }
+
+    private func removeWebAppOffer() {
+        webAppOffer?.removeFromSuperview()
+        webAppOffer = nil
+    }
+
+    private func updateWebAppOffer(for webView: WKWebView) {
+        removeWebAppOffer()
+        guard current?.webView === webView,
+              let url = webView.url,
+              let app = installedSafariWebApp(for: url),
+              !dismissedWebAppOffers.contains(app.bundleID) else { return }
+
+        let icon = NSWorkspace.shared.icon(forFile: app.appURL.path)
+        let offer = WebAppOfferView(appName: app.name, icon: icon)
+        offer.onDismiss = { [weak self, weak offer] in
+            self?.dismissedWebAppOffers.insert(app.bundleID)
+            offer?.removeFromSuperview()
+        }
+        offer.onOpen = { [weak self, weak offer] in
+            offer?.removeFromSuperview()
+            self?.webAppOffer = nil
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.open([url], withApplicationAt: app.appURL,
+                                    configuration: configuration, completionHandler: nil)
+        }
+        root.addSubview(offer, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            offer.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 10),
+            offer.centerXAnchor.constraint(equalTo: webContainer.centerXAnchor),
+            offer.leadingAnchor.constraint(greaterThanOrEqualTo: webContainer.leadingAnchor, constant: 16),
+            offer.trailingAnchor.constraint(lessThanOrEqualTo: webContainer.trailingAnchor, constant: -16),
+        ])
+        webAppOffer = offer
+    }
+
     func startExplicitDownload(_ url: URL, in webView: WKWebView) {
         if #available(macOS 11.3, *) {
             webView.startDownload(using: URLRequest(url: url)) { [weak self] download in
@@ -5570,7 +5813,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "openExternal":
             if let s = args["url"] as? String, let url = URL(string: s),
                url.scheme == "https" || url.scheme == "http" {
-                NSWorkspace.shared.open(url)
+                openTab(url: url)
             }
         case "resetAIUsage":
             Store.shared.resetAIUsage()
@@ -5842,7 +6085,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
+        finishStartupNavigationIfNeeded(w)
         syncChrome()
+        updateWebAppOffer(for: w)
         if let tab = tabs.first(where: { $0.webView === w }),
            let resume = pendingMediaResume.removeValue(forKey: tab.id) {
             let shouldPlay = resume.wasPlaying ? "true" : "false"
@@ -5875,9 +6120,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             c.resume()
         }
     }
+    func webView(_ w: WKWebView, didStartProvisionalNavigation n: WKNavigation!) {
+        if current?.webView === w { removeWebAppOffer() }
+    }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFailProvisionalNavigation: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
+        if !isIgnorableNavigationFailure(error) {
+            finishStartupNavigationIfNeeded(w)
+        }
         showLoadFailureIfNeeded(for: w, error: error)
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
@@ -5887,11 +6138,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError error: Error) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFail: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
+        if !isIgnorableNavigationFailure(error) {
+            finishStartupNavigationIfNeeded(w)
+        }
         showLoadFailureIfNeeded(for: w, error: error)
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
         }
+    }
+    private func isIgnorableNavigationFailure(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain &&
+            [NSURLErrorCancelled, NSURLErrorUserCancelledAuthentication].contains(ns.code) {
+            return true
+        }
+        // Policy/redirect interruptions can be followed by a valid main-frame
+        // request. Keep the startup cover in place for that replacement load.
+        return ns.domain == "WebKitErrorDomain" && ns.code == 102
     }
     func showLoadFailureIfNeeded(for w: WKWebView, error: Error) {
         let ns = error as NSError
