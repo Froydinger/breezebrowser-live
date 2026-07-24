@@ -82,6 +82,17 @@ final class AdBlocker {
         for pattern in blockPatterns {
             arr.append(["trigger": trigger(pattern), "action": ["type": "block"]])
         }
+        // EasyList includes a broad tracker rule for cdnthreads.com, but Threads
+        // uses that same first-party CDN for the GIF and video media in its feed.
+        // Keep the list intact everywhere else and restore only media requests
+        // made by Threads itself.
+        arr.append([
+            "trigger": [
+                "url-filter": ".*://([^/]+\\.)?cdnthreads\\.com/.*",
+                "if-domain": ["*threads.com"]
+            ],
+            "action": ["type": "ignore-previous-rules"]
+        ])
         guard mode == "advanced" else {
             guard let data = try? JSONSerialization.data(withJSONObject: arr),
                   let out = String(data: data, encoding: .utf8) else { return baseJSON }

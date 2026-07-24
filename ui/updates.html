@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.4.3', icon: 'maximize', title: 'Social Media, Full Size', hotfix: true, major: false, items: [
+        '<b>Threads Media Restored</b> — GIFs and other first-party feed media served by Threads now load normally while Breeze’s ad blocking remains active everywhere else.',
+        '<b>X Fullscreen Restored</b> — X and other sites use native WebKit fullscreen again, avoiding the blank black player caused by applying the YouTube-specific workaround to their layered video surfaces.',
+        '<b>YouTube Stays Protected</b> — Breeze keeps its proven in-window fullscreen path exclusively on YouTube, preserving the video-only fullscreen and pause/seek stability fixes.' ] },
       { v: '5.4.2', icon: 'zap', title: 'Subresource & Image Rendering Fix', hotfix: true, major: false, items: [
         '<b>Subresource Image & Media Rendering</b> — Fixed issue where embedded images, CDNs, and media subframes on social sites like Threads and Twitter could turn into blank boxes by ensuring subframe responses are never mistakenly routed to downloads.',
         '<b>Clean Navigation Flow</b> — Unified startup and new-tab navigation pipeline for fast, reliable page loading.' ] },

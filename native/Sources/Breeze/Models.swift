@@ -47,12 +47,10 @@ let sharedConfig: WKWebViewConfiguration = {
     c.websiteDataStore = .default()
     c.mediaTypesRequiringUserActionForPlayback = []
     c.defaultWebpagePreferences.allowsContentJavaScript = true
-    if #available(macOS 27.0, *) {
-        // WebKit's native element-fullscreen transfer can lose the hardware-video
-        // surface after pause/seek on macOS 27. Breeze keeps the WKWebView attached
-        // and supplies an in-window fullscreen path on that OS instead.
-        c.preferences.isElementFullscreenEnabled = false
-    } else if #available(macOS 13.3, *) {
+    if #available(macOS 13.3, *) {
+        // Native WebKit fullscreen is the default for sites other than YouTube.
+        // The macOS 27 in-window workaround below explicitly intercepts only
+        // YouTube, where its player surface has been proven stable.
         c.preferences.isElementFullscreenEnabled = true
     }
     c.enablePictureInPictureAPI()
@@ -194,6 +192,13 @@ let breezeElementFullscreenJS: String = {
     return """
 (function () {
   if (location.protocol === 'file:' || window.__breezeFullscreenInstalled) return;
+  // Do not apply Breeze's CSS/AppKit fullscreen substitute to arbitrary web
+  // apps. X uses a layered player tree that turns black when that tree is
+  // repositioned. Native WebKit fullscreen remains enabled for it and every
+  // other site; this workaround is intentionally limited to the YouTube path
+  // that it was built and verified for.
+  var host = String(location.hostname || '').toLowerCase();
+  if (!(host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be')) return;
   window.__breezeFullscreenInstalled = true;
 
   var target = null;
@@ -552,9 +557,7 @@ final class Tab {
             c.websiteDataStore = .nonPersistent()
             c.mediaTypesRequiringUserActionForPlayback = []
             c.defaultWebpagePreferences.allowsContentJavaScript = true
-            if #available(macOS 27.0, *) {
-                c.preferences.isElementFullscreenEnabled = false
-            } else if #available(macOS 13.3, *) {
+            if #available(macOS 13.3, *) {
                 c.preferences.isElementFullscreenEnabled = true
             }
             c.enablePictureInPictureAPI()
@@ -577,8 +580,8 @@ final class Tab {
         } else {
             config = sharedConfig
         }
-        if #available(macOS 27.0, *) {
-            config.preferences.isElementFullscreenEnabled = false
+        if #available(macOS 13.3, *) {
+            config.preferences.isElementFullscreenEnabled = true
         }
         config.applicationNameForUserAgent = breezeSafariProductToken
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
