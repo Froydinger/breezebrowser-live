@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.1', icon: 'key-round', title: 'Delete Keys Work Again', hotfix: true, major: false, items: [
+        '<b>Web App Deletion Restored</b> — Backspace now reaches selected-item and custom delete controls in web apps that rely on the keyboard instead of a button or context menu.',
+        '<b>No Accidental History Navigation</b> — Breeze still suppresses WebKit’s legacy Backspace-to-go-back behavior outside of text fields.' ] },
       { v: '5.5.0', icon: 'upload', title: 'Uploads Stay Open', hotfix: true, major: false, items: [
         '<b>YouTube Studio Upload Repair</b> — Choosing a video or thumbnail no longer crashes Breeze when YouTube Studio opens its file picker.',
         '<b>Stable Native File Pickers</b> — Website upload dialogs now detach WebKit’s transient text-input view before presenting from the active Breeze window, protecting uploads on macOS 27.' ] },

@@ -444,8 +444,9 @@ let breezeKeyboardJS = """
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Backspace' || e.metaKey || e.ctrlKey || e.altKey) return;
     if (editable(e.target || document.activeElement)) return;
+    // Suppress WebKit's legacy Backspace-to-history behavior, but let web apps
+    // receive the event for their own selected-item/delete shortcuts.
     e.preventDefault();
-    e.stopImmediatePropagation();
   }, true);
 })();
 """
