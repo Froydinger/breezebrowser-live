@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.0', icon: 'upload', title: 'Uploads Stay Open', hotfix: true, major: false, items: [
+        '<b>YouTube Studio Upload Repair</b> — Choosing a video or thumbnail no longer crashes Breeze when YouTube Studio opens its file picker.',
+        '<b>Stable Native File Pickers</b> — Website upload dialogs now detach WebKit’s transient text-input view before presenting from the active Breeze window, protecting uploads on macOS 27.' ] },
       { v: '5.4.3', icon: 'maximize', title: 'Social Media, Full Size', hotfix: true, major: false, items: [
         '<b>Threads Media Restored</b> — GIFs and other first-party feed media served by Threads now load normally while Breeze’s ad blocking remains active everywhere else.',
         '<b>X Fullscreen Restored</b> — X and other sites use native WebKit fullscreen again, avoiding the blank black player caused by applying the YouTube-specific workaround to their layered video surfaces.',

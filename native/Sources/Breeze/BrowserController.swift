@@ -6219,26 +6219,34 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return t.webView
     }
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+        // On macOS 27, WebKit can briefly make one of its remote text-input
+        // windows key while a file input is clicked. Attaching an NSOpenPanel
+        // sheet to that helper window makes AppKit reattach its NSRemoteView and
+        // abort (seen when opening YouTube Studio's upload picker). Resign the
+        // WebKit editor first, then always present from this controller's stable
+        // Breeze window rather than NSApp.keyWindow.
+        guard !isClosing, webView.window === window,
+              tabs.contains(where: { $0.webView === webView }) else {
+            completionHandler(nil)
+            return
+        }
+        resignWebContentIfNeeded(webView)
         let openPanel = NSOpenPanel()
         openPanel.canChooseFiles = true
         openPanel.canChooseDirectories = parameters.allowsDirectories
         openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        
-        if let window = NSApp.keyWindow {
-            openPanel.beginSheetModal(for: window) { response in
-                if response == .OK {
-                    completionHandler(openPanel.urls)
-                } else {
-                    completionHandler(nil)
-                }
+
+        // Let the remote input view complete its teardown before AppKit orders
+        // the sheet on screen. The completion remains one-shot for WebKit.
+        DispatchQueue.main.async { [weak self, weak webView] in
+            guard let self, let webView, !self.isClosing,
+                  webView.window === self.window,
+                  self.tabs.contains(where: { $0.webView === webView }) else {
+                completionHandler(nil)
+                return
             }
-        } else {
-            openPanel.begin { response in
-                if response == .OK {
-                    completionHandler(openPanel.urls)
-                } else {
-                    completionHandler(nil)
-                }
+            openPanel.beginSheetModal(for: self.window) { response in
+                completionHandler(response == .OK ? openPanel.urls : nil)
             }
         }
     }
