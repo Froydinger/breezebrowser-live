@@ -148,6 +148,23 @@ async function proxyChat(req: Request, env: Env) {
     configuredMax,
   );
 
+  // Agent turns need enough reasoning to emit the OPEN:/SEARCH:/READ: action
+  // lines Agent.swift parses; at "none" the model announces intent in prose
+  // instead ("I'll look into...") and Agent.parse treats that as the final
+  // answer. Verified against the real system prompt: none 7/9, low 8/9,
+  // medium 9/9. Clients may request a cheaper effort for trivial chat; anything
+  // unrecognized falls back to the configured default.
+  //
+  // Deliberately NOT `body.reasoning_effort`: shipped clients (<= 5.5.2) always
+  // send "low" there, so honoring it would silently pin every existing install
+  // to the 8/9 setting that breaks research. Only a client that opts in with
+  // this field gets to choose.
+  const allowedEfforts = new Set(["none", "low", "medium", "high"]);
+  const requestedEffort = String(body.breeze_reasoning_effort ?? "").toLowerCase();
+  const reasoningEffort = allowedEfforts.has(requestedEffort)
+    ? requestedEffort
+    : (env.AI_REASONING_EFFORT || "medium");
+
   let endpoint: string;
   let providerKey: string;
   let providerModel: string;
@@ -169,7 +186,7 @@ async function proxyChat(req: Request, env: Env) {
       model: providerModel,
       messages: body.messages,
       max_completion_tokens: maxCompletionTokens,
-      reasoning_effort: env.AI_REASONING_EFFORT || "none",
+      reasoning_effort: reasoningEffort,
     }),
   });
 
