@@ -260,6 +260,18 @@ enum Agent {
         let goal = isResearch
             ? "Remember the user's original request: \"\(userText)\". They asked you to RESEARCH this — SEARCH once, then actually OPEN and READ several (about 3–4) of the top result pages one at a time before answering. Do NOT answer from the search results page alone. Keep working until you've read multiple real sources, then synthesize a thorough answer that pulls together what you found across them and cites the pages."
             : "Remember the user's original request: \"\(userText)\". Keep working until it is fully done."
+        // `goal` above is only restated on continuation steps, so step 0 used to see
+        // a bare "User: research <topic>". Against the system prompt's "default to
+        // answering directly" and "unclear request → just ask" guidance, the model
+        // reliably came back with a clarifying question or an "I'll look into…"
+        // preamble instead of an action line — and parse() treats any non-action
+        // reply as the final answer, so the Research summary page rendered the
+        // question verbatim. Measured across reasoning levels this is a prompt
+        // problem, not a reasoning one (research succeeded 0/5 at none, 1/5 at
+        // medium, 3/5 at high), so state the directive on the first turn too.
+        if isResearch {
+            prompt += "\n\nThis is a RESEARCH request. Do NOT ask clarifying questions, do NOT restate the plan, and do NOT answer from memory. Your very next reply must be exactly one SEARCH: line with short, plain keywords for this topic — nothing else."
+        }
         // Tool output is trimmed to keep each step's prompt lean — faster, cheaper, and
         // safely under the context limit across a multi-step task (most pages answer
         // fine from the first ~4k chars).

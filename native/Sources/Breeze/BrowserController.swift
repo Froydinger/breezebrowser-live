@@ -456,10 +456,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             // Traffic lights hide until hover in fullscreen — reclaim the space we
             // normally reserve for them next to the sidebar/nav buttons.
             self?.navLeadingC?.constant = 12
-            if Store.shared.settings["flattenFullscreenCorners"] as? Bool != false {
-                self?.window.titlebarAppearsTransparent = false
-                self?.window.backgroundColor = .black
-            }
+            // Always square off the window in fullscreen. This used to be gated on a
+            // "Smoother fullscreen video" setting, but its off-state is not a cosmetic
+            // preference — rounded/transparent window edges clip the GPU's hardware
+            // video overlay, so the video goes black while audio keeps playing, on
+            // every site (reported on YouTube, Xbox Cloud Gaming, and others). The
+            // toggle let users silently break their own video with no way to connect
+            // cause and effect, so the mitigation is now unconditional and the setting
+            // has been retired. See breeze-fullscreen-video-black.
+            self?.window.titlebarAppearsTransparent = false
+            self?.window.backgroundColor = .black
         })
 
         lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in

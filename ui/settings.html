@@ -619,16 +619,6 @@
             <option value="never">Never</option>
           </select>
         </div>
-        <div class="row">
-          <div>
-            <div class="row-label">Smoother fullscreen video</div>
-            <div class="row-hint">Squares off corners in fullscreen so video uses the GPU's hardware overlay (lower power, less lag)</div>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="flattenFullscreenCorners" />
-            <span class="knob"></span>
-          </label>
-        </div>
       </div>
     </section>
 
@@ -973,7 +963,6 @@
       document.getElementById('autoPip').checked = settings.autoPip !== false;
       document.getElementById('keepPinnedAppsAwake').checked = settings.keepPinnedAppsAwake !== false;
       document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
-      document.getElementById('flattenFullscreenCorners').checked = settings.flattenFullscreenCorners !== false;
       // AI fields: don't clobber while the user is actively typing in them
       const ae = document.activeElement;
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
@@ -1069,7 +1058,6 @@
     document.getElementById('keepPinnedAppsAwake').addEventListener('change', (e) => set('keepPinnedAppsAwake', e.target.checked));
     document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
-    document.getElementById('flattenFullscreenCorners').addEventListener('change', (e) => set('flattenFullscreenCorners', e.target.checked));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
     document.getElementById('aiUseChatHistory').addEventListener('change', (e) => set('aiUseChatHistory', e.target.checked));
     document.getElementById('aiIncludeHistory').addEventListener('change', (e) => set('aiIncludeHistory', e.target.checked));
