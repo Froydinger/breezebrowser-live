@@ -3,6 +3,7 @@ interface Env {
   OPENAI_API_KEY?: string;        // legacy secret; used as a fallback for the key
   AI_CHAT_ENDPOINT: string;
   AI_CHAT_MODEL: string;
+  AI_REASONING_EFFORT?: string;
   MAX_OUTPUT_TOKENS: string;
   CHAT_DAILY_LIMIT: string;
   BREEZE_CLIENT_TOKEN?: string;
@@ -168,7 +169,7 @@ async function proxyChat(req: Request, env: Env) {
       model: providerModel,
       messages: body.messages,
       max_completion_tokens: maxCompletionTokens,
-      reasoning_effort: "low",
+      reasoning_effort: env.AI_REASONING_EFFORT || "none",
     }),
   });
 

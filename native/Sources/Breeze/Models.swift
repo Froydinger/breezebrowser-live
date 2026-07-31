@@ -106,6 +106,26 @@ extension WKWebViewConfiguration {
             unsafeBitCast(imp, to: BoolFn.self)(prefs, pipSel, true)
         }
     }
+
+    /// Opt web content out of Apple Intelligence's "Campo" lightweight UI (Edit
+    /// with Siri / text suggestions). Campo draws itself out-of-process and is
+    /// surfaced through NSRemoteView; on macOS 27 that ViewBridge handoff throws
+    /// an uncaught ObjC exception the instant the pointer enters an editable
+    /// field, aborting the app — the same failure mode as the autocorrection
+    /// panel below. 5.5.1 crashed this way on Google Meet and any page with a
+    /// text input. `NSWritingToolsBehaviorNone` (-1) makes Writing Tools ignore
+    /// the view, so the host window is never built.
+    ///
+    /// Set through the runtime rather than the property: `writingToolsBehavior`
+    /// is compiled out below a macOS 15 deployment target and ours is 14.0.
+    /// responds() guards it, so it silently no-ops on older systems.
+    func disableWritingToolsIfAvailable() {
+        let sel = NSSelectorFromString("setWritingToolsBehavior:")
+        if responds(to: sel), let imp = method(for: sel) {
+            typealias IntFn = @convention(c)(NSObject, Selector, Int) -> Void
+            unsafeBitCast(imp, to: IntFn.self)(self, sel, -1)
+        }
+    }
 }
 
 extension WKWebView {
@@ -584,6 +604,9 @@ final class Tab {
         if #available(macOS 13.3, *) {
             config.preferences.isElementFullscreenEnabled = true
         }
+        // Set here rather than only on sharedConfig so private tabs and the
+        // configurations WebKit hands us for window.open() popups are covered too.
+        config.disableWritingToolsIfAvailable()
         config.applicationNameForUserAgent = breezeSafariProductToken
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         webView.disableUnstableAutomaticCorrectionIfNeeded()

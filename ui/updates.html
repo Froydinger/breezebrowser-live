@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.2', icon: 'shield-check', title: 'No More Text-Field Crashes', hotfix: true, major: false, items: [
+        '<b>Google Meet Crash Fixed</b> — Breeze no longer quits when your pointer moves over a text box. Meet’s chat and name fields, and any other page with an input, are safe again.',
+        '<b>The Real Cause</b> — macOS 27’s new Siri writing assistant draws its pop-up from a separate system process, and that handoff fails on the beta, taking the whole app down with it.',
+        '<b>Web Pages Opt Out</b> — Breeze now tells Writing Tools to skip web content entirely, so the pop-up is never built. Spelling, autocorrect, and Writing Tools everywhere else on your Mac are unaffected.' ] },
       { v: '5.5.1', icon: 'key-round', title: 'Delete Keys Work Again', hotfix: true, major: false, items: [
         '<b>Web App Deletion Restored</b> — Backspace now reaches selected-item and custom delete controls in web apps that rely on the keyboard instead of a button or context menu.',
         '<b>No Accidental History Navigation</b> — Breeze still suppresses WebKit’s legacy Backspace-to-go-back behavior outside of text fields.' ] },
