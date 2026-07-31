@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.4', icon: 'shield-check', title: 'The Text-Box Crash, Actually Fixed', hotfix: true, major: false, items: [
+        '<b>Really Fixed This Time</b> — Breeze could still quit when your pointer passed over a text box. The fix in 5.5.2 and 5.5.3 turned out to do nothing at all, so this replaces it with one that is verified to work.',
+        '<b>What Was Wrong</b> — macOS 27 shows a writing-helper bubble over text boxes in every app. It is drawn by a separate part of the system, and on the macOS 27 beta that handoff fails and takes the app down with it. Breeze never asked for the bubble; the system adds it automatically.',
+        '<b>How It Is Fixed</b> — Breeze now declines that bubble before the system can start building it, so the failure can never happen. Nothing else changes, and spelling and autocorrect still work normally.' ] },
       { v: '5.5.3', icon: 'play-circle', title: 'Fullscreen Video & Research Fixed', hotfix: true, major: false, items: [
         '<b>No More Black Fullscreen Video</b> — Fullscreen video could go black while the audio kept playing, on YouTube, Xbox Cloud Gaming, and anywhere else. Breeze now always squares off the window in fullscreen so the GPU’s hardware video overlay is never clipped.',
         '<b>One Less Way To Break It</b> — The “Smoother fullscreen video” toggle is gone. Turning it off was never really a style choice; it silently caused the black-video bug, so the fix is simply always on now. If you had it off, this repairs itself — nothing to change.',

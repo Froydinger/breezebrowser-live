@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         browsers.first { isUsable($0) && $0.window.isKeyWindow } ?? browsers.first { isUsable($0) }
     }
     func applicationDidFinishLaunching(_ n: Notification) {
+        // Before any window exists, so no tracking area can be installed first.
+        CampoCrashWorkaround.install()
         LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
         NSAppleEventManager.shared().setEventHandler(
             self,
