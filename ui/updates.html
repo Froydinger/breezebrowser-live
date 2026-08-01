@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.6', icon: 'keyboard', title: 'New Tabs Keep Your First Keystrokes', hotfix: true, major: false, items: [
+        '<b>Type Straight Away</b> — Opening a new tab while a video was playing swallowed the first several characters you typed. The ask bar is ready the moment the tab appears now.',
+        '<b>What Was Wrong</b> — Leaving a playing video pops it into Picture-in-Picture so it keeps going, and that little floating window quietly took the keyboard a beat after the new tab had already been handed it. Anything typed in between went nowhere. Breeze takes the keyboard straight back now.' ] },
       { v: '5.5.5', icon: 'play-circle', title: 'Fullscreen Video Actually Works', hotfix: true, major: false, items: [
         '<b>No More Blank Fullscreen</b> — Going fullscreen on a video could fill the screen with nothing: black in dark mode, white in light mode, with the audio still playing. Fullscreen now shows the video, every time.',
         '<b>It Keeps Working</b> — Fullscreen used to break for good after the first try, and only quitting and reopening Breeze would bring it back. It survives leaving and re-entering as many times as you like now.',

@@ -139,6 +139,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var siteFullscreenChromeState: SiteFullscreenChromeState?
     private var siteFullscreenFrameObserver: NSObjectProtocol?
     private var siteFullscreenSyncScheduled = false
+    private var pipFocusGuardObserver: NSObjectProtocol?
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -1907,7 +1908,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Tab ops -------------------------------------------------------
 
     func openNewTab(isPrivate: Bool = false, playSound: Bool = true) {
-        autoPipLeavingTab()                       // keep a playing video alive via PiP
+        let pipped = autoPipLeavingTab()          // keep a playing video alive via PiP
         if playSound { BreezeSounds.shared.play(.newTab) }
         let p = isPrivate || isPrivateWindow
         let t = Tab(isPrivate: p)
@@ -1915,7 +1916,65 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         tabs.append(t); active = tabs.count - 1
         showActive(); refreshSidebar()
         window.makeFirstResponder(newTab.field)
+        if pipped { reclaimNewTabFocusAfterPiP(t) }
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
+    }
+
+    /// Auto-PiP asks WebKit for a system Picture-in-Picture panel, and that panel
+    /// takes key status when it appears — asynchronously, a beat *after* the new
+    /// tab has already been handed the caret. The ask bar goes dead and whatever
+    /// is typed into the gap is dropped. No panel is created when PiP is already
+    /// up, which is why this only ever bites the first time. Measured on a paused
+    /// video (no panel) every character landed; on a playing one 11 of 24 were
+    /// lost.
+    ///
+    /// Polling for it is too slow — the keystrokes are already gone by the time a
+    /// timer notices. Hand key status back in the same run loop turn the panel
+    /// takes it, listening for the moment rather than looking for it after the
+    /// fact. Only a window other than ours re-arms this, so giving ourselves key
+    /// status back cannot loop. A short timer backstops the case where the panel
+    /// takes key without announcing it, and the guard is torn down either way.
+    private func reclaimNewTabFocusAfterPiP(_ tab: Tab) {
+        endPipFocusGuard()
+        pipFocusGuardObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { [weak self, weak tab] note in
+            guard let self, let tab,
+                  let keyed = note.object as? NSWindow, keyed !== self.window else { return }
+            self.restoreNewTabCaret(tab)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+            self?.endPipFocusGuard()
+        }
+        pollNewTabCaret(tab)
+    }
+
+    private func pollNewTabCaret(_ tab: Tab, attempt: Int = 0) {
+        guard attempt < 12, pipFocusGuardObserver != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak tab] in
+            guard let self, let tab else { return }
+            self.restoreNewTabCaret(tab)
+            self.pollNewTabCaret(tab, attempt: attempt + 1)
+        }
+    }
+
+    /// Never steals from a different window's tab, a tab the user has moved on
+    /// from, or a field they have already started typing into.
+    private func restoreNewTabCaret(_ tab: Tab) {
+        guard !isClosing, current?.id == tab.id, tab.isNewTab else { return }
+        if let editor = window.firstResponder as? NSText,
+           editor.delegate !== newTab.field { return }
+        if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+        if newTab.field.currentEditor() == nil {
+            window.makeFirstResponder(newTab.field)
+        }
+    }
+
+    private func endPipFocusGuard() {
+        if let pipFocusGuardObserver {
+            NotificationCenter.default.removeObserver(pipFocusGuardObserver)
+        }
+        pipFocusGuardObserver = nil
     }
 
     @discardableResult
@@ -2174,6 +2233,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             NotificationCenter.default.removeObserver(siteFullscreenFrameObserver)
         }
         siteFullscreenFrameObserver = nil
+        endPipFocusGuard()
         if let monitor = splitClickMonitor { NSEvent.removeMonitor(monitor) }
         splitClickMonitor = nil
         sleepTimer?.invalidate()
@@ -2294,10 +2354,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// it keeps playing (otherwise WebKit pauses it once the web view leaves the
     /// window). Gated by the autoPip setting. Must be called BEFORE the active tab
     /// changes — the video has to still be on screen/ready for the request to take.
-    func autoPipLeavingTab() {
+    @discardableResult
+    func autoPipLeavingTab() -> Bool {
         guard Store.shared.settings["autoPip"] as? Bool != false,
-              let t = current, t.isPlaying else { return }
+              let t = current, t.isPlaying else { return false }
         pip(for: t.webView, toggle: false)
+        return true
     }
 
     func select(_ i: Int) {
