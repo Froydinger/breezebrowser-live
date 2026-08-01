@@ -3,18 +3,21 @@ interface Env {
   OPENAI_API_KEY?: string;        // legacy secret; used as a fallback for the key
   AI_CHAT_ENDPOINT: string;
   AI_CHAT_MODEL: string;
+  AI_REALTIME_MODEL?: string;
   AI_REASONING_EFFORT?: string;
   MAX_OUTPUT_TOKENS: string;
   CHAT_DAILY_LIMIT: string;
+  REALTIME_DAILY_LIMIT?: string;
   BREEZE_CLIENT_TOKEN?: string;
   QUOTA: DurableObjectNamespace<QuotaTracker>;
 }
 
-type QuotaKind = "chat";
+type QuotaKind = "chat" | "realtime";
 
 interface QuotaState {
   day: string;
   chat: number;
+  realtime: number;
   seenChat: string[];
 }
 
@@ -31,30 +34,38 @@ export class QuotaTracker {
   async fetch(req: Request): Promise<Response> {
     const { kind, requestId } = await req.json<{ kind: QuotaKind; requestId?: string }>();
     const day = new Date().toISOString().slice(0, 10);
-    const limit = intEnv(this.env.CHAT_DAILY_LIMIT, 30);
 
     let quota = await this.state.storage.get<QuotaState>("quota");
     if (!quota || quota.day !== day) {
-      quota = { day, chat: 0, seenChat: [] };
+      quota = { day, chat: 0, realtime: 0, seenChat: [] };
     }
+
+    // Existing Durable Object state predates realtime quota tracking.
+    quota.realtime ??= 0;
 
     const seen = quota.seenChat;
     const uniqueId = (requestId || "").trim();
     const alreadyCounted = uniqueId.length > 0 && seen.includes(uniqueId);
+    const used = kind === "realtime" ? quota.realtime : quota.chat;
+    const limit = intEnv(
+      kind === "realtime" ? this.env.REALTIME_DAILY_LIMIT : this.env.CHAT_DAILY_LIMIT,
+      kind === "realtime" ? 120 : 30,
+    );
 
     if (!alreadyCounted) {
-      if (quota.chat >= limit) {
+      if (used >= limit) {
         return Response.json({
           ok: false,
           kind,
           limit,
-          used: quota.chat,
+          used,
           remaining: 0,
           error: `Daily ${kind} limit reached.`,
         }, { status: 429 });
       }
 
-      quota.chat += 1;
+      if (kind === "realtime") quota.realtime += 1;
+      else quota.chat += 1;
       if (uniqueId) {
         seen.push(uniqueId);
         if (seen.length > 100) seen.splice(0, seen.length - 100);
@@ -66,8 +77,8 @@ export class QuotaTracker {
       ok: true,
       kind,
       limit,
-      used: quota.chat,
-      remaining: Math.max(0, limit - quota.chat),
+      used: kind === "realtime" ? quota.realtime : quota.chat,
+      remaining: Math.max(0, limit - (kind === "realtime" ? quota.realtime : quota.chat)),
     });
   }
 }
@@ -193,6 +204,51 @@ async function proxyChat(req: Request, env: Env) {
   return withQuotaHeaders(upstream, quota);
 }
 
+async function proxyRealtimeToken(req: Request, env: Env) {
+  let body: Record<string, unknown> = {};
+  try {
+    body = await req.json<Record<string, unknown>>();
+  } catch {
+    // Session instructions, tools, and voice are optional.
+  }
+
+  const { quotaResp, quota } = await checkQuota(req, env, "realtime");
+  if (!quotaResp.ok) return json(quota, quotaResp.status);
+
+  let providerKey: string;
+  let providerModel: string;
+  try {
+    providerKey = requiredEnv(env.AI_PROVIDER_API_KEY || env.OPENAI_API_KEY, "AI_PROVIDER_API_KEY");
+    providerModel = (env.AI_REALTIME_MODEL || "gpt-realtime-2.1-mini").trim();
+  } catch {
+    return json({ error: "provider_not_configured" }, 500);
+  }
+
+  const session: Record<string, unknown> = {
+    type: "realtime",
+    model: providerModel,
+  };
+  if (typeof body.instructions === "string" && body.instructions.trim()) {
+    session.instructions = body.instructions.slice(0, 24000);
+  }
+  if (Array.isArray(body.tools)) session.tools = body.tools.slice(0, 32);
+  const voice = typeof body.voice === "string" && body.voice.trim()
+    ? body.voice.trim().slice(0, 32)
+    : "marin";
+  session.audio = { output: { voice } };
+
+  const upstream = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${providerKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ session }),
+  });
+
+  return withQuotaHeaders(upstream, quota);
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method === "OPTIONS") {
@@ -207,6 +263,7 @@ export default {
     if (req.method === "GET" && path === "/health") return json({ ok: true });
     if (req.method !== "POST") return json({ error: "not_found" }, 404);
     if (path === "/v1/chat/completions") return proxyChat(req, env);
+    if (path === "/v1/realtime/token") return proxyRealtimeToken(req, env);
     return json({ error: "not_found" }, 404);
   },
 } satisfies ExportedHandler<Env>;
