@@ -228,7 +228,16 @@ let breezeElementFullscreenJS: String = {
       'overflow:hidden!important;background:#000!important}' +
       '[data-breeze-fullscreen-suppressed]{visibility:hidden!important;' +
       'pointer-events:none!important}' +
+      // The player must win over the suppression rule unconditionally. YouTube
+      // moves #movie_player between containers when it enters and leaves its own
+      // fullscreen mode, so the element can land inside a branch this script
+      // already marked as suppressed. visibility and pointer-events both
+      // inherit, so it then renders invisible over the page background and stops
+      // taking clicks — the blank screen that never recovers until relaunch, and
+      // the dead player controls. Re-asserting them here is immune to wherever
+      // the site decides to reparent the player next.
       '[data-breeze-fullscreen-target]{position:fixed!important;inset:0!important;' +
+      'visibility:visible!important;pointer-events:auto!important;' +
       'width:100vw!important;height:100vh!important;min-width:100vw!important;' +
       'min-height:100vh!important;max-width:none!important;max-height:none!important;' +
       'margin:0!important;border:0!important;border-radius:0!important;' +
@@ -272,6 +281,15 @@ let breezeElementFullscreenJS: String = {
     visualTargetHadMarker = visualTarget.hasAttribute('data-breeze-fullscreen-target');
     document.documentElement.classList.add('__breeze-fullscreen');
     suppressedNodesAdded = [];
+    // Clear any suppression left on the target's own chain by an earlier cycle.
+    // Without this the marker ratchets: once the player sits under a suppressed
+    // ancestor, every later entry re-marks the same branch and fullscreen stays
+    // broken for the rest of the session.
+    for (var node = visualTarget; node && node !== document.documentElement; node = node.parentElement) {
+      if (node.hasAttribute('data-breeze-fullscreen-suppressed')) {
+        node.removeAttribute('data-breeze-fullscreen-suppressed');
+      }
+    }
     var branch = visualTarget;
     var parent = branch.parentElement;
     while (parent && parent !== document.documentElement) {

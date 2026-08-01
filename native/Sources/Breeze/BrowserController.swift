@@ -137,6 +137,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var siteFullscreenExitPending = false
     var siteFullscreenEnteredAppFullscreen = false
     private var siteFullscreenChromeState: SiteFullscreenChromeState?
+    private var siteFullscreenFrameObserver: NSObjectProtocol?
+    private var siteFullscreenSyncScheduled = false
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -469,10 +471,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         })
 
         lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
-            guard let self, self.siteFullscreenActive,
-                  self.siteFullscreenExitPending,
-                  self.siteFullscreenEnteredAppFullscreen else { return }
-            self.window.toggleFullScreen(nil)
+            guard let self, self.siteFullscreenActive else { return }
+            if self.siteFullscreenExitPending, self.siteFullscreenEnteredAppFullscreen {
+                self.window.toggleFullScreen(nil)
+                return
+            }
+            self.syncSiteFullscreenViewport()
         })
 
         lifecycleObservers.append(NotificationCenter.default.addObserver(forName: NSWindow.willExitFullScreenNotification, object: window, queue: nil) { [weak self] _ in
@@ -978,10 +982,90 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         root.layoutSubtreeIfNeeded()
         window.makeFirstResponder(tab.webView)
 
+        // Entering fullscreen is not the only resize this path sees: revealing
+        // the auto-hiding title bar, a display change, or the user dragging the
+        // window out of fullscreen all resize the web area again, and any one of
+        // them can strand the same stale viewport. Watch the container (never the
+        // web view itself — the healer resizes that, which would feed back) and
+        // re-sync whenever it moves.
+        webContainer.postsFrameChangedNotifications = true
+        if let siteFullscreenFrameObserver {
+            NotificationCenter.default.removeObserver(siteFullscreenFrameObserver)
+        }
+        siteFullscreenFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: webContainer, queue: .main
+        ) { [weak self] _ in
+            self?.scheduleSiteFullscreenViewportSync()
+        }
+
         if siteFullscreenEnteredAppFullscreen {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.siteFullscreenActive else { return }
                 self.window.toggleFullScreen(nil)
+            }
+        } else {
+            // Already fullscreen: no window transition will arrive, but hiding
+            // the chrome resized the page all the same.
+            syncSiteFullscreenViewport()
+        }
+    }
+
+    /// Debounced re-check, so a burst of frame changes costs one sync.
+    private func scheduleSiteFullscreenViewportSync() {
+        guard siteFullscreenActive, !siteFullscreenSyncScheduled else { return }
+        siteFullscreenSyncScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
+            self.siteFullscreenSyncScheduled = false
+            self.syncSiteFullscreenViewport()
+        }
+    }
+
+    /// The substitute keeps the page in our own WKWebView, so hiding the chrome
+    /// and taking the window fullscreen resizes that view by a large step in one
+    /// beat — and WebKit can miss the change, leaving the page laid out at the
+    /// old viewport. The consequences are not cosmetic: the site sees a player
+    /// that doesn't match the screen and calls `document.exitFullscreen()`, which
+    /// drops Breeze straight back out (YouTube did this ~2s after every entry),
+    /// and until it does, the page paints its own background across the area it
+    /// doesn't believe it owns — the blank screen, black in dark mode and white
+    /// in light mode. Force the viewport to catch up and keep checking until the
+    /// page's reported size agrees with the view it actually occupies.
+    ///
+    /// Safe only for this path: here the WKWebView is still ours. Native element
+    /// fullscreen hands the view to WebKit, and it must not be touched then.
+    private func syncSiteFullscreenViewport(attempt: Int = 0) {
+        guard siteFullscreenActive, let tab = siteFullscreenTab else { return }
+        let wv = tab.webView
+        guard wv.superview != nil, !wv.isHidden, wv.frame.width > 1, wv.frame.height > 1 else { return }
+        let zoom = max(tab.pageZoom, 0.01)
+        let expected = CGSize(width: wv.frame.width / zoom, height: wv.frame.height / zoom)
+        wv.evaluateJavaScript("window.innerWidth + 'x' + window.innerHeight") { [weak self, weak wv] value, _ in
+            guard let self, let wv, self.siteFullscreenActive,
+                  self.siteFullscreenTab?.id == tab.id, wv.superview != nil else { return }
+            let reported = String(describing: value ?? "").split(separator: "x").compactMap { Double($0) }
+            let agrees = reported.count == 2
+                && abs(CGFloat(reported[0]) - expected.width) <= 2
+                && abs(CGFloat(reported[1]) - expected.height) <= 2
+            if agrees {
+                // The viewport is right; one resize event settles position:fixed
+                // and sticky elements that were anchored to the old edges.
+                wv.evaluateJavaScript("window.dispatchEvent(new Event('resize'));")
+                return
+            }
+            guard attempt < 12 else { return }
+            // A resize event alone re-fires handlers without updating the
+            // viewport. Only a genuine size change does, so shrink the view and
+            // let Auto Layout restore the true size on the next pass.
+            let size = wv.frame.size
+            wv.setFrameSize(NSSize(width: max(size.width - 2, 1), height: max(size.height - 2, 1)))
+            DispatchQueue.main.async { [weak self, weak wv] in
+                guard let self, let wv, wv.superview != nil else { return }
+                wv.needsLayout = true
+                self.root.layoutSubtreeIfNeeded()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    self?.syncSiteFullscreenViewport(attempt: attempt + 1)
+                }
             }
         }
     }
@@ -1021,6 +1105,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webOverlayLeadingC.isActive = false
         webLeadingC.isActive = true
 
+        if let siteFullscreenFrameObserver {
+            NotificationCenter.default.removeObserver(siteFullscreenFrameObserver)
+        }
+        siteFullscreenFrameObserver = nil
+        siteFullscreenSyncScheduled = false
         siteFullscreenActive = false
         siteFullscreenExitPending = false
         siteFullscreenEnteredAppFullscreen = false
@@ -2081,6 +2170,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         NotificationCenter.default.removeObserver(self)
         for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
         lifecycleObservers.removeAll()
+        if let siteFullscreenFrameObserver {
+            NotificationCenter.default.removeObserver(siteFullscreenFrameObserver)
+        }
+        siteFullscreenFrameObserver = nil
         if let monitor = splitClickMonitor { NSEvent.removeMonitor(monitor) }
         splitClickMonitor = nil
         sleepTimer?.invalidate()

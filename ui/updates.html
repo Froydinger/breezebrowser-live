@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.5', icon: 'play-circle', title: 'Fullscreen Video Actually Works', hotfix: true, major: false, items: [
+        '<b>No More Blank Fullscreen</b> — Going fullscreen on a video could fill the screen with nothing: black in dark mode, white in light mode, with the audio still playing. Fullscreen now shows the video, every time.',
+        '<b>It Keeps Working</b> — Fullscreen used to break for good after the first try, and only quitting and reopening Breeze would bring it back. It survives leaving and re-entering as many times as you like now.',
+        '<b>The Player Responds Again</b> — Play, pause, scrub, and the rest of the on-screen controls stopped taking clicks in fullscreen, leaving Esc as the only way out. They work normally again.',
+        '<b>What Was Wrong</b> — Two things. The page was never told the window had grown, so it kept drawing at the old size and painted its own background over the rest of the screen. And Breeze’s own way of hiding everything but the video could catch the video too once YouTube moved it, leaving it invisible and unclickable for the rest of the session.' ] },
       { v: '5.5.4', icon: 'shield-check', title: 'The Text-Box Crash, Actually Fixed', hotfix: true, major: false, items: [
         '<b>Really Fixed This Time</b> — Breeze could still quit when your pointer passed over a text box. The fix in 5.5.2 and 5.5.3 turned out to do nothing at all, so this replaces it with one that is verified to work.',
         '<b>What Was Wrong</b> — macOS 27 shows a writing-helper bubble over text boxes in every app. It is drawn by a separate part of the system, and on the macOS 27 beta that handoff fails and takes the app down with it. Breeze never asked for the bubble; the system adds it automatically.',
