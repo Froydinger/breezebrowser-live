@@ -140,6 +140,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var siteFullscreenFrameObserver: NSObjectProtocol?
     private var siteFullscreenSyncScheduled = false
     private var pipFocusGuardObserver: NSObjectProtocol?
+    private var initialHTTPSUpgradeTabs: Set<UUID> = []
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -1997,10 +1998,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             targetURL = URL(string: escaped)
         }
         
-        if let u = targetURL {
+        if let raw = targetURL {
+            // Every way of opening a link that isn't the address bar funnels
+            // through here: the context menu, a link handed to Breeze by another
+            // app, session restore, the assistant, `openTab(url:from:)`. The
+            // address bar upgraded plain http on its own and these did not, so an
+            // http-only link dead-ended on App Transport Security ("requires the
+            // use of a secure connection") instead of loading. Same policy as the
+            // address bar — local and dev hosts keep http, see httpsUpgraded.
+            let u = raw.scheme?.lowercased() == "http" ? httpsUpgraded(raw) : raw
             t.webView.load(URLRequest(url: u))
         }
-        
+
         showActive(); refreshSidebar()
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         return t
@@ -4903,17 +4912,41 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         alert.addButton(withTitle: "Allow Once")
         alert.addButton(withTitle: "Always Allow")
         alert.addButton(withTitle: "Block")
-        let result = alert.runModal()
-        switch result {
-        case .alertFirstButtonReturn:
-            decisionHandler(.grant)
-        case .alertSecondButtonReturn:
-            for key in keys { setSitePermission(origin: originText, permission: key, allowed: true) }
-            decisionHandler(.grant)
-        default:
-            for key in keys { setSitePermission(origin: originText, permission: key, allowed: false) }
-            decisionHandler(.deny)
+        presentPermissionAlert(alert) { [weak self] result in
+            switch result {
+            case .alertFirstButtonReturn:
+                decisionHandler(.grant)
+            case .alertSecondButtonReturn:
+                for key in keys { self?.setSitePermission(origin: originText, permission: key, allowed: true) }
+                decisionHandler(.grant)
+            default:
+                for key in keys { self?.setSitePermission(origin: originText, permission: key, allowed: false) }
+                decisionHandler(.deny)
+            }
         }
+    }
+
+    /// Permission prompts arrive from WebKit callbacks that can land while
+    /// another prompt is already on screen — a page asking for the camera while
+    /// a location prompt is open. `NSAlert.runModal` spins a nested modal loop,
+    /// and ordering a second alert on screen inside the first one's session
+    /// makes AppKit route it through ViewBridge as a sheet, which throws an
+    /// uncaught ObjC exception and aborts the process. That is the crash in the
+    /// 2026-08-02 report: a geolocation prompt from `userContentController`,
+    /// then a media-capture prompt on top of it, then `abort()`.
+    ///
+    /// Sheets have no such problem: AppKit queues them per window, so a second
+    /// prompt waits its turn instead of re-entering, and the run loop is never
+    /// blocked. Anything that prevents presentation answers as the last button,
+    /// which every caller treats as a denial — a prompt that cannot be shown
+    /// must never silently grant.
+    func presentPermissionAlert(_ alert: NSAlert,
+                                completion: @escaping (NSApplication.ModalResponse) -> Void) {
+        guard !isClosing, window.isVisible else {
+            completion(.alertThirdButtonReturn)
+            return
+        }
+        alert.beginSheetModal(for: window, completionHandler: completion)
     }
 
     @available(macOS 27.0, *)
@@ -4932,16 +4965,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         alert.addButton(withTitle: "Allow Once")
         alert.addButton(withTitle: "Always Allow")
         alert.addButton(withTitle: "Block")
-        let result = alert.runModal()
-        switch result {
-        case .alertFirstButtonReturn:
-            decisionHandler(.grant)
-        case .alertSecondButtonReturn:
-            setSitePermission(origin: originText, permission: "geolocation", allowed: true)
-            decisionHandler(.grant)
-        default:
-            setSitePermission(origin: originText, permission: "geolocation", allowed: false)
-            decisionHandler(.deny)
+        presentPermissionAlert(alert) { [weak self] result in
+            switch result {
+            case .alertFirstButtonReturn:
+                decisionHandler(.grant)
+            case .alertSecondButtonReturn:
+                self?.setSitePermission(origin: originText, permission: "geolocation", allowed: true)
+                decisionHandler(.grant)
+            default:
+                self?.setSitePermission(origin: originText, permission: "geolocation", allowed: false)
+                decisionHandler(.deny)
+            }
         }
     }
 
@@ -4959,41 +4993,55 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         let originText = originString(message.frameInfo.securityOrigin)
         let isPrivateRequest = tabs.first(where: { $0.webView === webView })?.isPrivate == true
+        let watches = body["watch"] as? Bool ?? false
+        let wantsHighAccuracy = body["highAccuracy"] as? Bool == true
+        // The prompt is a sheet now, so everything that used to follow the modal
+        // return has to run from its completion instead.
+        let start = { [weak self, weak webView] in
+            guard let self, let webView else { return }
+            self.pendingGeolocation[id] = PendingGeolocationRequest(webView: webView, id: id, watches: watches)
+            self.locationManager.desiredAccuracy = wantsHighAccuracy
+                ? kCLLocationAccuracyBest : kCLLocationAccuracyKilometer
+            self.beginLocationRequest()
+        }
+
         if let stored = storedPermission(origin: originText, permission: "geolocation") {
             guard stored else {
                 resolveGeolocation(webView: webView, id: id, ok: false,
                                    value: ["code": 1, "message": "Location access is blocked for this site."])
                 return
             }
-        } else {
-            let alert = NSAlert()
-            alert.messageText = "\(originText) wants to use your location"
-            alert.informativeText = "Breeze can allow this once, remember the choice for this site, or block it. You can change saved choices in Settings → Site Permissions."
-            alert.addButton(withTitle: "Allow Once")
-            alert.addButton(withTitle: "Always Allow")
-            alert.addButton(withTitle: "Block")
-            switch alert.runModal() {
+            start()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "\(originText) wants to use your location"
+        alert.informativeText = "Breeze can allow this once, remember the choice for this site, or block it. You can change saved choices in Settings → Site Permissions."
+        alert.addButton(withTitle: "Allow Once")
+        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: "Block")
+        presentPermissionAlert(alert) { [weak self, weak webView] response in
+            guard let self else { return }
+            switch response {
             case .alertFirstButtonReturn:
                 break
             case .alertSecondButtonReturn:
                 if !isPrivateRequest {
-                    setSitePermission(origin: originText, permission: "geolocation", allowed: true)
+                    self.setSitePermission(origin: originText, permission: "geolocation", allowed: true)
                 }
             default:
                 if !isPrivateRequest {
-                    setSitePermission(origin: originText, permission: "geolocation", allowed: false)
+                    self.setSitePermission(origin: originText, permission: "geolocation", allowed: false)
                 }
-                resolveGeolocation(webView: webView, id: id, ok: false,
-                                   value: ["code": 1, "message": "Location access was denied."])
+                if let webView {
+                    self.resolveGeolocation(webView: webView, id: id, ok: false,
+                                            value: ["code": 1, "message": "Location access was denied."])
+                }
                 return
             }
+            start()
         }
-
-        let watches = body["watch"] as? Bool ?? false
-        pendingGeolocation[id] = PendingGeolocationRequest(webView: webView, id: id, watches: watches)
-        locationManager.desiredAccuracy = (body["highAccuracy"] as? Bool == true)
-            ? kCLLocationAccuracyBest : kCLLocationAccuracyKilometer
-        beginLocationRequest()
     }
 
     private func beginLocationRequest() {
@@ -5304,6 +5352,17 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             popupDownloadCandidates.insert(tab.id)
             decisionHandler(.cancel)
             return
+        }
+        if navigationAction.targetFrame?.isMainFrame ?? true,
+           let t = tabs.first(where: { $0.webView === w }),
+           initialHTTPSUpgradeTabs.remove(t.id) != nil,
+           scheme == "http" {
+            let upgraded = httpsUpgraded(url)
+            if upgraded != url {
+                w.load(URLRequest(url: upgraded))
+                decisionHandler(.cancel)
+                return
+            }
         }
         // Upgrade a clicked plain-http link to https (same policy as the address
         // bar). Scoped to .linkActivated so server-issued downgrade redirects
@@ -6369,6 +6428,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.isNewTab = false
         wire(t)
         popupDownloadCandidates.insert(t.id)
+        // WebKit performs this window's first navigation itself, from the
+        // original request, so nothing above can upgrade it — and it arrives as
+        // navigationType .other, which the clicked-link upgrade deliberately
+        // skips. Mark the tab so its first main-frame navigation gets the same
+        // treatment. The mark is consumed immediately, so later server-issued
+        // https→http redirects still can't be touched.
+        initialHTTPSUpgradeTabs.insert(t.id)
         BreezeSounds.shared.play(.newTab)
         
         tabs.append(t)

@@ -48,9 +48,9 @@ let sharedConfig: WKWebViewConfiguration = {
     c.mediaTypesRequiringUserActionForPlayback = []
     c.defaultWebpagePreferences.allowsContentJavaScript = true
     if #available(macOS 13.3, *) {
-        // Native WebKit fullscreen is the default for sites other than YouTube.
-        // The macOS 27 in-window workaround below explicitly intercepts only
-        // YouTube, where its player surface has been proven stable.
+        // Kept on as the underlying capability. On macOS 27 the in-window
+        // substitute below intercepts the request before WebKit's own element
+        // fullscreen is used, on every site.
         c.preferences.isElementFullscreenEnabled = true
     }
     c.enablePictureInPictureAPI()
@@ -193,13 +193,16 @@ let breezeElementFullscreenJS: String = {
     return """
 (function () {
   if (location.protocol === 'file:' || window.__breezeFullscreenInstalled) return;
-  // Do not apply Breeze's CSS/AppKit fullscreen substitute to arbitrary web
-  // apps. X uses a layered player tree that turns black when that tree is
-  // repositioned. Native WebKit fullscreen remains enabled for it and every
-  // other site; this workaround is intentionally limited to the YouTube path
-  // that it was built and verified for.
-  var host = String(location.hostname || '').toLowerCase();
-  if (!(host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be')) return;
+  // This substitute used to be restricted to YouTube because other sites — X
+  // was the reported one — turned black when their player tree was
+  // repositioned. That black player was the same defect later found and fixed
+  // on YouTube: a player reparented into a branch this script had marked
+  // suppressed inherits visibility:hidden, so it renders invisible over the
+  // page background. The target rule now re-asserts visibility and
+  // pointer-events, which does not care where the site moves its player, so
+  // the restriction is lifted and every site gets the working path. Native
+  // WebKit element fullscreen is the thing being replaced here; on macOS 27 it
+  // drops the video surface, which is why the substitute exists at all.
   window.__breezeFullscreenInstalled = true;
 
   var target = null;

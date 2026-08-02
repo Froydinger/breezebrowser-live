@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.7', icon: 'shield-check', title: 'Fullscreen Everywhere, Links That Load, No More Crash', hotfix: true, major: false, items: [
+        '<b>Fullscreen On Every Site</b> — The fullscreen fix from 5.5.5 only applied to YouTube. It now covers every site, so video fills the screen properly wherever you watch.',
+        '<b>Links Reach The Site Again</b> — Opening a link that pointed at plain <code>http://</code> could dead-end on “This page couldn’t load.” Typing the same address in the URL bar worked, which made it look random. Breeze upgrades those links to <code>https://</code> now, however you open them — a link in another app, the context menu, a link that opens its own window, or a restored tab. Local addresses keep <code>http://</code>, so dev servers still work.',
+        '<b>A Crash Fixed</b> — Breeze could quit outright when a page asked for two permissions at once, like location and camera together. The second prompt was being opened on top of the first in a way macOS refuses, and the app went down with it. Prompts now wait their turn.' ] },
       { v: '5.5.6', icon: 'keyboard', title: 'New Tabs Keep Your First Keystrokes', hotfix: true, major: false, items: [
         '<b>Type Straight Away</b> — Opening a new tab while a video was playing swallowed the first several characters you typed. The ask bar is ready the moment the tab appears now.',
         '<b>What Was Wrong</b> — Leaving a playing video pops it into Picture-in-Picture so it keeps going, and that little floating window quietly took the keyboard a beat after the new tab had already been handed it. Anything typed in between went nowhere. Breeze takes the keyboard straight back now.' ] },
