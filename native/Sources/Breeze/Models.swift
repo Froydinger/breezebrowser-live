@@ -65,6 +65,10 @@ let sharedConfig: WKWebViewConfiguration = {
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
+    // Must run before X's own bundle so it sees the API traffic that carries the
+    // downloadable MP4 for each tweet. Self-gates on hostname.
+    c.userContentController.addUserScript(WKUserScript(source: breezeXMediaJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
@@ -210,6 +214,7 @@ let breezeElementFullscreenJS: String = {
   var styleNode = null;
   var visualTargetHadMarker = false;
   var suppressedNodesAdded = [];
+  var ancestorNodesAdded = [];
   var rootHadClass = false;
 
   function send(action) {
@@ -231,6 +236,22 @@ let breezeElementFullscreenJS: String = {
       'overflow:hidden!important;background:#000!important}' +
       '[data-breeze-fullscreen-suppressed]{visibility:hidden!important;' +
       'pointer-events:none!important}' +
+      // Every ancestor of the player has to stop being a containing block, or
+      // the target's position:fixed resolves against the ancestor instead of the
+      // viewport and "fullscreen" lands as a small clipped box somewhere on the
+      // page. X was the reported site: its timeline virtualizes cells with
+      // transform:translateY(), so a tweet's video anchored to the cell rather
+      // than the screen. transform/filter/backdrop-filter/perspective/contain/
+      // will-change all create one, and overflow/clip-path/mask clip whatever is
+      // left, so all of them go. This is scoped to the marked chain and undone
+      // on exit, so the site's own layout comes back untouched.
+      '[data-breeze-fullscreen-ancestor]{transform:none!important;' +
+      'filter:none!important;backdrop-filter:none!important;' +
+      '-webkit-backdrop-filter:none!important;perspective:none!important;' +
+      'contain:none!important;will-change:auto!important;' +
+      'overflow:visible!important;clip-path:none!important;mask:none!important;' +
+      '-webkit-mask:none!important;opacity:1!important;z-index:auto!important;' +
+      'visibility:visible!important;pointer-events:auto!important}' +
       // The player must win over the suppression rule unconditionally. YouTube
       // moves #movie_player between containers when it enters and leaves its own
       // fullscreen mode, so the element can land inside a branch this script
@@ -264,13 +285,20 @@ let breezeElementFullscreenJS: String = {
     return best;
   }
 
+  var playerSelector = '#movie_player, .html5-video-player, [data-testid*="player"], ' +
+    '[data-testid*="Player"], [class*="video-player"], [class*="videoPlayer"], #player';
+
+  function playerHost(video) {
+    if (!video || !video.closest) return video;
+    return video.closest(playerSelector) || video;
+  }
+
   function resolveVisualTarget(requested) {
     var isRootRequest = requested === document.documentElement || requested === document.body;
     if (!isRootRequest) return requested;
     var video = largestVisibleVideo();
     if (!video) return requested;
-    return video.closest('#movie_player, .html5-video-player, [data-testid*="player"], ' +
-      '[class*="video-player"], [class*="videoPlayer"], #player') || video;
+    return playerHost(video);
   }
 
   function enter(el) {
@@ -293,6 +321,7 @@ let breezeElementFullscreenJS: String = {
         node.removeAttribute('data-breeze-fullscreen-suppressed');
       }
     }
+    ancestorNodesAdded = [];
     var branch = visualTarget;
     var parent = branch.parentElement;
     while (parent && parent !== document.documentElement) {
@@ -303,6 +332,12 @@ let breezeElementFullscreenJS: String = {
           sibling.setAttribute('data-breeze-fullscreen-suppressed', '');
           suppressedNodesAdded.push(sibling);
         }
+      }
+      // <body> keeps its own rules from the root class above; neutralizing it
+      // here would re-enable page scrolling behind the player.
+      if (parent !== document.body && !parent.hasAttribute('data-breeze-fullscreen-ancestor')) {
+        parent.setAttribute('data-breeze-fullscreen-ancestor', '');
+        ancestorNodesAdded.push(parent);
       }
       branch = parent;
       parent = parent.parentElement;
@@ -325,6 +360,10 @@ let breezeElementFullscreenJS: String = {
       suppressedNodesAdded[i].removeAttribute('data-breeze-fullscreen-suppressed');
     }
     suppressedNodesAdded = [];
+    for (var j = 0; j < ancestorNodesAdded.length; j++) {
+      ancestorNodesAdded[j].removeAttribute('data-breeze-fullscreen-ancestor');
+    }
+    ancestorNodesAdded = [];
     if (!rootHadClass) document.documentElement.classList.remove('__breeze-fullscreen');
     if (styleNode) { styleNode.remove(); styleNode = null; }
     if (notifyNative !== false) send('exit');
@@ -349,6 +388,52 @@ let breezeElementFullscreenJS: String = {
   try { document.exitFullscreen = function () { return exit(true); }; } catch (e) {}
   try { document.webkitExitFullscreen = function () { return exit(true); }; } catch (e) {}
   try { document.webkitCancelFullScreen = function () { return exit(true); }; } catch (e) {}
+
+  // HTMLVideoElement carries a second, WebKit-only fullscreen API that does not
+  // go through Element.prototype.requestFullscreen. Players that feature-detect
+  // Safari take it instead, which dropped them straight back onto native element
+  // fullscreen — the macOS 27 path this whole substitute exists to avoid. X's
+  // player is one of them. Route it into the same code so every site gets the
+  // same behavior no matter which API it reaches for. Presentation modes other
+  // than 'fullscreen' (notably 'picture-in-picture') stay with WebKit.
+  try {
+    var videoProto = window.HTMLVideoElement && HTMLVideoElement.prototype;
+    if (videoProto) {
+      var beginVideoFullscreen = function () {
+        var video = this;
+        var result = enter(playerHost(video));
+        try { video.dispatchEvent(new Event('webkitbeginfullscreen')); } catch (e) {}
+        return result;
+      };
+      var endVideoFullscreen = function () {
+        var video = this;
+        var result = exit(true);
+        try { video.dispatchEvent(new Event('webkitendfullscreen')); } catch (e) {}
+        return result;
+      };
+      videoProto.webkitEnterFullScreen = beginVideoFullscreen;
+      videoProto.webkitEnterFullscreen = beginVideoFullscreen;
+      videoProto.webkitExitFullScreen = endVideoFullscreen;
+      videoProto.webkitExitFullscreen = endVideoFullscreen;
+      var nativeSetPresentationMode = videoProto.webkitSetPresentationMode;
+      videoProto.webkitSetPresentationMode = function (mode) {
+        if (mode === 'fullscreen') return beginVideoFullscreen.call(this);
+        if (mode === 'inline' && target) return endVideoFullscreen.call(this);
+        if (typeof nativeSetPresentationMode === 'function') {
+          return nativeSetPresentationMode.call(this, mode);
+        }
+      };
+      Object.defineProperty(videoProto, 'webkitSupportsFullscreen', {
+        configurable: true, get: function () { return true; }
+      });
+      Object.defineProperty(videoProto, 'webkitDisplayingFullscreen', {
+        configurable: true,
+        get: function () {
+          return !!target && (target === this || !!(target.contains && target.contains(this)));
+        }
+      });
+    }
+  } catch (e) {}
 
   window.__breezeExitFullscreenFromNative = function () { return exit(false); };
   document.addEventListener('keydown', function (event) {
@@ -395,22 +480,56 @@ let breezeLinkMenuJS = """
     if (!href) return '';
     return /\\.(png|jpe?g|webp|gif|svg|avif|bmp|tiff?|mp4|m4v|mov|webm|mp3|m4a|wav|ogg)(\\?|#|$)/i.test(href) ? href : '';
   }
+  // A streamed <video> has a blob:/MediaSource src (or a bare .m3u8 playlist),
+  // neither of which can be handed to a downloader. Sites that stream can
+  // register a resolver that maps the element back to a real file URL.
+  function playableURL(url, element) {
+    if (url && !/^blob:/i.test(url) && !/^mediasource:/i.test(url) &&
+        !/\\.m3u8(\\?|#|$)/i.test(url) && !/\\.mpd(\\?|#|$)/i.test(url)) return url;
+    try {
+      if (typeof window.__breezeResolveMediaURL === 'function') {
+        return cleanURL(window.__breezeResolveMediaURL(element) || '');
+      }
+    } catch (e) {}
+    return '';
+  }
+  function elementSourceURL(element) {
+    return cleanURL(element.currentSrc || element.src ||
+      (element.querySelector('source[src]') || {}).src);
+  }
   function closestMedia(node) {
     var cur = node;
     while (cur && cur !== document.documentElement) {
       var tag = (cur.tagName || '').toLowerCase();
       if (tag === 'img') return { kind: 'image', url: cleanURL(cur.currentSrc || cur.src) };
-      if (tag === 'video') return { kind: 'video', url: cleanURL(cur.currentSrc || cur.src || (cur.querySelector('source[src]') || {}).src), poster: cleanURL(cur.poster) };
-      if (tag === 'audio') return { kind: 'audio', url: cleanURL(cur.currentSrc || cur.src || (cur.querySelector('source[src]') || {}).src) };
+      if (tag === 'video') return { kind: 'video', url: playableURL(elementSourceURL(cur), cur), poster: cleanURL(cur.poster) };
+      if (tag === 'audio') return { kind: 'audio', url: playableURL(elementSourceURL(cur), cur) };
       if (tag === 'source' && cur.parentElement) {
         var parentTag = (cur.parentElement.tagName || '').toLowerCase();
-        if (parentTag === 'video' || parentTag === 'audio') return { kind: parentTag, url: cleanURL(cur.src) };
+        if (parentTag === 'video' || parentTag === 'audio') {
+          return { kind: parentTag, url: playableURL(cleanURL(cur.src), cur.parentElement) };
+        }
       }
       var bg = '';
       try { bg = getComputedStyle(cur).backgroundImage || ''; } catch (e) {}
       var m = bg.match(/url\\((['"]?)(.*?)\\1\\)/);
       if (m && m[2] && !m[2].startsWith('data:')) return { kind: 'image', url: cleanURL(m[2]) };
       cur = cur.parentElement;
+    }
+    return { kind: '', url: '' };
+  }
+  // Video players routinely cover the <video> with a transparent click shield,
+  // so the right-click target is a sibling overlay and walking up the tree never
+  // reaches the media. X's player is built that way. Ask the hit-test stack at
+  // the cursor instead, which sees straight through the overlay.
+  function mediaAtPoint(x, y) {
+    var stack = [];
+    try { stack = document.elementsFromPoint(x, y) || []; } catch (e) {}
+    for (var i = 0; i < stack.length; i++) {
+      var tag = (stack[i].tagName || '').toLowerCase();
+      if (tag !== 'video' && tag !== 'audio' && tag !== 'img') continue;
+      var found = closestMedia(stack[i]);
+      if (found.kind) return found;
     }
     return { kind: '', url: '' };
   }
@@ -421,6 +540,10 @@ let breezeLinkMenuJS = """
     var editable = closestEditable(node);
     if (editable) return; // preserve WebKit's native edit/autofill/password menu.
     var media = closestMedia(node);
+    if (!media.kind || !media.url) {
+      var overlaid = mediaAtPoint(event.clientX, event.clientY);
+      if (overlaid.url) media = overlaid;
+    }
     var linkMedia = mediaURLFromLink(link);
     if (!media.url && linkMedia) {
       media = { kind: /\\.(mp4|m4v|mov|webm)(\\?|#|$)/i.test(linkMedia) ? 'video' : (/\\.(mp3|m4a|wav|ogg)(\\?|#|$)/i.test(linkMedia) ? 'audio' : 'image'), url: linkMedia };
@@ -443,6 +566,130 @@ let breezeLinkMenuJS = """
       });
     } catch (e) {}
   }, true);
+})();
+"""
+
+/// X (Twitter) plays video through MediaSource, so the `<video>` element's src is
+/// a `blob:` URL that no downloader can fetch — which is why "Download Video" did
+/// nothing there while it worked everywhere else. X's own API responses do carry
+/// plain `.mp4` variants on `video_info.variants`, so this watches the GraphQL
+/// traffic the page is already making, remembers the best MP4 per tweet, and
+/// hands it to the context menu through the `__breezeResolveMediaURL` hook.
+/// Read-only: responses are cloned, never altered or delayed.
+let breezeXMediaJS = """
+(function () {
+  if (location.protocol === 'file:' || window.__breezeXMediaInstalled) return;
+  if (!/(^|\\.)(x\\.com|twitter\\.com)$/i.test(location.hostname)) return;
+  window.__breezeXMediaInstalled = true;
+
+  var byThumb = Object.create(null);
+  var byStatus = Object.create(null);
+
+  function noop() {}
+
+  function thumbKey(url) {
+    var m = String(url || '').match(/\\/([A-Za-z0-9_-]{6,})\\.(?:jpg|jpeg|png|webp)/i);
+    return m ? m[1] : '';
+  }
+  function statusID(url) {
+    var m = String(url || '').match(/\\/status(?:es)?\\/(\\d+)/);
+    return m ? m[1] : '';
+  }
+  function bestMP4(info) {
+    var variants = (info && info.variants) || [];
+    var best = null;
+    for (var i = 0; i < variants.length; i++) {
+      var v = variants[i];
+      if (!v || !v.url) continue;
+      if (String(v.content_type || v.contentType || '').indexOf('mp4') < 0) continue;
+      if (!best || (v.bitrate || 0) > (best.bitrate || 0)) best = v;
+    }
+    return best ? best.url : '';
+  }
+  function harvest(node, depth) {
+    if (!node || depth > 40 || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) harvest(node[i], depth + 1);
+      return;
+    }
+    if (node.video_info && node.video_info.variants) {
+      var mp4 = bestMP4(node.video_info);
+      if (mp4) {
+        var thumb = thumbKey(node.media_url_https || node.media_url || '');
+        if (thumb) byThumb[thumb] = mp4;
+        var status = statusID(node.expanded_url || '');
+        if (status) byStatus[status] = mp4;
+      }
+    }
+    for (var key in node) {
+      if (!Object.prototype.hasOwnProperty.call(node, key)) continue;
+      var value = node[key];
+      if (value && typeof value === 'object') harvest(value, depth + 1);
+    }
+  }
+  function scan(text) {
+    if (!text || text.length > 8000000) return;
+    if (text.indexOf('video_info') < 0) return;
+    var data;
+    try { data = JSON.parse(text); } catch (e) { return; }
+    harvest(data, 0);
+  }
+  function interesting(url) {
+    return /\\/i\\/api\\/|graphql/i.test(String(url || ''));
+  }
+
+  var nativeFetch = window.fetch;
+  if (typeof nativeFetch === 'function') {
+    window.fetch = function (input) {
+      var promise = nativeFetch.apply(this, arguments);
+      try {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (interesting(url)) {
+          promise.then(function (response) {
+            try { response.clone().text().then(scan, noop); } catch (e) {}
+          }, noop);
+        }
+      } catch (e) {}
+      return promise;
+    };
+  }
+
+  var nativeOpen = XMLHttpRequest.prototype.open;
+  if (typeof nativeOpen === 'function') {
+    XMLHttpRequest.prototype.open = function (method, url) {
+      try { this.__breezeWatch = interesting(url); } catch (e) {}
+      if (this.__breezeWatch) {
+        try {
+          this.addEventListener('load', function () {
+            try {
+              if (this.responseType === '' || this.responseType === 'text') scan(this.responseText);
+            } catch (e) {}
+          });
+        } catch (e) {}
+      }
+      return nativeOpen.apply(this, arguments);
+    };
+  }
+
+  // Called by the context-menu script when a <video> has an undownloadable src.
+  window.__breezeResolveMediaURL = function (element) {
+    if (!element) return '';
+    var poster = '';
+    try { poster = element.getAttribute('poster') || element.poster || ''; } catch (e) {}
+    var thumb = thumbKey(poster);
+    if (thumb && byThumb[thumb]) return byThumb[thumb];
+
+    var scope = null;
+    try { scope = element.closest('article, [data-testid="tweet"]'); } catch (e) {}
+    var links = (scope || document).querySelectorAll('a[href*="/status/"]');
+    for (var i = 0; i < links.length; i++) {
+      var id = statusID(links[i].getAttribute('href') || '');
+      if (id && byStatus[id]) return byStatus[id];
+    }
+    var here = statusID(location.pathname);
+    if (here && byStatus[here]) return byStatus[here];
+    return '';
+  };
 })();
 """
 
@@ -590,6 +837,8 @@ final class Tab {
             c.userContentController.addUserScript(WKUserScript(source: breezeElementFullscreenJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeKeyboardJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            c.userContentController.addUserScript(WKUserScript(source: breezeXMediaJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeLinkMenuJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))

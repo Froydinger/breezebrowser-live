@@ -186,9 +186,15 @@ so the release can (and now should) be marked latest normally.
    the 3 download links + schema `downloadUrl` at
    `releases/download/vX.Y.Z/Breeze-X.Y.Z-arm64.dmg` and bump `softwareVersion`.
    `gh repo clone Froydinger/breezebrowser /tmp/lander`, edit, commit, push.
-6. Update this repo's tracked fallback page: set `site/index.html`'s `MAC_URL`
-   to the exact versioned DMG asset. Never use `releases/latest/download` with
+   Always the exact versioned asset — never `releases/latest/download` with
    `Breeze-arm64.dmg`; release assets are versioned and that URL returns 404.
+
+That lander is the only download page. This repo used to carry a
+`site/index.html` fallback that nothing served — no Pages, no Netlify, no
+workflow. It was deleted in 5.5.7 after sitting two major versions out of date
+(still advertising 2.10.0 as "Chromium-based" with a "private local AI"),
+because releases only ever refreshed its one download URL and never its copy.
+Don't reintroduce a second copy.
 
 ### How auto-update works (`Updater.swift`)
 On launch, every 4h, and via **Breeze → Check for Updates…**, it hits the GitHub
