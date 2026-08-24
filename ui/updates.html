@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.5.9', icon: 'link', title: 'Clicked Links Reach The Secure Site', hotfix: true, major: false, items: [
+        '<b>Links Load Instead Of Erroring</b> — Clicking a link could dump you on a plain <code>http://</code> address and an error page, even though refreshing or typing the same address worked fine. Links go to the secure version of the site now, no matter how the link is built.',
+        '<b>What Was Wrong</b> — Breeze upgraded links to <code>https://</code> only when it could see you click a normal link. Plenty of sites move you along with a script instead, and those arrived looking like something Breeze had deliberately been told not to touch — so they stayed on <code>http://</code> and dead-ended. Every page you open in a tab is upgraded now.',
+        '<b>Sites Without Security Still Open</b> — The handful of sites that genuinely have no secure version used to fail outright, because macOS blocks plain <code>http://</code> unless an app asks otherwise. Breeze now tries the secure address first, and quietly falls back to the plain one if the site truly does not have it, rather than showing you an error.',
+        '<b>No Loops</b> — If a site sends you back to <code>http://</code> on purpose, Breeze takes the hint and leaves it alone for the rest of the session instead of bouncing between the two. Local addresses and dev servers keep <code>http://</code> as before.' ] },
       { v: '5.5.8', icon: 'download', title: 'Save Videos From X, And Fullscreen That Fills The Screen', hotfix: true, major: false, items: [
         '<b>Download Videos On X</b> — Right-clicking a video on X gives you “Download Video” now, the same as on every other site. It saves the highest-quality version the post has.',
         '<b>Why It Never Worked</b> — Two things were in the way. X lays an invisible sheet over its videos to catch clicks, so a right-click never actually landed on the video and no video options appeared. And X streams video in pieces rather than as a single file, so even once found there was no file to save. Breeze now looks past the sheet and picks up the real video file X already lists for each post.',

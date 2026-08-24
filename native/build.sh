@@ -65,14 +65,24 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>5.5.8</string>
-  <key>CFBundleShortVersionString</key><string>5.5.8</string>
+  <key>CFBundleVersion</key><string>5.5.9</string>
+  <key>CFBundleShortVersionString</key><string>5.5.9</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
+  <!-- A browser has to be able to load the http sites its user asks for. Breeze
+       still upgrades http to https on its own (see httpsUpgraded); this key only
+       stops App Transport Security from hard-failing the pages that genuinely
+       have no TLS - local/dev hosts, IP literals, http-only sites - which
+       otherwise error out with "requires the use of a secure connection". Scoped
+       to web content, so Breeze's own network calls stay ATS-protected. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key><true/>
+  </dict>
   <key>NSCameraUsageDescription</key><string>Breeze needs camera access when a website you choose asks to use your camera.</string>
   <key>NSMicrophoneUsageDescription</key><string>Breeze needs microphone access when a website you choose asks to use your microphone.</string>
   <key>NSLocationWhenInUseUsageDescription</key><string>Breeze needs location access when a website you choose asks to use your location.</string>

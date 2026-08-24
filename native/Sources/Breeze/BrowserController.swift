@@ -140,7 +140,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var siteFullscreenFrameObserver: NSObjectProtocol?
     private var siteFullscreenSyncScheduled = false
     private var pipFocusGuardObserver: NSObjectProtocol?
-    private var initialHTTPSUpgradeTabs: Set<UUID> = []
+    /// The http→https attempt currently in flight for a web view, so a site
+    /// that answers the upgrade with a downgrade redirect or a failure can be
+    /// let back down to plain http instead of ping-ponging.
+    private var pendingHTTPSUpgrades: [ObjectIdentifier: (http: URL, https: URL)] = [:]
+    /// Hosts that proved they really are http-only. They keep http for the rest
+    /// of the session.
+    private var httpsUpgradeBlockedHosts: Set<String> = []
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -2537,6 +2543,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func httpsUpgraded(_ url: URL) -> URL {
         guard url.scheme?.lowercased() == "http" else { return url }
         let host = (url.host ?? "").lowercased()
+        if httpsUpgradeBlockedHosts.contains(host) { return url }
         if host.isEmpty || host == "localhost" || host.hasSuffix(".local")
             || host == "127.0.0.1" || host == "0.0.0.0" || host == "::1"
             || host.range(of: "^\\d{1,3}(\\.\\d{1,3}){3}$", options: .regularExpression) != nil {
@@ -5353,26 +5360,31 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             decisionHandler(.cancel)
             return
         }
-        if navigationAction.targetFrame?.isMainFrame ?? true,
-           let t = tabs.first(where: { $0.webView === w }),
-           initialHTTPSUpgradeTabs.remove(t.id) != nil,
-           scheme == "http" {
-            let upgraded = httpsUpgraded(url)
-            if upgraded != url {
-                w.load(URLRequest(url: upgraded))
-                decisionHandler(.cancel)
-                return
-            }
-        }
-        // Upgrade a clicked plain-http link to https (same policy as the address
-        // bar). Scoped to .linkActivated so server-issued downgrade redirects
-        // (navigationType .other) are never touched and can't loop.
-        if navigationAction.navigationType == .linkActivated, scheme == "http" {
-            let upgraded = httpsUpgraded(url)
-            if upgraded != url {
-                w.load(URLRequest(url: upgraded))
-                decisionHandler(.cancel)
-                return
+        // Upgrade any plain-http main-frame navigation to https, same policy as
+        // the address bar. This deliberately covers every navigation type, not
+        // just .linkActivated: plenty of links navigate through JavaScript
+        // (`location.href = ...`, routers, interstitials) and arrive as .other,
+        // which is why clicking them dead-ended on http while a manual reload of
+        // the same address worked. Looping is prevented by remembering the
+        // attempt — a site that redirects the https attempt back to http, or
+        // fails it outright, is recorded as http-only and left alone after that.
+        // Non-GET navigations are skipped because re-issuing the URL would drop
+        // the form body.
+        if navigationAction.targetFrame?.isMainFrame ?? true, scheme == "http",
+           (navigationAction.request.httpMethod ?? "GET").uppercased() == "GET" {
+            let key = ObjectIdentifier(w)
+            if let pending = pendingHTTPSUpgrades[key],
+               pending.https.host?.lowercased() == url.host?.lowercased() {
+                pendingHTTPSUpgrades[key] = nil
+                httpsUpgradeBlockedHosts.insert((url.host ?? "").lowercased())
+            } else {
+                let upgraded = httpsUpgraded(url)
+                if upgraded != url {
+                    pendingHTTPSUpgrades[key] = (http: url, https: upgraded)
+                    w.load(URLRequest(url: upgraded))
+                    decisionHandler(.cancel)
+                    return
+                }
             }
         }
         // `<a download>`, blob:/data: download links, and right-click "Download
@@ -6343,6 +6355,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFailProvisionalNavigation: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
+        if fellBackToPlainHTTP(for: w, error: error) { return }
         if !isIgnorableNavigationFailure(error) {
             finishStartupNavigationIfNeeded(w)
         }
@@ -6374,6 +6387,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // request. Keep the startup cover in place for that replacement load.
         return ns.domain == "WebKitErrorDomain" && ns.code == 102
     }
+    /// An https upgrade we performed failed to connect: the host really is
+    /// http-only, so retry the original address and stop upgrading that host.
+    private func fellBackToPlainHTTP(for w: WKWebView, error: Error) -> Bool {
+        let key = ObjectIdentifier(w)
+        guard let pending = pendingHTTPSUpgrades[key] else { return false }
+        let ns = error as NSError
+        guard ns.domain == NSURLErrorDomain,
+              ![NSURLErrorCancelled, NSURLErrorUserCancelledAuthentication].contains(ns.code) else { return false }
+        let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
+        guard failing == nil || failing == pending.https.absoluteString else { return false }
+        pendingHTTPSUpgrades[key] = nil
+        httpsUpgradeBlockedHosts.insert((pending.http.host ?? "").lowercased())
+        w.load(URLRequest(url: pending.http))
+        return true
+    }
+
     func showLoadFailureIfNeeded(for w: WKWebView, error: Error) {
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && [NSURLErrorCancelled, NSURLErrorUserCancelledAuthentication].contains(ns.code) { return }
@@ -6403,6 +6432,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
+        pendingHTTPSUpgrades[ObjectIdentifier(w)] = nil
         w.magnification = tabs.first(where: { $0.webView === w })?.pageZoom ?? 1.0
         if let tab = tabs.first(where: { $0.webView === w }),
            popupDownloadCandidates.contains(tab.id),
@@ -6428,13 +6458,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.isNewTab = false
         wire(t)
         popupDownloadCandidates.insert(t.id)
-        // WebKit performs this window's first navigation itself, from the
-        // original request, so nothing above can upgrade it — and it arrives as
-        // navigationType .other, which the clicked-link upgrade deliberately
-        // skips. Mark the tab so its first main-frame navigation gets the same
-        // treatment. The mark is consumed immediately, so later server-issued
-        // https→http redirects still can't be touched.
-        initialHTTPSUpgradeTabs.insert(t.id)
         BreezeSounds.shared.play(.newTab)
         
         tabs.append(t)
