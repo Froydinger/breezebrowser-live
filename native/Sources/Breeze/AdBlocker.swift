@@ -55,7 +55,10 @@ final class AdBlocker {
         let exceptions = (Store.shared.settings["adblockSiteExceptions"] as? [String] ?? [])
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
-        let unless = exceptions.isEmpty ? nil : exceptions
+        // WebKit matches a bare host exactly; the `*` form also covers subdomains,
+        // which is what a user turning blocking off for a site expects.
+        let exceptionDomains = exceptions.flatMap { [$0, "*" + $0] }
+        let unless = exceptionDomains.isEmpty ? nil : exceptionDomains
         func trigger(_ pattern: String) -> [String: Any] {
             var t: [String: Any] = ["url-filter": pattern, "load-type": ["third-party"]]
             if let unless { t["unless-domain"] = unless }
@@ -93,7 +96,18 @@ final class AdBlocker {
             ],
             "action": ["type": "ignore-previous-rules"]
         ])
+        // Site exceptions have to come last and cover everything: `unless-domain`
+        // only exempts the rules Breeze appends, so without this the bundled
+        // EasyList kept blocking on a site the user had explicitly switched off.
+        func appendSiteExemption() {
+            guard !exceptionDomains.isEmpty else { return }
+            arr.append([
+                "trigger": ["url-filter": ".*", "if-domain": exceptionDomains],
+                "action": ["type": "ignore-previous-rules"]
+            ])
+        }
         guard mode == "advanced" else {
+            appendSiteExemption()
             guard let data = try? JSONSerialization.data(withJSONObject: arr),
                   let out = String(data: data, encoding: .utf8) else { return baseJSON }
             return out
@@ -107,6 +121,7 @@ final class AdBlocker {
                 "selector": "[id^='google_ads'],[id*='google_ads'],[id*='ad-container'],[class*='ad-container'],[class*='ad_unit'],[class*='ad-slot'],[class*='advertisement'],[data-ad],[data-testid*='ad']"
             ]
         ])
+        appendSiteExemption()
         guard let data = try? JSONSerialization.data(withJSONObject: arr),
               let out = String(data: data, encoding: .utf8) else { return baseJSON }
         return out

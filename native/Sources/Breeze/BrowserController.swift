@@ -715,8 +715,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let clearc = HoverButton(symbol: "trash", size: 22, point: 11)
         clearc.onTap = { [weak self] in self?.clearCurrentSiteCache() }
         bookmarkBtn.onTap = { [weak self] in self?.toggleBookmark() }
-        adblockModeBtn.toolTip = "Turn off Advanced blocking for this site"
-        adblockModeBtn.onTap = { [weak self] in self?.allowCurrentSiteInExtremeAdblock() }
+        adblockModeBtn.onTap = { [weak self] in self?.toggleAdblockForCurrentSite() }
         let share = HoverButton(symbol: "square.and.arrow.up", size: 22, point: 12)
         share.onTap = { [weak self, weak share] in self?.shareCurrentPage(from: share) }
         addressWrap.addSubview(copylink); addressWrap.addSubview(address)
@@ -6190,6 +6189,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 AdBlocker.shared.rebuild()
             } else {
                 AdBlocker.shared.remove(from: sharedConfig.userContentController)
+                // Rule lists only stop applying on the next load, so a page that
+                // is already open would still look blocked until it is refreshed.
+                current?.webView.reload()
             }
             updateAdblockModeButton()
         }
@@ -6233,28 +6235,54 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
-    func updateAdblockModeButton() {
-        let mode = Store.shared.string("adblockMode")
-        let extreme = (mode == "advanced" || mode == "extreme") && (Store.shared.settings["adblockEnabled"] as? Bool ?? true)
-        let host = currentHost()
+    /// True when the site in the address bar is on the "don't block here" list.
+    func adblockDisabledForCurrentSite() -> Bool {
+        guard let host = currentHost() else { return false }
         let exceptions = Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []
-        let disabledHere = host.map { h in exceptions.contains { h == $0 || h.hasSuffix("." + $0) } } ?? false
-        adblockModeBtn.isHidden = !extreme || host == nil || disabledHere
-        adblockModeBtn.isOn = extreme && !disabledHere
+        return exceptions.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
-    func allowCurrentSiteInExtremeAdblock() {
+    /// The shield in the address bar. Filled = blocking on for this site, struck
+    /// through = off. Hidden on internal pages and when blocking is off globally,
+    /// where there is nothing for it to toggle.
+    func updateAdblockModeButton() {
+        let globallyOn = (Store.shared.settings["adblockEnabled"] as? Bool ?? true)
+            && Store.shared.string("adblockMode") != "off"
+        let host = currentHost()
+        let onHere = !adblockDisabledForCurrentSite()
+        let internalPage = current?.isNewTab ?? true || current?.isChatTab ?? false
+        adblockModeBtn.isHidden = !globallyOn || host == nil || internalPage
+        adblockModeBtn.symbol = onHere ? "shield.fill" : "shield.slash"
+        adblockModeBtn.isOn = onHere
+        adblockModeBtn.toolTip = onHere
+            ? "Ad blocking is on for \(host ?? "this site") — click to turn it off here"
+            : "Ad blocking is off for \(host ?? "this site") — click to turn it back on"
+    }
+
+    /// Turn blocking off (or back on) for just the site in the address bar and
+    /// reload so the change takes effect immediately.
+    func toggleAdblockForCurrentSite() {
         guard let host = currentHost() else { return }
         var exceptions = Store.shared.settings["adblockSiteExceptions"] as? [String] ?? []
-        if !exceptions.contains(host) { exceptions.append(host) }
+        if adblockDisabledForCurrentSite() {
+            exceptions.removeAll { host == $0 || host.hasSuffix("." + $0) }
+        } else if !exceptions.contains(host) {
+            exceptions.append(host)
+        }
         Store.shared.settings["adblockSiteExceptions"] = exceptions
         Store.shared.saveSettings()
+        updateAdblockModeButton()
         AdBlocker.shared.rebuild { [weak self] in
             DispatchQueue.main.async {
                 self?.updateAdblockModeButton()
-                self?.current?.webView.reload()
+                self?.reloadCurrentTabPreservingScroll()
             }
         }
+    }
+
+    private func reloadCurrentTabPreservingScroll() {
+        guard let t = current, !t.isNewTab else { return }
+        t.webView.reload()
     }
 
     // MARK: - Theme ---------------------------------------------------------

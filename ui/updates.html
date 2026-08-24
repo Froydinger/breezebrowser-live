@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.6.0', icon: 'shield-check', title: 'A Shield In The Address Bar', hotfix: false, major: true, items: [
+        '<b>Turn Blocking Off For One Site</b> — There is a shield in the address bar now. Click it and ad blocking switches off for the site you are on, and stays off for that site until you switch it back on. Every other site keeps blocking as normal.',
+        '<b>Off Now Means Off</b> — Turning blocking off for a site only ever switched off the extra rules Breeze adds, while the main blocklist kept working in the background. That is why switching it off often seemed to do nothing. Off now means the whole thing, main blocklist included, and it covers subdomains of the site too.',
+        '<b>It Takes Effect Right Away</b> — Turning blocking off used to leave the page you were looking at exactly as it was until you refreshed it yourself. The page reloads on its own now, so you see the change immediately.' ] },
       { v: '5.5.9', icon: 'link', title: 'Clicked Links Reach The Secure Site', hotfix: true, major: false, items: [
         '<b>Links Load Instead Of Erroring</b> — Clicking a link could dump you on a plain <code>http://</code> address and an error page, even though refreshing or typing the same address worked fine. Links go to the secure version of the site now, no matter how the link is built.',
         '<b>What Was Wrong</b> — Breeze upgraded links to <code>https://</code> only when it could see you click a normal link. Plenty of sites move you along with a script instead, and those arrived looking like something Breeze had deliberately been told not to touch — so they stayed on <code>http://</code> and dead-ended. Every page you open in a tab is upgraded now.',
