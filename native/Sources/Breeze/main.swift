@@ -139,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         b.window.makeFirstResponder(b.address); b.address.currentEditor()?.selectAll(nil)
     }
     @objc func reload() { activeBrowser?.reloadCurrentTab() }
+    @objc func hardReload() { activeBrowser?.hardReloadCurrentTab() }
     @objc func goBack() { activeBrowser?.current?.webView.goBack() }
     @objc func goForward() { activeBrowser?.current?.webView.goForward() }
     @objc func zoomIn() { activeBrowser?.zoomPage(by: 0.1) }
@@ -234,6 +235,7 @@ editItem.submenu = editMenu
 let viewItem = NSMenuItem(); mainMenu.addItem(viewItem)
 let viewMenu = NSMenu(title: "View")
 viewMenu.addItem(mi("Reload Page", #selector(AppDelegate.reload), "r"))
+viewMenu.addItem(mi("Reload Ignoring Cache", #selector(AppDelegate.hardReload), "R", [.command, .shift]))
 viewMenu.addItem(.separator())
 viewMenu.addItem(mi("Zoom In", #selector(AppDelegate.zoomIn), "+"))
 viewMenu.addItem(mi("Zoom Out", #selector(AppDelegate.zoomOut), "-"))

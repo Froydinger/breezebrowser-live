@@ -922,24 +922,57 @@ final class Favicons {
     func image(for host: String, _ done: @escaping (NSImage?) -> Void) {
         guard !host.isEmpty else { done(nil); return }
         if let img = cache[host] { done(img); return }
-        let sources = [
-            "https://icons.duckduckgo.com/ip3/\(host).ico",
-            "https://\(host)/favicon.ico",
-            "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
-        ]
-        fetch(host: host, sources: sources, index: 0, done: done)
+        fetch(host: host, sources: sources(for: host, fresh: false), index: 0, fresh: false, done: done)
     }
 
-    private func fetch(host: String, sources: [String], index: Int, done: @escaping (NSImage?) -> Void) {
+    /// Re-fetch a host's icon, ignoring both the in-memory copy and any HTTP
+    /// cache. Used by "clear cache" so a site whose icon just changed shows the
+    /// new one right away instead of the old one until the app restarts. The
+    /// site's own /favicon.ico goes first here: the icon services are proxies
+    /// that serve their own stale copy for a while after a site changes.
+    func reload(for host: String, _ done: @escaping (NSImage?) -> Void = { _ in }) {
+        guard !host.isEmpty else { done(nil); return }
+        for key in variants(of: host) { cache.removeValue(forKey: key) }
+        let fresh = sources(for: host, fresh: true)
+        for source in fresh {
+            if let u = URL(string: source) {
+                URLSession.shared.configuration.urlCache?.removeCachedResponse(for: URLRequest(url: u))
+            }
+        }
+        fetch(host: host, sources: fresh, index: 0, fresh: true, done: done)
+    }
+
+    /// A host and the www./bare form of it, which is how tab rows and pins key
+    /// their icons depending on the URL they were opened from.
+    private func variants(of host: String) -> [String] {
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        return Array(Set([host, bare, "www." + bare]))
+    }
+
+    private func sources(for host: String, fresh: Bool) -> [String] {
+        let site = "https://\(host)/favicon.ico"
+        let duck = "https://icons.duckduckgo.com/ip3/\(host).ico"
+        let google = "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
+        return fresh ? [site, duck, google] : [duck, site, google]
+    }
+
+    private func fetch(host: String, sources: [String], index: Int, fresh: Bool,
+                       done: @escaping (NSImage?) -> Void) {
         guard index < sources.count, let u = URL(string: sources[index]) else {
             DispatchQueue.main.async { done(nil) }; return
         }
-        URLSession.shared.dataTask(with: u) { [weak self] d, resp, _ in
+        var request = URLRequest(url: u)
+        if fresh { request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData }
+        URLSession.shared.dataTask(with: request) { [weak self] d, resp, _ in
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if status == 200, let d, !d.isEmpty, let img = NSImage(data: d), img.size.width >= 8 {
-                DispatchQueue.main.async { self?.cache[host] = img; done(img) }
+                DispatchQueue.main.async {
+                    guard let self else { done(img); return }
+                    for key in self.variants(of: host) { self.cache[key] = img }
+                    done(img)
+                }
             } else {
-                self?.fetch(host: host, sources: sources, index: index + 1, done: done)
+                self?.fetch(host: host, sources: sources, index: index + 1, fresh: fresh, done: done)
             }
         }.resume()
     }

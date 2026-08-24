@@ -2050,12 +2050,29 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func reloadCurrentTab() {
+        if NSEvent.modifierFlags.contains(.shift) { hardReloadCurrentTab(); return }
         spinReloadButton(reload)
         if let current { reloadTabPreservingMedia(current) }
     }
 
+    /// Shift-click the reload button, or View ▸ Reload Ignoring Cache (⇧⌘R).
+    /// Throws away everything the site has cached locally — HTTP cache, the
+    /// Cache Storage API, and any service worker holding an old build — then
+    /// reloads. This is the "why am I still seeing the old version" button.
+    func hardReloadCurrentTab() {
+        spinReloadButton(reload)
+        clearCurrentSiteCache(includingServiceWorkers: true)
+    }
+
     /// Keep HTML5 video at the same point across a user-initiated refresh. This is
     /// intentionally per-tab and in-memory: navigation to another video starts fresh.
+    ///
+    /// The reload itself is `reloadFromOrigin`, not `reload`: plain `reload` obeys
+    /// each response's Cache-Control, so a site that hands out long-lived script
+    /// and style files keeps serving the copies already on disk and a refresh
+    /// shows the old build — the thing that sends you to Safari while developing.
+    /// `reloadFromOrigin` revalidates end to end, which is what Safari's ⌘R does;
+    /// unchanged files still come back as cheap 304s.
     func reloadTabPreservingMedia(_ tab: Tab) {
         let js = """
         (() => {
@@ -2070,7 +2087,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                let time = state["time"] as? Double {
                 self.pendingMediaResume[tab.id] = (time, state["wasPlaying"] as? Bool ?? false)
             }
-            tab.webView.reload()
+            tab.webView.reloadFromOrigin()
         }
     }
 
@@ -4815,25 +4832,46 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         updateRemindersSidebar()
     }
 
-    func clearCurrentSiteCache() {
+    func clearCurrentSiteCache(includingServiceWorkers: Bool = false) {
         guard let url = current?.webView.url,
               !url.isFileURL,
               let host = url.host?.lowercased() else { return }
         let store = WKWebsiteDataStore.default()
-        let cacheTypes: Set<String> = [
+        var cacheTypes: Set<String> = [
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeOfflineWebApplicationCache
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+            // What `fetch()` and the Cache Storage API keep. A site that caches
+            // its own assets this way is unaffected by clearing the HTTP cache
+            // alone, so a refresh kept serving the old build.
+            WKWebsiteDataTypeFetchCache
         ]
+        if includingServiceWorkers {
+            // A service worker can answer from its own cache without the network
+            // being consulted at all. Nothing else here reaches it, and while
+            // developing it is usually the thing pinning the old version.
+            cacheTypes.insert(WKWebsiteDataTypeServiceWorkerRegistrations)
+        }
         store.fetchDataRecords(ofTypes: cacheTypes) { [weak self] records in
             let matching = records.filter { self?.record($0, matchesHost: host) == true }
             guard !matching.isEmpty else {
-                DispatchQueue.main.async { self?.current?.webView.reload() }
+                DispatchQueue.main.async { self?.finishCacheClear(for: host) }
                 return
             }
             store.removeData(ofTypes: cacheTypes, for: matching) {
-                DispatchQueue.main.async { self?.current?.webView.reload() }
+                DispatchQueue.main.async { self?.finishCacheClear(for: host) }
             }
+        }
+    }
+
+    /// Clearing a site's cache is what you do while working on that site, so the
+    /// icon is refreshed alongside the page — it lives in its own cache that the
+    /// website data store never touches, and would otherwise stay stale.
+    private func finishCacheClear(for host: String) {
+        current?.webView.reloadFromOrigin()
+        Favicons.shared.reload(for: host) { [weak self] _ in
+            self?.refreshSidebar()
+            self?.renderPins()
         }
     }
 

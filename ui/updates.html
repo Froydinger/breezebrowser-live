@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.6.1', icon: 'refresh-cw', title: 'Refresh Actually Refreshes', hotfix: true, major: false, items: [
+        '<b>You See Your Changes Now</b> — Refreshing a site you were working on could keep showing the old version long after you changed it, so you ended up checking your work in another browser. Refresh now asks the server about every file on the page, the way Safari does.',
+        '<b>What Was Wrong</b> — Sites tell the browser how long it may reuse a file, and for scripts and stylesheets that is often hours. Breeze took that at its word on a refresh and never even asked whether the file had changed. It caught up eventually, which is what made it feel random. Files that genuinely have not changed still come back instantly, so refresh is no slower.',
+        '<b>Reload Ignoring Cache</b> — Shift-click the reload button, or press ⇧⌘R, to throw away everything a site has stored locally and start clean — including a service worker, which can serve an old version of a site without the network being involved at all.',
+        '<b>Clear Cache Reaches Further</b> — The trash button in the address bar now also clears what a site saved through its own caching, not just the browser cache, and refreshes the site icon so a changed favicon shows up straight away.' ] },
       { v: '5.6.0', icon: 'shield-check', title: 'A Shield In The Address Bar', hotfix: false, major: true, items: [
         '<b>Turn Blocking Off For One Site</b> — There is a shield in the address bar now. Click it and ad blocking switches off for the site you are on, and stays off for that site until you switch it back on. Every other site keeps blocking as normal.',
         '<b>Off Now Means Off</b> — Turning blocking off for a site only ever switched off the extra rules Breeze adds, while the main blocklist kept working in the background. That is why switching it off often seemed to do nothing. Off now means the whole thing, main blocklist included, and it covers subdomains of the site too.',
