@@ -128,6 +128,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var titleObs: [UUID: NSKeyValueObservation] = [:]
     var urlObs: [UUID: NSKeyValueObservation] = [:]
     var fullscreenObs: [UUID: NSKeyValueObservation] = [:]
+    var progressObs: [UUID: NSKeyValueObservation] = [:]
     var popupWindows: [UUID: NSWindow] = [:]
     var popupDownloadCandidates: Set<UUID> = []
     var fullscreenWebViews: Set<ObjectIdentifier> = []
@@ -144,9 +145,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// that answers the upgrade with a downgrade redirect or a failure can be
     /// let back down to plain http instead of ping-ponging.
     private var pendingHTTPSUpgrades: [ObjectIdentifier: (http: URL, https: URL)] = [:]
+    /// Watchdogs for https upgrades that never answer. A host can accept the TLS
+    /// connection and then simply never reply, which WebKit waits out for a full
+    /// minute — a blank page the whole time. See `armHTTPSUpgradeWatchdog`.
+    private var httpsUpgradeWatchdogs: [ObjectIdentifier: DispatchWorkItem] = [:]
     /// Hosts that proved they really are http-only. They keep http for the rest
     /// of the session.
     private var httpsUpgradeBlockedHosts: Set<String> = []
+    /// When we last upgraded each host to https. `pendingHTTPSUpgrades` cannot
+    /// carry this: it is cleared the moment anything commits, and a host that
+    /// answers https with a redirect straight back to http commits every time —
+    /// so the guard was gone before the bounce arrived and Breeze upgraded, got
+    /// bounced, and upgraded again forever. The page never loaded and a manual
+    /// refresh was the only way out. Keyed by host and deliberately outside the
+    /// per-navigation state.
+    private var httpsUpgradeAttempts: [String: Date] = [:]
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
     var displayNavigationWebViews: Set<ObjectIdentifier> = []
     var pendingMediaResume: [UUID: (time: Double, wasPlaying: Bool)] = [:]
     var trafficLightBaseFrames: [NSWindow.ButtonType: NSRect] = [:]
@@ -221,6 +235,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // top bar
     let topBar = NSView()
+    /// Thin determinate load bar across the top of the page area. Driven purely by
+    /// WKWebView's `estimatedProgress` — no timer, no repeating animation, and the
+    /// view is hidden the moment a load settles, so an idle Breeze still animates
+    /// nothing (see the no-perpetual-animations invariant).
+    let loadBar = NSView()
+    let loadBarFill = NSView()
+    var loadBarFillWidthC: NSLayoutConstraint!
+    private var loadBarHideWorkItem: DispatchWorkItem?
     let topSidebarBtn = HoverButton(symbol: "sidebar.left")   // shown in top bar when sidebar collapsed
     let back = HoverButton(symbol: "chevron.left", point: 14)
     let forward = HoverButton(symbol: "chevron.right", point: 14)
@@ -316,6 +338,29 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         webContainerTopC = webContainer.topAnchor.constraint(equalTo: topBar.bottomAnchor)
         webContainerTopC.isActive = true
+
+        // Load bar lives on `root`, not inside webContainer: showActive() clears
+        // every webContainer subview that isn't the active page, which would strip
+        // it on each tab switch. Pinned to the page area's top edge either way.
+        root.addSubview(loadBar)
+        loadBar.translatesAutoresizingMaskIntoConstraints = false
+        loadBar.wantsLayer = true
+        loadBar.isHidden = true
+        loadBar.addSubview(loadBarFill)
+        loadBarFill.translatesAutoresizingMaskIntoConstraints = false
+        loadBarFill.wantsLayer = true
+        loadBarFill.layer?.cornerRadius = 1
+        loadBarFillWidthC = loadBarFill.widthAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            loadBar.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+            loadBar.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+            loadBar.topAnchor.constraint(equalTo: webContainer.topAnchor),
+            loadBar.heightAnchor.constraint(equalToConstant: 3),
+            loadBarFill.leadingAnchor.constraint(equalTo: loadBar.leadingAnchor),
+            loadBarFill.topAnchor.constraint(equalTo: loadBar.topAnchor),
+            loadBarFill.bottomAnchor.constraint(equalTo: loadBar.bottomAnchor),
+            loadBarFillWidthC,
+        ])
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
@@ -449,6 +494,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             warmStartupRenderer()
         }
         startSleepTimer()
+        startMemoryPressureMonitor()
         initReminders()
         suggestionsPopover.delegate = self
         address.delegate = self
@@ -2006,16 +2052,23 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let raw = targetURL {
             // Every way of opening a link that isn't the address bar funnels
             // through here: the context menu, a link handed to Breeze by another
-            // app, session restore, the assistant, `openTab(url:from:)`. The
-            // address bar upgraded plain http on its own and these did not, so an
-            // http-only link dead-ended on App Transport Security ("requires the
-            // use of a secure connection") instead of loading. Same policy as the
-            // address bar — local and dev hosts keep http, see httpsUpgraded.
-            let u = raw.scheme?.lowercased() == "http" ? httpsUpgraded(raw) : raw
-            t.webView.load(URLRequest(url: u))
+            // app, session restore, the assistant, `openTab(url:from:)`.
+            //
+            // Load the address EXACTLY as given. This used to pre-upgrade http to
+            // https right here, which quietly broke every http-only link handed to
+            // Breeze from another app ("Open in Breeze" loading nothing): the
+            // upgrade happened before the request reached
+            // decidePolicyForNavigationAction, so that handler only ever saw an
+            // https navigation, never recorded a pendingHTTPSUpgrades entry, and
+            // the http-only host had no fallback to retry with. The page just
+            // dead-ended. The policy handler already upgrades every main-frame
+            // http GET with exactly the same rules AND remembers the attempt, so
+            // handing it the raw URL keeps the upgrade and gains the retry.
+            t.webView.load(URLRequest(url: raw))
         }
 
         showActive(); refreshSidebar()
+        enforceLiveTabBudget()
         NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         return t
     }
@@ -2123,6 +2176,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.refreshSidebar()
             NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
         }
+        progressObs[t.id] = t.webView.observe(\.estimatedProgress, options: [.new]) { [weak self] wv, _ in
+            guard let self, self.current?.webView === wv else { return }
+            self.updateLoadBar(for: wv)
+        }
         urlObs[t.id] = t.webView.observe(\.url, options: [.new]) { [weak self] webView, _ in
             self?.syncYouTubePostsUserAgent(for: webView)
             self?.syncChrome(); self?.refreshSidebar()
@@ -2229,6 +2286,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         titleObs[t.id] = nil
         urlObs[t.id] = nil
         fullscreenObs[t.id] = nil
+        progressObs[t.id] = nil
         let fullscreenKey = ObjectIdentifier(t.webView)
         fullscreenWebViews.remove(fullscreenKey)
         fullscreenTransitionGeneration.removeValue(forKey: fullscreenKey)
@@ -2269,6 +2327,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         splitClickMonitor = nil
         sleepTimer?.invalidate()
         sleepTimer = nil
+        memoryPressureSource?.cancel()
+        memoryPressureSource = nil
         pendingDownloadBroadcast?.cancel()
         pendingDownloadBroadcast = nil
         newTab.stopClock()
@@ -2315,6 +2375,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         titleObs[t.id] = nil
         urlObs[t.id] = nil
         fullscreenObs[t.id] = nil
+        progressObs[t.id] = nil
         if t.webView.navigationDelegate === self { t.webView.navigationDelegate = nil }
         if t.webView.uiDelegate === self { t.webView.uiDelegate = nil }
     }
@@ -2402,7 +2463,87 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if t.sleeping { wake(t) }
         }
         showActive(); refreshSidebar()
+        syncLoadBarToCurrentTab()
+        enforceLiveTabBudget()
         if assistantOpen { updateAIContextPills() }
+    }
+
+    // MARK: - Load progress bar ---------------------------------------------
+
+    /// Paint the load bar from a web view's `estimatedProgress`. Called only from
+    /// the KVO observer and the places that change which page is on screen, so it
+    /// costs nothing while a page just sits there. When the load settles the bar
+    /// runs to full once, fades, and hides itself — nothing keeps animating.
+    func updateLoadBar(for w: WKWebView) {
+        guard current?.webView === w, let t = current, !t.isNewTab, !t.isChatTab else {
+            hideLoadBar(animated: false)
+            return
+        }
+        let progress = w.estimatedProgress
+        guard w.isLoading, progress < 1.0 else {
+            finishLoadBar()
+            return
+        }
+        loadBarHideWorkItem?.cancel()
+        loadBarHideWorkItem = nil
+        loadBarFill.layer?.backgroundColor = Theme.shared.palette.accent.cgColor
+        if loadBar.isHidden {
+            loadBar.isHidden = false
+            loadBar.alphaValue = 1
+            // Start from the current fraction rather than sliding in from zero.
+            loadBarFillWidthC.constant = webContainer.bounds.width * CGFloat(max(progress, 0.08))
+            root.layoutSubtreeIfNeeded()
+            return
+        }
+        // Never let the bar travel backwards inside one load — that reads as an error.
+        let target = webContainer.bounds.width * CGFloat(max(progress, 0.08))
+        guard target > loadBarFillWidthC.constant else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            loadBarFillWidthC.animator().constant = target
+        }
+    }
+
+    /// Run the bar to 100%, then fade it out. One-shot.
+    private func finishLoadBar() {
+        guard !loadBar.isHidden else { return }
+        loadBarHideWorkItem?.cancel()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.16
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            loadBarFillWidthC.animator().constant = webContainer.bounds.width
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.22
+                self.loadBar.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                self?.hideLoadBar(animated: false)
+            })
+        }
+        loadBarHideWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
+    }
+
+    func hideLoadBar(animated: Bool) {
+        loadBarHideWorkItem?.cancel()
+        loadBarHideWorkItem = nil
+        loadBar.isHidden = true
+        loadBar.alphaValue = 1
+        loadBarFillWidthC.constant = 0
+    }
+
+    /// Bring the bar in line with whatever page is now on screen — after a tab
+    /// switch, a split change, or a window restore.
+    func syncLoadBarToCurrentTab() {
+        guard let t = current, !t.isNewTab, !t.isChatTab, t.webView.isLoading else {
+            hideLoadBar(animated: false)
+            return
+        }
+        hideLoadBar(animated: false)
+        updateLoadBar(for: t.webView)
     }
 
     // MARK: - Tab sleeping --------------------------------------------------
@@ -2410,20 +2551,101 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func canSleepTab(_ t: Tab) -> Bool {
         if t.sleeping || t.isNewTab || t.id == current?.id { return false }
         if t.pinUrl != nil && Store.shared.settings["keepPinnedAppsAwake"] as? Bool != false { return false }
+        // Everything below would be destroyed, not merely paused, by sleeping.
+        // Idle-hours sleeping rarely collided with these; count- and pressure-driven
+        // sleeping runs while you are actually using the browser, so they matter now.
+        if t.isChatTab { return false }                       // an AI conversation, not a page
+        if t.isPlaying || t.isInPiP { return false }           // audio/video the user is listening to
+        if t.splitPartnerId != nil { return false }            // half of a visible split view
+        if t.webView.isLoading { return false }                // mid-load; sleeping strands it
+        if t.webView.url == nil { return false }               // nothing to restore it from
         return true
     }
 
     func sleepTab(_ t: Tab) {
         guard canSleepTab(t) else { return }
         t.sleptURL = t.webView.url?.absoluteString
+        if #available(macOS 12.0, *) { t.sleptInteractionState = t.webView.interactionState }
         t.sleeping = true
         t.webView.loadHTMLString("", baseURL: nil)   // discard the page to free memory
         refreshSidebar()
     }
     func wake(_ t: Tab) {
         t.sleeping = false
+        // Prefer the saved interaction state: it restores scroll position and the
+        // whole back/forward list. Fall back to a plain load when it is missing or
+        // WebKit rejects it (a state blob from another OS version, say).
+        if #available(macOS 12.0, *), let state = t.sleptInteractionState {
+            t.webView.interactionState = state
+            t.sleptInteractionState = nil
+            // Restoring state kicks off its own load. Only treat it as handled if
+            // the web view actually took it — otherwise fall through to a plain
+            // load rather than leaving the tab on a blank page.
+            if t.webView.url != nil || t.webView.isLoading {
+                t.sleptURL = nil
+                refreshSidebar()
+                return
+            }
+        }
+        t.sleptInteractionState = nil
         if let u = t.sleptURL, let url = URL(string: u) { t.webView.load(URLRequest(url: url)) }
         t.sleptURL = nil
+        refreshSidebar()
+    }
+
+    /// Tabs that may be put to sleep right now, least-recently-used first.
+    private func sleepCandidatesLRU(idleAtLeast seconds: TimeInterval) -> [Tab] {
+        let cutoff = Date().addingTimeInterval(-seconds)
+        return tabs.filter { canSleepTab($0) && $0.lastActive < cutoff }
+                   .sorted { $0.lastActive < $1.lastActive }
+    }
+
+    /// How many web pages Breeze keeps live at once. Each awake tab is a separate
+    /// WebKit content process holding its own JS heap, DOM, and decoded images, so
+    /// a dozen ordinary tabs can outweigh the rest of the machine — that is the
+    /// "had to quit after a few tabs" slowdown. Beyond this count the
+    /// least-recently-used background tabs sleep; opening them wakes them exactly
+    /// where they were. 0 disables the cap.
+    private var liveTabBudget: Int {
+        if let n = (Store.shared.settings["maxLiveTabs"] as? NSNumber)?.intValue { return n }
+        return 12
+    }
+
+    /// Sleep the least-recently-used background tabs until the live count is back
+    /// within budget. Cheap and idempotent; safe to call after any tab change.
+    func enforceLiveTabBudget() {
+        let budget = liveTabBudget
+        guard budget > 0 else { return }
+        var live = tabs.filter { !$0.sleeping && !$0.isNewTab && !$0.isChatTab }.count
+        guard live > budget else { return }
+        // 90s of grace so a tab you just glanced at is never yanked out from under you.
+        for t in sleepCandidatesLRU(idleAtLeast: 90) {
+            if live <= budget { break }
+            sleepTab(t)
+            live -= 1
+        }
+    }
+
+    /// macOS telling us memory is tight. Shed background pages immediately rather
+    /// than letting the whole machine swap — this is the moment that used to end
+    /// in the user quitting Breeze.
+    func startMemoryPressureMonitor() {
+        let src = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        src.setEventHandler { [weak self] in
+            guard let self else { return }
+            let critical = src.mask.contains(.critical)
+            // Under warning keep a little headroom of recent tabs; under critical
+            // take everything that is not on screen.
+            let candidates = self.sleepCandidatesLRU(idleAtLeast: critical ? 0 : 60)
+            let toSleep = critical ? candidates : Array(candidates.prefix(max(1, candidates.count / 2)))
+            for t in toSleep { self.sleepTab(t) }
+            if !toSleep.isEmpty {
+                print("Breeze: memory pressure (\(critical ? "critical" : "warning")) — slept \(toSleep.count) background tab(s)")
+            }
+            URLCache.shared.removeAllCachedResponses()
+        }
+        src.resume()
+        memoryPressureSource = src
     }
     func startSleepTimer() {
         sleepTimer?.invalidate()
@@ -2654,7 +2876,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func loadPreparedURL(_ rawURL: URL, in t: Tab, focus: Bool) {
-        let url = httpsUpgraded(rawURL)
+        // Raw, unupgraded: the policy handler owns the http→https upgrade and the
+        // fallback that retries a host which turns out to be http-only. Upgrading
+        // here first hid the http scheme from it and stranded such addresses.
+        let url = rawURL
         if t.id == startupTabID && !startupRendererReady {
             pendingStartupNavigation = (url, t.id, focus)
             warmStartupRenderer()
@@ -5365,6 +5590,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         let scheme = url.scheme?.lowercased() ?? ""
         print("Breeze decidePolicyFor: \(url.absoluteString) (scheme: \(scheme))")
+        // The insecure-site interstitial's "Load anyway" button. It is a private
+        // scheme rather than a plain http link so the click cannot be confused
+        // with an ordinary navigation: reaching here means the user explicitly
+        // accepted an unencrypted connection for this host, so record it and stop
+        // upgrading that host for the rest of the session.
+        if scheme == BrowserController.allowHTTPScheme {
+            if let plain = Self.plainHTTPURL(fromAllowScheme: url) {
+                httpsUpgradeBlockedHosts.insert((plain.host ?? "").lowercased())
+                httpsUpgradeAttempts[(plain.host ?? "").lowercased()] = nil
+                pendingHTTPSUpgrades[ObjectIdentifier(w)] = nil
+                cancelHTTPSUpgradeWatchdog(for: w)
+                w.load(URLRequest(url: plain))
+            }
+            decisionHandler(.cancel)
+            return
+        }
         let whitelist = ["http", "https", "file", "about", "blob", "data"]
         if !scheme.isEmpty && !whitelist.contains(scheme) {
             print("Breeze: Opening custom scheme natively: \(url.absoluteString)")
@@ -5375,7 +5616,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if navigationAction.navigationType == .linkActivated,
            navigationAction.modifierFlags.contains(.command),
            let source = tabs.first(where: { $0.webView === w }) {
-            let tab = openTab(url: httpsUpgraded(url), from: source, autoGroupSameSite: true)
+            // Raw url, not httpsUpgraded: openTab loads what it is given and the
+            // policy handler performs the upgrade with its http-only fallback.
+            let tab = openTab(url: url, from: source, autoGroupSameSite: true)
             popupDownloadCandidates.insert(tab.id)
             decisionHandler(.cancel)
             return
@@ -5386,7 +5629,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // response-driven downloads can close the otherwise blank tab.
         if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame == nil,
            scheme == "http" || scheme == "https" {
-            let dest = httpsUpgraded(url)
+            // Raw url for the same reason as above — the upgrade (and its
+            // fallback to plain http) belongs to the policy handler alone.
+            let dest = url
             let tab: Tab
             if let source = tabs.first(where: { $0.webView === w }) {
                 tab = openTab(url: dest, from: source, autoGroupSameSite: true)
@@ -5415,9 +5660,25 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 pendingHTTPSUpgrades[key] = nil
                 httpsUpgradeBlockedHosts.insert((url.host ?? "").lowercased())
             } else {
+                let host = (url.host ?? "").lowercased()
+                // Landing back on http shortly after we upgraded this very host
+                // means the site sent us back: it is http-only in practice. Stop
+                // upgrading it and let the user decide, rather than bouncing.
+                if let last = httpsUpgradeAttempts[host],
+                   Date().timeIntervalSince(last) < 20 {
+                    httpsUpgradeAttempts[host] = nil
+                    httpsUpgradeBlockedHosts.insert(host)
+                    pendingHTTPSUpgrades[key] = nil
+                    cancelHTTPSUpgradeWatchdog(for: w)
+                    decisionHandler(.cancel)
+                    showInsecureSiteNotice(for: w, httpURL: url)
+                    return
+                }
                 let upgraded = httpsUpgraded(url)
                 if upgraded != url {
+                    httpsUpgradeAttempts[host] = Date()
                     pendingHTTPSUpgrades[key] = (http: url, https: upgraded)
+                    armHTTPSUpgradeWatchdog(for: w)
                     w.load(URLRequest(url: upgraded))
                     decisionHandler(.cancel)
                     return
@@ -6381,6 +6642,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         finishStartupNavigationIfNeeded(w)
+        if current?.webView === w { updateLoadBar(for: w) }
         syncChrome()
         updateWebAppOffer(for: w)
         if let tab = tabs.first(where: { $0.webView === w }),
@@ -6416,7 +6678,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didStartProvisionalNavigation n: WKNavigation!) {
-        if current?.webView === w { removeWebAppOffer() }
+        if current?.webView === w {
+            removeWebAppOffer()
+            updateLoadBar(for: w)
+        }
     }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
@@ -6426,6 +6691,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             finishStartupNavigationIfNeeded(w)
         }
         showLoadFailureIfNeeded(for: w, error: error)
+        if current?.webView === w { hideLoadBar(animated: false) }
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
@@ -6438,6 +6704,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             finishStartupNavigationIfNeeded(w)
         }
         showLoadFailureIfNeeded(for: w, error: error)
+        if current?.webView === w { hideLoadBar(animated: false) }
         syncChrome()
         if let tab = tabs.first(where: { $0.webView === w }), let c = aiNavWaiters.removeValue(forKey: tab.id) {
             c.resume()
@@ -6464,9 +6731,92 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL)?.absoluteString
         guard failing == nil || failing == pending.https.absoluteString else { return false }
         pendingHTTPSUpgrades[key] = nil
-        httpsUpgradeBlockedHosts.insert((pending.http.host ?? "").lowercased())
-        w.load(URLRequest(url: pending.http))
+        cancelHTTPSUpgradeWatchdog(for: w)
+        // Do NOT quietly drop back to http. The secure version genuinely isn't
+        // there, and silently serving the unencrypted page is a decision the user
+        // should make, not one Breeze should make for them. Show the interstitial;
+        // its "Load anyway" button is what allows http for this host.
+        showInsecureSiteNotice(for: w, httpURL: pending.http)
         return true
+    }
+
+    /// Give an https upgrade a bounded amount of time to produce something. Some
+    /// http-only hosts accept the TLS connection and then never reply, so WebKit
+    /// sits on the request for its full timeout and the user watches a blank page
+    /// for a minute — which is what "the link just loads nothing" felt like. If
+    /// nothing has committed by the deadline, stop and show the notice, which lets
+    /// the user retry https or accept plain http instead of waiting blindly.
+    private func armHTTPSUpgradeWatchdog(for w: WKWebView) {
+        let key = ObjectIdentifier(w)
+        cancelHTTPSUpgradeWatchdog(for: w)
+        let work = DispatchWorkItem { [weak self, weak w] in
+            guard let self, let w else { return }
+            self.httpsUpgradeWatchdogs[key] = nil
+            // Still pending means the upgraded load never committed.
+            guard let pending = self.pendingHTTPSUpgrades[key] else { return }
+            self.pendingHTTPSUpgrades[key] = nil
+            w.stopLoading()
+            self.showInsecureSiteNotice(for: w, httpURL: pending.http, timedOut: true)
+        }
+        httpsUpgradeWatchdogs[key] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+    }
+
+    private func cancelHTTPSUpgradeWatchdog(for w: WKWebView) {
+        let key = ObjectIdentifier(w)
+        httpsUpgradeWatchdogs[key]?.cancel()
+        httpsUpgradeWatchdogs[key] = nil
+    }
+
+    /// URL scheme behind the insecure-site interstitial's "Load anyway" button.
+    static let allowHTTPScheme = "breeze-allow-http"
+
+    /// `breeze-allow-http://example.com/path` → `http://example.com/path`.
+    static func plainHTTPURL(fromAllowScheme url: URL) -> URL? {
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        comps.scheme = "http"
+        return comps.url
+    }
+
+    /// Shown when Breeze's automatic https upgrade fails because the host serves
+    /// no secure version at all. Offers the plain-http address as a deliberate,
+    /// clearly-labelled choice instead of loading it silently.
+    func showInsecureSiteNotice(for w: WKWebView, httpURL: URL, timedOut: Bool = false) {
+        BreezeSounds.shared.play(.error)
+        var allowComps = URLComponents(url: httpURL, resolvingAgainstBaseURL: false)
+        allowComps?.scheme = BrowserController.allowHTTPScheme
+        let allowURL = (allowComps?.url?.absoluteString ?? httpURL.absoluteString).jsEscaped
+        let host = (httpURL.host ?? httpURL.absoluteString).htmlEscaped
+        let escapedURL = httpURL.absoluteString.htmlEscaped
+        var httpsComps = URLComponents(url: httpURL, resolvingAgainstBaseURL: false)
+        httpsComps?.scheme = "https"
+        let retryHTTPS = (httpsComps?.url?.absoluteString ?? "").jsEscaped
+        let explanation = timedOut
+            ? "<strong>\(host)</strong> didn't answer on a secure (https) connection, so Breeze stopped waiting. It most likely serves http only — anything you send over that travels unencrypted and can be read or altered on the way."
+            : "<strong>\(host)</strong> has no secure (https) version, so Breeze couldn't upgrade it. Anything you send here travels unencrypted and can be read or altered on the way."
+        let retryButton = retryHTTPS.isEmpty ? "" :
+            "<button class=\"btn secondary\" onclick=\"location.href='\(retryHTTPS)'\">Try https again</button>"
+        let html = """
+        <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>This site isn't secure</title>
+        <style>
+        :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:#eef8f8;color:#10252a}
+        body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 25% 12%,rgba(94,211,223,.32),transparent 34%),linear-gradient(145deg,#eef8f8,#dcebed)}
+        main{width:min(560px,calc(100vw - 44px));padding:34px;border-radius:24px;background:rgba(255,255,255,.72);box-shadow:0 24px 70px rgba(15,45,52,.18);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.68)}
+        h1{font-size:32px;line-height:1.05;margin:0 0 12px;font-weight:800}p{font-size:15px;line-height:1.45;margin:0 0 18px;color:rgba(16,37,42,.72)}
+        .url{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;padding:12px 14px;border-radius:14px;background:rgba(16,37,42,.07);overflow-wrap:anywhere;color:rgba(16,37,42,.82)}
+        .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.btn{appearance:none;border:0;border-radius:999px;padding:10px 16px;font-weight:700;background:#2d9aac;color:white;text-decoration:none;cursor:pointer}.secondary{background:rgba(16,37,42,.10);color:#10252a}
+        @media (prefers-color-scheme:dark){:root{background:#14252b;color:#f7fbfb}body{background:radial-gradient(circle at 25% 12%,rgba(94,211,223,.20),transparent 34%),linear-gradient(145deg,#14252b,#0f1c21)}main{background:rgba(20,30,35,.78);border-color:rgba(255,255,255,.10);box-shadow:0 24px 70px rgba(0,0,0,.34)}p,.url{color:rgba(247,251,251,.72)}.url{background:rgba(255,255,255,.08)}.secondary{background:rgba(255,255,255,.12);color:#f7fbfb}}
+        </style></head><body><main><h1>This site isn't secure.</h1>
+        <p>\(explanation)</p>
+        <div class="url">\(escapedURL)</div>
+        <div class="actions"><button class="btn secondary" onclick="history.back()">Go back</button>\(retryButton)<button class="btn" onclick="location.href='\(allowURL)'">Load anyway</button></div>
+        </main></body></html>
+        """
+        // Base the notice on the address the user actually asked for, so the URL
+        // bar keeps showing it (about:blank made the tab look like it went nowhere)
+        // and "Go back" has somewhere to return to.
+        w.loadHTMLString(html, baseURL: httpURL)
     }
 
     func showLoadFailureIfNeeded(for w: WKWebView, error: Error) {
@@ -6499,6 +6849,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         pendingHTTPSUpgrades[ObjectIdentifier(w)] = nil
+        cancelHTTPSUpgradeWatchdog(for: w)
         w.magnification = tabs.first(where: { $0.webView === w })?.pageZoom ?? 1.0
         if let tab = tabs.first(where: { $0.webView === w }),
            popupDownloadCandidates.contains(tab.id),
@@ -6752,3 +7103,4 @@ extension BrowserController: AddressSuggestionsDelegate {
         submitQuery(text, isCmdEnter: isCmd)
     }
 }
+

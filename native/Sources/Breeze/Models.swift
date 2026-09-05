@@ -808,6 +808,12 @@ final class Tab {
     var isInPiP = false
     var sleeping = false         // discarded to save memory; reloads on activate
     var sleptURL: String?        // URL to restore when woken
+    /// WKWebView interaction state captured when the tab went to sleep: the
+    /// back/forward list and scroll position. Restoring this instead of re-loading
+    /// the bare URL is what makes sleeping unnoticeable — a woken tab comes back
+    /// where you left it, with its history intact, rather than at the top of a
+    /// fresh page with no way back. `Any?` because WKWebView types it that way.
+    var sleptInteractionState: Any?
     var lastActive = Date()
     var splitPartnerId: UUID?    // if in a split pair, the UUID of the other tab
     var splitIsRight = false     // true if this tab is placed on the right side of the split
