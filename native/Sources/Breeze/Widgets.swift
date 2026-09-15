@@ -117,7 +117,12 @@ class GradientBackgroundView: NSView {
         layer.insertSublayer(g, at: 0)
         let wash = CALayer()
         wash.frame = bounds
-        wash.backgroundColor = p.accent.withAlphaComponent(0.12).cgColor
+        // The window-wide accent wash. In dark mode this 12% teal sat over every
+        // surface - chrome, sidebar, new tab - which is what made "dark" read as
+        // dark teal rather than black. Neutral in dark, accent tint kept in light.
+        wash.backgroundColor = p.isDark
+            ? NSColor(white: 1, alpha: 0.015).cgColor
+            : p.accent.withAlphaComponent(0.12).cgColor
         wash.name = "accentWash"
         layer.insertSublayer(wash, above: g)
     }
@@ -157,6 +162,19 @@ final class HoverButton: NSButton {
     var isOn = false { didSet { applyTheme() } }
     private var hovering = false
     var onTap: (() -> Void)?
+    private var widthC: NSLayoutConstraint!
+    private var heightC: NSLayoutConstraint!
+
+    /// Grow or shrink the button in place. The sidebar's command tile uses this so
+    /// a narrow sidebar scales its icons down instead of cramming them together.
+    func resize(diameter d: CGFloat, point: CGFloat) {
+        guard d != diameter || point != pointSize else { return }
+        diameter = d
+        pointSize = point
+        widthC.constant = d
+        heightC.constant = d
+        applyTheme()
+    }
 
     init(symbol: String, size: CGFloat = 30, point: CGFloat = 15) {
         super.init(frame: .zero)
@@ -169,8 +187,10 @@ final class HoverButton: NSButton {
         imagePosition = .imageOnly
         target = self; action = #selector(tapped)
         self.symbol = symbol
-        widthAnchor.constraint(equalToConstant: diameter).isActive = true
-        heightAnchor.constraint(equalToConstant: diameter).isActive = true
+        widthC = widthAnchor.constraint(equalToConstant: diameter)
+        heightC = heightAnchor.constraint(equalToConstant: diameter)
+        widthC.isActive = true
+        heightC.isActive = true
         applyTheme()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
                                                name: Theme.didChange, object: nil)
@@ -572,5 +592,100 @@ extension String {
             .replacingOccurrences(of: "'", with: "\\'")
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "")
+    }
+}
+
+/// The sidebar's command tile: the browser-level actions (settings, theme,
+/// history, bookmarks, downloads) grouped on one surface with the time and date,
+/// instead of a loose row of icons floating at the bottom of the sidebar.
+///
+/// It owns its own scaling. The sidebar is user-resizable and five fixed 30pt
+/// buttons stop fitting well before the sidebar reaches its minimum, so the icons
+/// shrink with the available width rather than colliding or being clipped. The
+/// time and date are inset to line up with the icon glyphs below them, not with
+/// the buttons' invisible hit circles.
+final class CommandTile: NSView {
+    private let row = NSStackView()
+    private let buttons: [HoverButton]
+    let timeLabel = NSTextField(labelWithString: "")
+    let dateLabel = NSTextField(labelWithString: "")
+    private let dot = NSTextField(labelWithString: "·")
+    private let meta = NSStackView()
+    private var metaLeading: NSLayoutConstraint!
+    var onTimeTap: (() -> Void)?
+    var onDateTap: (() -> Void)?
+
+    init(buttons: [HoverButton]) {
+        self.buttons = buttons
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 13
+
+        for (label, sel) in [(timeLabel, #selector(timeTapped)), (dateLabel, #selector(dateTapped))] {
+            label.font = .systemFont(ofSize: 11, weight: .medium)
+            label.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: sel))
+        }
+        dot.font = .systemFont(ofSize: 11, weight: .medium)
+        dot.stringValue = "·"
+        timeLabel.toolTip = "Reminders"
+        dateLabel.toolTip = "Today's news"
+
+        meta.orientation = .horizontal
+        meta.alignment = .firstBaseline
+        meta.spacing = 5
+        meta.translatesAutoresizingMaskIntoConstraints = false
+        [timeLabel, dot, dateLabel].forEach { meta.addArrangedSubview($0) }
+
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .equalSpacing
+        row.translatesAutoresizingMaskIntoConstraints = false
+        buttons.forEach { row.addArrangedSubview($0) }
+
+        addSubview(meta); addSubview(row)
+        metaLeading = meta.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 17)
+        NSLayoutConstraint.activate([
+            metaLeading,
+            meta.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+            meta.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            row.topAnchor.constraint(equalTo: meta.bottomAnchor, constant: 7),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
+        ])
+        applyTheme()
+        NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
+                                               name: Theme.didChange, object: nil)
+    }
+    required init?(coder: NSCoder) { nil }
+
+    @objc private func timeTapped() { onTimeTap?() }
+    @objc private func dateTapped() { onDateTap?() }
+
+    override func layout() {
+        super.layout()
+        let available = bounds.width - 20
+        guard available > 0, !buttons.isEmpty else { return }
+        let perButton = available / CGFloat(buttons.count)
+        let diameter = max(22, min(30, perButton - 4))
+        let point = max(11.5, min(15, diameter * 0.5))
+        buttons.forEach { $0.resize(diameter: diameter, point: point) }
+        // A button's glyph is centred in its circle, so the text has to start
+        // half the leftover width in to look aligned with the icon beneath it.
+        metaLeading.constant = 10 + max(0, (diameter - point) / 2)
+        // Below a certain width the date stops fitting next to the time.
+        let tight = bounds.width < 150
+        dot.isHidden = tight
+        dateLabel.isHidden = tight
+    }
+
+    @objc func applyTheme() {
+        let p = Theme.shared.palette
+        layer?.backgroundColor = p.text.withAlphaComponent(p.isDark ? 0.045 : 0.035).cgColor
+        layer?.borderWidth = 1
+        layer?.borderColor = p.text.withAlphaComponent(p.isDark ? 0.07 : 0.06).cgColor
+        let soft = p.text.withAlphaComponent(p.isDark ? 0.42 : 0.45)
+        [timeLabel, dateLabel, dot].forEach { $0.textColor = soft }
     }
 }

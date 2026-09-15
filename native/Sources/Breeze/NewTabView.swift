@@ -1,6 +1,7 @@
-// Native new-tab page: logo + clock + greeting + "Ask Breeze, or type a URL".
+// Native new-tab page: logo + greeting + "Ask Breeze, or type a URL" + the
+// suggested-sites shelf. The clock lives in the sidebar, not here.
 // Ports ui/newtab.html. No perpetual animation (per project rule) — the orbs are
-// static. A 1s clock timer is fine (not a busy loop) and pauses when hidden.
+// static. The greeting timer fires once a minute and pauses when hidden.
 
 import Cocoa
 import CoreImage
@@ -153,9 +154,13 @@ final class NewTabView: GradientBackgroundView {
     private let baseFieldHeight: CGFloat = 54
     private let maxFieldLines = 4
     private let logo = NSImageView()
-    private let clock = NSTextField(labelWithString: "--:--")
     private let greeting = NSTextField(labelWithString: "")
     private let inputHint = NSStackView()
+    /// Most-visited sites, from local history only (Store.topSites). Hidden when
+    /// the setting is off or history is empty, so a fresh profile shows nothing
+    /// rather than an empty shelf.
+    private let suggestions = NSStackView()
+    var onOpenSuggestion: ((String) -> Void)?
     private let askReturnKey = NSTextField(labelWithString: "↩")
     private let askHint = NSTextField(labelWithString: "Ask")
     private let shiftKey = NSTextField(labelWithString: "⇧")
@@ -173,11 +178,8 @@ final class NewTabView: GradientBackgroundView {
         logo.imageScaling = .scaleProportionallyUpOrDown
         logo.translatesAutoresizingMaskIntoConstraints = false
 
-        clock.font = .systemFont(ofSize: 72, weight: .ultraLight)
-        clock.alignment = .center
-        clock.translatesAutoresizingMaskIntoConstraints = false
 
-        greeting.font = .systemFont(ofSize: 15)
+        greeting.font = .systemFont(ofSize: 30, weight: .light)
         greeting.alignment = .center
         greeting.translatesAutoresizingMaskIntoConstraints = false
 
@@ -228,7 +230,26 @@ final class NewTabView: GradientBackgroundView {
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
 
-        addSubview(logo); addSubview(clock); addSubview(greeting); addSubview(fieldWrap); addSubview(inputHint)
+        suggestions.translatesAutoresizingMaskIntoConstraints = false
+        suggestions.orientation = .horizontal
+        suggestions.alignment = .centerY
+        suggestions.spacing = 10
+        suggestions.isHidden = true
+
+        // Everything lives in one column centred as a group. It used to be a chain
+        // of constraints hanging off the clock's centre, so adding anything at the
+        // bottom (the suggestion shelf) pushed the whole page visibly low.
+        let column = NSStackView(views: [logo, greeting, fieldWrap, inputHint, suggestions])
+        column.orientation = .vertical
+        column.alignment = .centerX
+        column.spacing = 0
+        column.detachesHiddenViews = true
+        column.translatesAutoresizingMaskIntoConstraints = false
+        column.setCustomSpacing(22, after: logo)
+        column.setCustomSpacing(28, after: greeting)
+        column.setCustomSpacing(11, after: fieldWrap)
+        column.setCustomSpacing(34, after: inputHint)
+        addSubview(column)
         let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 560)
         widthC.priority = .defaultHigh
         let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
@@ -236,19 +257,16 @@ final class NewTabView: GradientBackgroundView {
 
         fieldHeightConstraint = fieldWrap.heightAnchor.constraint(equalToConstant: baseFieldHeight)
         NSLayoutConstraint.activate([
-            logo.widthAnchor.constraint(equalToConstant: 64),
-            logo.heightAnchor.constraint(equalToConstant: 64),
-            logo.centerXAnchor.constraint(equalTo: centerXAnchor),
-            logo.bottomAnchor.constraint(equalTo: clock.topAnchor, constant: 6),
+            logo.widthAnchor.constraint(equalToConstant: 54),
+            logo.heightAnchor.constraint(equalToConstant: 54),
 
-            clock.centerXAnchor.constraint(equalTo: centerXAnchor),
-            clock.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -40),
+            column.centerXAnchor.constraint(equalTo: centerXAnchor),
+            // Nudged up a touch so the column reads as optically centred rather
+            // than mathematically centred, which always looks low.
+            column.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -24),
+            column.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            column.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
 
-            greeting.centerXAnchor.constraint(equalTo: centerXAnchor),
-            greeting.topAnchor.constraint(equalTo: clock.bottomAnchor, constant: 2),
-
-            fieldWrap.centerXAnchor.constraint(equalTo: centerXAnchor),
-            fieldWrap.topAnchor.constraint(equalTo: greeting.bottomAnchor, constant: 26),
             widthC,
             maxC,
             fieldHeightConstraint,
@@ -258,14 +276,67 @@ final class NewTabView: GradientBackgroundView {
             field.topAnchor.constraint(equalTo: fieldWrap.topAnchor, constant: 16),
             field.bottomAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: -16),
 
-            inputHint.centerXAnchor.constraint(equalTo: centerXAnchor),
-            inputHint.topAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: 12),
+            suggestions.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48),
         ])
         self.fieldWrap = fieldWrap
         applyTheme(); tick()
         NotificationCenter.default.addObserver(self, selector: #selector(applyTheme),
                                                name: Theme.didChange, object: nil)
     }
+    /// Rebuild the suggestion shelf. Called when the new tab appears, so it
+    /// reflects history as of now without anything polling in the background.
+    func reloadSuggestions() {
+        suggestions.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard Store.shared.settings["newTabSuggestions"] as? Bool ?? true else {
+            // Hiding must not be a one-way trip that only Settings can undo. Leave
+            // a quiet way back on the page itself.
+            guard !Store.shared.topSites(limit: 1).isEmpty else {
+                suggestions.isHidden = true
+                return
+            }
+            let show = NSButton(title: "Show suggested sites", target: nil, action: nil)
+            show.isBordered = false
+            show.font = .systemFont(ofSize: 11, weight: .medium)
+            show.contentTintColor = Theme.shared.palette.text.withAlphaComponent(0.38)
+            show.translatesAutoresizingMaskIntoConstraints = false
+            show.target = self
+            show.action = #selector(showSuggestionsAgain)
+            suggestions.addArrangedSubview(show)
+            suggestions.isHidden = false
+            return
+        }
+        let sites = Store.shared.topSites(limit: 6)
+        suggestions.isHidden = sites.isEmpty
+        guard !sites.isEmpty else { return }
+        let p = Theme.shared.palette
+        for site in sites {
+            let chip = SuggestionChip(site: site, palette: p)
+            chip.onTap = { [weak self] in self?.onOpenSuggestion?(site.url) }
+            suggestions.addArrangedSubview(chip)
+        }
+        // Dismiss right where the shelf is, rather than sending people to
+        // Settings to find out what this row even was. The choice is the same
+        // newTabSuggestions setting, so it sticks and can be undone there.
+        let hide = HoverButton(symbol: "xmark", size: 22, point: 9)
+        hide.toolTip = "Hide suggested sites"
+        hide.onTap = {
+            Store.shared.settings["newTabSuggestions"] = false
+            Store.shared.saveSettings()
+            NotificationCenter.default.post(name: NewTabView.suggestionsDismissed, object: nil)
+        }
+        suggestions.addArrangedSubview(hide)
+    }
+
+    @objc private func showSuggestionsAgain() {
+        Store.shared.settings["newTabSuggestions"] = true
+        Store.shared.saveSettings()
+        NotificationCenter.default.post(name: NewTabView.suggestionsDismissed, object: nil)
+    }
+
+    /// Posted when the shelf is dismissed from the page, so the controller can
+    /// re-render and any open Settings page picks the change up.
+    static let suggestionsDismissed = Notification.Name("BreezeNewTabSuggestionsDismissed")
+
     required init?(coder: NSCoder) { nil }
     private var fieldWrap: NSView!
     private var fieldHeightConstraint: NSLayoutConstraint!
@@ -298,15 +369,12 @@ final class NewTabView: GradientBackgroundView {
         needsDisplay = true
         let appAppearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)
         appearance = appAppearance
-        clock.appearance = appAppearance
         greeting.appearance = appAppearance
         field.appearance = appAppearance
         fieldWrap.appearance = appAppearance
 
         logo.image = breezeLogo()
-        let clockColor = p.isDark ? p.text.withAlphaComponent(0.72) : p.text.withAlphaComponent(0.58)
         let softColor = p.isDark ? p.text.withAlphaComponent(0.62) : p.text.withAlphaComponent(0.68)
-        clock.textColor = clockColor
         greeting.textColor = softColor
         let hintColor = p.text.withAlphaComponent(p.isDark ? 0.50 : 0.56)
         inputHint.arrangedSubviews.compactMap { $0 as? NSTextField }.forEach { $0.textColor = hintColor }
@@ -318,10 +386,19 @@ final class NewTabView: GradientBackgroundView {
                 attributes: [
                     .font: key.font ?? NSFont.systemFont(ofSize: 10.5, weight: .semibold),
                     .foregroundColor: hintColor,
-                    .baselineOffset: -1.5
+                    // Negative lowers the glyph. The arrow and shift glyphs sit high
+                    // in their em box, so without this they float near the top edge
+                    // of the key cap instead of centring in it.
+                    .baselineOffset: -3.0,
+                    .paragraphStyle: {
+                        let ps = NSMutableParagraphStyle()
+                        ps.alignment = .center
+                        return ps
+                    }()
                 ]
             )
         }
+        if !suggestions.arrangedSubviews.isEmpty { reloadSuggestions() }
         field.textColor = p.text
         field.placeholderAttributedString = NSAttributedString(
             string: "Ask Breeze, or type a URL",
@@ -339,17 +416,38 @@ final class NewTabView: GradientBackgroundView {
 
     func tick() {
         let now = Date()
-        let f = DateFormatter(); f.dateFormat = Store.shared.bool("clock24") ? "H:mm" : "h:mm"
-        clock.stringValue = f.string(from: now)
         let h = Calendar.current.component(.hour, from: now)
-        greeting.stringValue = h < 12 ? "Good morning." : (h < 18 ? "Good afternoon." : "Good evening.")
+        let part = h < 12 ? "Good morning" : (h < 18 ? "Good afternoon" : "Good evening")
+        let name = (Store.shared.settings["userName"] as? String ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        greeting.stringValue = name.isEmpty ? "\(part)." : "\(part), \(name)."
         greeting.isHidden = !Store.shared.bool("showGreeting")
+        // Name the engine the keystroke will actually use, so ⇧⏎ is not a guess.
+        searchHint.stringValue = "Search with \(NewTabView.searchEngineName())"
+    }
+
+    /// Display name for the configured search engine.
+    static func searchEngineName() -> String {
+        switch (Store.shared.settings["searchEngine"] as? String ?? "spectra").lowercased() {
+        case "google":     return "Google"
+        case "duckduckgo": return "DuckDuckGo"
+        case "bing":       return "Bing"
+        case "brave":      return "Brave"
+        default:           return "Spectra"
+        }
     }
 
     func startClock() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
         tick()
+        // The display only has minute resolution, so waking every second was pure
+        // idle work. Fire on the next minute boundary, then once a minute.
+        let delay = 60 - Calendar.current.component(.second, from: Date())
+        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(delay), repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.tick()
+            self.timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.tick() }
+        }
     }
     func stopClock() { timer?.invalidate(); timer = nil }
 
@@ -367,5 +465,124 @@ final class NewTabView: GradientBackgroundView {
         // with a use-after-free in applyChromeTheme(). One runloop turn later the
         // text system has fully unwound, so it's safe to tear the view down.
         DispatchQueue.main.async { [weak self] in self?.onSubmit?(t, isCmd) }
+    }
+}
+
+/// One site on the new-tab suggestion shelf: favicon over a short label.
+/// Deliberately plain — no counts, no "because you visited", nothing that reads
+/// as surveillance. Just the sites you actually use, one click away.
+final class SuggestionChip: NSView {
+    var onTap: (() -> Void)?
+    private let iconView = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+    private var hovering = false
+    private let palette: Palette
+
+    init(site: (url: String, title: String, host: String), palette: Palette) {
+        self.palette = palette
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 14
+
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.wantsLayer = true
+        iconView.layer?.cornerRadius = 6
+        iconView.layer?.masksToBounds = true
+        iconView.image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
+        iconView.contentTintColor = palette.text.withAlphaComponent(0.55)
+        Favicons.shared.image(for: site.host) { [weak self] img in
+            guard let self, let img else { return }
+            self.iconView.contentTintColor = nil
+            self.iconView.image = img
+        }
+
+        label.stringValue = SuggestionChip.siteName(title: site.title, host: site.host)
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.alignment = .center
+        label.textColor = palette.text.withAlphaComponent(0.62)
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(iconView); addSubview(label)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 76),
+            iconView.widthAnchor.constraint(equalToConstant: 26),
+            iconView.heightAnchor.constraint(equalToConstant: 26),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            label.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 7),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
+        ])
+        toolTip = site.title
+    }
+    required init?(coder: NSCoder) { nil }
+
+    /// A readable name for the site rather than its bare hostname.
+    ///
+    /// Page titles put the site name in no fixed position - "Main Page - Wikipedia"
+    /// ends with it, "GitHub · Explore" starts with it - so picking by position
+    /// alone mislabels half of them. Instead, match each segment against the
+    /// host's own name and prefer the one that matches; fall back to the last
+    /// segment, which is the more common convention, and then to the host.
+    static func siteName(title: String, host: String) -> String {
+        let cleaned = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hostLabel = hostKeyword(host)
+        var name = cleaned
+
+        if !cleaned.isEmpty {
+            var parts: [String] = [cleaned]
+            for sep in [" — ", " – ", " | ", " · ", " - ", ": "] where cleaned.contains(sep) {
+                parts = cleaned.components(separatedBy: sep)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                break
+            }
+            if parts.count > 1 {
+                let matched = parts.first { part in
+                    let squashed = part.lowercased().filter { $0.isLetter || $0.isNumber }
+                    return !hostLabel.isEmpty && !squashed.isEmpty
+                        && (squashed == hostLabel || squashed.contains(hostLabel) || hostLabel.contains(squashed))
+                }
+                name = matched ?? parts.last ?? cleaned
+            }
+        }
+
+        if name.isEmpty { name = host }
+        // A "title" that is really just the URL helps nobody - prefer the host.
+        if name.lowercased().hasPrefix("http") { name = host }
+        return name.count > 16 ? String(name.prefix(15)) + "…" : name
+    }
+
+    /// "en.wikipedia.org" -> "wikipedia", "github.com" -> "github". The part of a
+    /// hostname that a site actually calls itself.
+    private static func hostKeyword(_ host: String) -> String {
+        var labels = host.lowercased().split(separator: ".").map(String.init)
+        let junk: Set<String> = ["www", "com", "org", "net", "io", "co", "app", "dev", "gov", "edu", "uk", "us"]
+        labels.removeAll { junk.contains($0) }
+        return (labels.max(by: { $0.count < $1.count }) ?? host)
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeInActiveApp],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true; restyle() }
+    override func mouseExited(with event: NSEvent) { hovering = false; restyle() }
+    override func mouseUp(with event: NSEvent) { onTap?() }
+
+    private func restyle() {
+        // Hover only — no resting animation, per the idle-GPU rule.
+        layer?.backgroundColor = hovering
+            ? palette.text.withAlphaComponent(palette.isDark ? 0.08 : 0.06).cgColor
+            : NSColor.clear.cgColor
+        label.textColor = palette.text.withAlphaComponent(hovering ? 0.85 : 0.62)
     }
 }

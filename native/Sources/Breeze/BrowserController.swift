@@ -263,6 +263,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var findOrdinal = 0
 
     // footer
+    /// The clock lives here now, not on the new tab page. It used to be a 72pt
+    /// hero on a page you only see when opening a tab; in the sidebar it is
+    /// visible the whole time and costs one line.
+    private weak var commandTile: CommandTile?
+    private var sidebarClockTimer: Timer?
     let adblockPill = NSView()
     let adblockCount = NSTextField(labelWithString: "0")
 
@@ -658,6 +663,32 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
 
 
+    /// Tick on the minute boundary, then once a minute - the display has minute
+    /// resolution, so waking every second would be idle work for nothing.
+    func startSidebarClock() {
+        sidebarClockTimer?.invalidate()
+        tickSidebarClock()
+        let delay = 60 - Calendar.current.component(.second, from: Date())
+        sidebarClockTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(delay), repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.tickSidebarClock()
+            self.sidebarClockTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                self?.tickSidebarClock()
+            }
+        }
+    }
+
+    func tickSidebarClock() {
+        guard let tile = commandTile else { return }
+        let now = Date()
+        let t = DateFormatter()
+        t.dateFormat = Store.shared.bool("clock24") ? "H:mm" : "h:mm"
+        tile.timeLabel.stringValue = t.string(from: now)
+        let d = DateFormatter()
+        d.setLocalizedDateFormatFromTemplate("EEEMMMd")
+        tile.dateLabel.stringValue = d.string(from: now)
+    }
+
     func buildFooter() -> NSView {
         let footer = NSView(); footer.translatesAutoresizingMaskIntoConstraints = false
 
@@ -673,11 +704,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             self?.cycleThemeSetting()
         }
         themeButton = theme
-        let row = NSStackView(views: [settings, theme, history, bookmarks, dl])
-        row.spacing = 8; row.alignment = .centerY
-        footer.addSubview(row)
-        row.pin(to: footer)
+        let tile = CommandTile(buttons: [settings, theme, history, bookmarks, dl])
+        tile.onTimeTap = { [weak self] in
+            // Reminders live in the Nav group of Settings.
+            self?.openInternal(.settings, fragment: "reminders")
+        }
+        tile.onDateTap = { [weak self] in
+            guard let self else { return }
+            self.openTab(url: self.searchURL(for: "today's news"))
+        }
+        commandTile = tile
+        footer.addSubview(tile)
+        tile.pin(to: footer)
         refreshThemeIcon(theme)
+        startSidebarClock()
         return footer
     }
 
@@ -964,6 +1004,18 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layer?.masksToBounds = false
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
+        NotificationCenter.default.addObserver(forName: NewTabView.suggestionsDismissed,
+                                               object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.newTab.reloadSuggestions()
+            self.broadcastToInternalPages()
+        }
+        newTab.onOpenSuggestion = { [weak self] url in
+            guard let self, let t = self.current else { return }
+            t.isNewTab = false
+            self.loadPreparedURL(URL(string: url) ?? URL(fileURLWithPath: "/"), in: t, focus: true)
+            self.showActive(); self.refreshSidebar()
+        }
         newTab.field.delegate = self
     }
 
@@ -1285,6 +1337,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let primary: NSView = t.isNewTab ? newTab : t.webView
         if t.isNewTab {
             newTab.startClock()
+            newTab.reloadSuggestions()
             window.makeFirstResponder(newTab.field)
         } else {
             newTab.stopClock()
@@ -2327,6 +2380,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         splitClickMonitor = nil
         sleepTimer?.invalidate()
         sleepTimer = nil
+        sidebarClockTimer?.invalidate()
+        sidebarClockTimer = nil
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         pendingDownloadBroadcast?.cancel()
@@ -5606,6 +5661,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             decisionHandler(.cancel)
             return
         }
+        // Breeze's own internal scheme. Without this it fell through to the
+        // unknown-scheme branch below and got handed to NSWorkspace, which asked
+        // macOS to find an app for "breeze://settings" and produced a Finder alert
+        // saying no application is set to open it — for a URL Breeze itself shows
+        // in its address bar.
+        if scheme == "breeze" {
+            let slug = (url.host?.isEmpty == false ? url.host! : String(url.absoluteString.dropFirst("breeze://".count)))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if let page = InternalPage(rawValue: slug.lowercased()) {
+                openInternal(page)
+            }
+            decisionHandler(.cancel)
+            return
+        }
         let whitelist = ["http", "https", "file", "about", "blob", "data"]
         if !scheme.isEmpty && !whitelist.contains(scheme) {
             print("Breeze: Opening custom scheme natively: \(url.absoluteString)")
@@ -6495,7 +6564,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             renderPins()
         }
         applyChromeTheme()
-        if changedKey == nil || changedKey == "adblockEnabled" || changedKey == "adblockMode" {
+        if changedKey == nil || changedKey == "adblockEnabled" || changedKey == "adblockMode" || changedKey == "adblockSiteExceptions" {
             if Store.shared.settings["adblockEnabled"] as? Bool ?? true {
                 AdBlocker.shared.rebuild()
             } else {
@@ -6511,7 +6580,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if changedKey == nil || changedKey == "pluginCreatorTools" {
             updateCreatorToolsAvailability()
         }
-        if changedKey == nil || changedKey == "clock24" || changedKey == "showGreeting" || changedKey == "userName" {
+        if changedKey == nil || changedKey == "newTabSuggestions" {
+            newTab.reloadSuggestions()
+        }
+        if changedKey == nil || changedKey == "clock24" { tickSidebarClock() }
+        if changedKey == nil || changedKey == "clock24" || changedKey == "showGreeting" || changedKey == "userName" || changedKey == "searchEngine" {
             newTab.tick()
         }
         if changedKey == "notificationSounds" || changedKey == "browserSoundVolume" {
@@ -6632,7 +6705,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         address.needsDisplay = true
         // Tint within-window blur with the same accent wash used by the chrome
         // background, so hover-peek reads as chrome floating over the page.
-        sidebarGlass.layer?.backgroundColor = p.accent.withAlphaComponent(p.isDark ? 0.10 : 0.08).cgColor
+        // Same reason as the Nav wash: in dark mode this accent tint sat over the
+        // neutral background and turned the sidebar teal. Neutral glass in dark.
+        sidebarGlass.layer?.backgroundColor = p.isDark
+            ? NSColor(white: 1, alpha: 0.02).cgColor
+            : p.accent.withAlphaComponent(0.08).cgColor
         updateFindBarAppearance()
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft

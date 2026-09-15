@@ -36,7 +36,7 @@ final class Store {
         "newTabInputMode": "ask",
         "clock24": false,
         "showGreeting": true,
-        "urlBarPosition": "top",
+        "newTabSuggestions": true,
         "userName": "",
         "adblockEnabled": true,
         "adblockMode": "on",
@@ -54,9 +54,10 @@ final class Store {
         "updateSounds": true,
         "autoPip": true,
         "keepPinnedAppsAwake": true,
-        "restoreTabs": false,
+        "restoreTabs": "ask",      // "ask" | "always" | "never" - read as a String
         "webNotifications": true,
         "tabSleepHours": 1,
+        "maxLiveTabs": 12,         // 0 = no cap; see enforceLiveTabBudget
         "aiInstructions": "",
         "aiIncludeHistory": false,
         "aiIncludeBookmarks": false,
@@ -224,6 +225,44 @@ final class Store {
         history.insert(["url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0)
         if history.count > 5000 { history = Array(history.prefix(5000)) }
         saveHistory()
+    }
+
+    /// Most-visited sites for the new-tab page, ranked from local history alone.
+    ///
+    /// Deliberately not "profiling": history is a JSON file in this app's support
+    /// directory, this reads it in memory, and nothing is sent anywhere, stored
+    /// elsewhere, or tied to an identifier. It is the same data the History page
+    /// already shows, just counted. Turning the setting off stops the call being
+    /// made at all; clearing history empties it.
+    ///
+    /// Score is visit count weighted by recency (~two-week half-life) so the
+    /// sites you use *now* outrank something you hammered once months ago.
+    func topSites(limit: Int = 8) -> [(url: String, title: String, host: String)] {
+        let now = Date().timeIntervalSince1970 * 1000
+        struct Agg { var score = 0.0; var url = ""; var title = ""; var ts = 0.0 }
+        var best: [String: Agg] = [:]
+        for entry in history {
+            guard let url = entry["url"] as? String,
+                  let parsed = URL(string: url),
+                  var host = parsed.host?.lowercased(), !host.isEmpty else { continue }
+            if host.hasPrefix("www.") { host.removeFirst(4) }
+            let ts = (entry["ts"] as? Double) ?? 0
+            let ageDays = max(0, (now - ts) / 86_400_000)
+            let weight = pow(0.5, ageDays / 14)
+            var agg = best[host] ?? Agg()
+            agg.score += weight
+            if ts >= agg.ts {
+                agg.ts = ts
+                agg.url = url
+                let title = (entry["title"] as? String) ?? ""
+                agg.title = title.isEmpty ? host : title
+            }
+            best[host] = agg
+        }
+        return best
+            .sorted { $0.value.score > $1.value.score }
+            .prefix(limit)
+            .map { (url: $0.value.url, title: $0.value.title, host: $0.key) }
     }
 
     func isBookmarked(_ url: String) -> Bool { bookmarks.contains { $0["url"] as? String == url } }

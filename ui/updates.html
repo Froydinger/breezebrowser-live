@@ -19,7 +19,7 @@
       --ease: cubic-bezier(0.22,1,0.36,1);
     }
     html.dark {
-      --bg: #151618; --bg-alt: #1c1d21; --card: rgba(255,255,255,0.07); --text: #ececf0;
+      --bg: #191919; --bg-alt: #1f1f1f; --card: rgba(255,255,255,0.07); --text: #ececf0;
       --soft: rgba(236,236,240,0.62); --faint: rgba(236,236,240,0.34); --line: rgba(255,255,255,0.1);
       --shadow: 0 22px 70px rgba(0,0,0,0.28);
       color-scheme: dark;
@@ -226,6 +226,16 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.0.0', icon: 'sparkles', title: 'Breeze 6 — A Real Redesign', hotfix: false, major: true, items: [
+        '<b>A New New Tab</b> — The giant clock is gone. The page leads with a greeting and the thing you came for, the input, and the whole page is centred as one block instead of drifting low. The hint under the box now names your actual search engine — “Search with Spectra”, or Google, or whichever you picked.',
+        '<b>Suggested Sites</b> — The sites you actually use, one click under the search box. Worked out on your Mac from your own history — nothing is sent anywhere, nothing is profiled, and clearing your history clears them. Hide them with the × on the shelf; a quiet “Show suggested sites” brings them back without a trip to Settings.',
+        '<b>A Command Tile In The Sidebar</b> — The loose row of icons at the bottom of the sidebar is now a single grouped tile holding the time, the date and the browser controls. Narrow the sidebar and the icons scale down instead of squashing together. Click the time for reminders, the date for today’s news.',
+        '<b>Settings Is One Page</b> — Eleven tabs, some holding a single button, became one scrolling page with a search box at the top: type “sleep” or “sounds” and only those settings remain. The rail jumps you around and follows as you scroll, and the Danger Zone is back as its own clearly-marked section.',
+        '<b>Dark Mode Is Actually Dark</b> — Every surface carried a teal wash, so “dark” read as dark teal rather than black. It is a flat neutral #191919 now — chrome, sidebar and new tab the same colour, no seam where they meet. Coloured accents stay.',
+        '<b>Nav Looks The Part</b> — The composer is a floating rounded bar with a border and a soft shadow rather than a flat strip welded to the bottom, and messages ease in instead of snapping into place.',
+        '<b>Settings You Could Not Reach</b> — How many tabs Breeze keeps loaded is yours to set. Sleep timing gained 30-minute and 1-hour options. The sites you switched ad blocking off for are listed in one place so you can switch them back on without visiting each one.',
+        '<b>breeze:// Links Work</b> — Opening a breeze:// address handed it to macOS, which put up a dialog saying no application could open it. Breeze handles its own addresses now.',
+        '<b>Odds And Ends</b> — Selector pills sit in a properly round track, the ⏎ and ⇧ glyphs on the new tab are centred in their keys, and the clock wakes once a minute instead of once a second.' ] },
       { v: '5.6.6', icon: 'key-round', title: 'Apple Passwords, Tightened Up', hotfix: true, major: false, items: [
         '<b>No Passkey Button That Does Nothing</b> — 5.6.5 let Apple’s own sites offer passkeys, on the belief they worked there. They do not: clicking “Sign in with Passkey” on Apple’s site simply did nothing, because macOS withholds Touch ID and iCloud Keychain from a browser without Apple’s entitlement on every site, Apple’s included. Passkeys are off everywhere again, so you get a password field that works instead of a button that doesn’t.',
         '<b>Open Apple Passwords Actually Opens It</b> — The button on the Passwords page only ever opened a System Settings pane, and never checked whether that worked. It now opens the Passwords app itself, and falls back to System Settings if it has to.',

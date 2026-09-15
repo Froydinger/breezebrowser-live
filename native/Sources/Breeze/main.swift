@@ -56,13 +56,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    /// A breeze:// URL handed to us by the system (or another app) names an
+    /// internal page, not a website. Without this it became a tab trying to load
+    /// an unknown scheme.
+    private func openBreezeURL(_ url: URL, in browser: BrowserController) -> Bool {
+        guard url.scheme?.lowercased() == "breeze" else { return false }
+        let slug = (url.host?.isEmpty == false ? url.host! : String(url.absoluteString.dropFirst("breeze://".count)))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let page = InternalPage(rawValue: slug.lowercased()) else { return true }
+        browser.openInternal(page)
+        return true
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first else { return }
-        if let b = activeBrowser {
-            b.openTab(url: url.absoluteString)
+        let b: BrowserController
+        if let existing = activeBrowser {
+            b = existing
         } else {
-            let b = BrowserController()
+            b = BrowserController()
             browsers.append(b)
+        }
+        if !openBreezeURL(url, in: b) {
             b.openTab(url: url.absoluteString)
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -71,11 +87,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: urlString) else { return }
         DispatchQueue.main.async {
-            if let b = self.activeBrowser {
-                b.openTab(url: url.absoluteString)
+            let b: BrowserController
+            if let existing = self.activeBrowser {
+                b = existing
             } else {
-                let b = BrowserController()
+                b = BrowserController()
                 self.browsers.append(b)
+            }
+            if !self.openBreezeURL(url, in: b) {
                 b.openTab(url: url.absoluteString)
             }
             NSApp.activate(ignoringOtherApps: true)

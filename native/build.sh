@@ -65,8 +65,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>5.6.6</string>
-  <key>CFBundleShortVersionString</key><string>5.6.6</string>
+  <key>CFBundleVersion</key><string>6.0.0</string>
+  <key>CFBundleShortVersionString</key><string>6.0.0</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
@@ -100,6 +100,18 @@ ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
       <array>
         <string>http</string>
         <string>https</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Breeze Internal Pages</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>breeze</string>
       </array>
     </dict>
   </array>

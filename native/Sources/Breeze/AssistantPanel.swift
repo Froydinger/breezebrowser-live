@@ -123,7 +123,18 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         ])
 
         // input row
+        // Arc-style composer: a floating, fully-rounded bar that sits above the
+        // conversation rather than being welded to the bottom edge - border,
+        // translucency and a soft shadow instead of a flat filled rectangle.
         let inputWrap = NSView(); inputWrap.wantsLayer = true; inputWrap.layer?.cornerRadius = 26
+        inputWrap.layer?.borderWidth = 1
+        inputWrap.shadow = {
+            let sh = NSShadow()
+            sh.shadowBlurRadius = 18
+            sh.shadowOffset = NSSize(width: 0, height: -3)
+            sh.shadowColor = NSColor.black.withAlphaComponent(0.20)
+            return sh
+        }()
         inputWrap.translatesAutoresizingMaskIntoConstraints = false
         input.placeholderString = "Ask anything…"
         input.font = .systemFont(ofSize: 13.5)
@@ -389,6 +400,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         row.orientation = .horizontal; row.spacing = 0
         row.translatesAutoresizingMaskIntoConstraints = false
         messagesStack.addArrangedSubview(row)
+        animateMessageIn(row)
         row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor).isActive = true
         bubble.widthAnchor.constraint(equalToConstant: 236).isActive = true
         bubble.heightAnchor.constraint(equalToConstant: 236).isActive = true
@@ -526,6 +538,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         row.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(card)
         messagesStack.addArrangedSubview(row)
+        animateMessageIn(row)
         NSLayoutConstraint.activate([
             row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor),
             card.topAnchor.constraint(equalTo: row.topAnchor),
@@ -574,6 +587,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let row = NSView(); row.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(loader)
         messagesStack.addArrangedSubview(row)
+        animateMessageIn(row)
         NSLayoutConstraint.activate([
             row.widthAnchor.constraint(equalTo: messagesStack.widthAnchor),
             loader.topAnchor.constraint(equalTo: row.topAnchor),
@@ -879,6 +893,27 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         return lum > 0.6 ? NSColor(white: 0.08, alpha: 1) : .white
     }
 
+    /// One-shot entrance for a newly added message. Arc animates each message in
+    /// instead of having it blink into place; this is the restrained AppKit
+    /// version - a fade and a short rise. It removes itself on completion and
+    /// nothing keeps running afterwards, per the no-perpetual-animations rule.
+    func animateMessageIn(_ view: NSView) {
+        view.wantsLayer = true
+        guard let layer = view.layer else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        let rise = CABasicAnimation(keyPath: "transform.translation.y")
+        rise.fromValue = -9
+        rise.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [fade, rise]
+        group.duration = 0.26
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        group.isRemovedOnCompletion = true
+        layer.add(group, forKey: "bzMessageIn")
+    }
+
     private func scrollToBottom() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -923,7 +958,12 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let wash = layer.sublayers?.first { $0.name == "assistantAccentWash" } ?? CALayer()
         wash.name = "assistantAccentWash"
         wash.frame = bounds
-        wash.backgroundColor = p.accent.withAlphaComponent(0.12).cgColor
+        // Dark mode keeps the surface a flat neutral: an accent-tinted wash over
+        // #191919 is what made Nav read teal, and opening it visibly re-tinted the
+        // whole window. Light mode still gets the accent tint.
+        wash.backgroundColor = p.isDark
+            ? NSColor(white: 1, alpha: 0.02).cgColor
+            : p.accent.withAlphaComponent(0.12).cgColor
         if wash.superlayer == nil { layer.insertSublayer(wash, above: gradient) }
     }
 
@@ -933,7 +973,14 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         appearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)   // sync glass/material so light-mode chat text stays readable
         layer?.backgroundColor = p.bg.cgColor
         syncBackgroundLayers()
-        inputWrap.layer?.backgroundColor = p.surface.cgColor
+        // Lift the composer off the panel: brighter fill than the surface behind it
+        // plus a hairline border, which is what makes Arc's input read as floating.
+        inputWrap.layer?.backgroundColor = (p.isDark
+            ? NSColor(white: 1, alpha: 0.055)
+            : NSColor(white: 1, alpha: 0.92)).cgColor
+        inputWrap.layer?.borderColor = (p.isDark
+            ? NSColor(white: 1, alpha: 0.10)
+            : NSColor.black.withAlphaComponent(0.08)).cgColor
         input.textColor = p.text
         status.textColor = p.textSoft
         headerLogo.image = navLogo()
@@ -1080,10 +1127,10 @@ private final class MessageBubbleView: NSView {
     init(text: NSAttributedString, isUser: Bool, accent: NSColor, isDark: Bool) {
         self.text = text
         self.isUser = isUser
-        self.insets = NSEdgeInsets(top: isUser ? 10 : 16, left: isUser ? 17 : 18, bottom: isUser ? 10 : 17, right: isUser ? 17 : 18)
+        self.insets = NSEdgeInsets(top: isUser ? 11 : 17, left: isUser ? 18 : 20, bottom: isUser ? 11 : 18, right: isUser ? 18 : 20)
         self.fillColor = isUser
             ? (accent.usingColorSpace(.deviceRGB) ?? accent)
-            : NSColor(srgbRed: 0.075, green: 0.078, blue: 0.09, alpha: 0.96)
+            : NSColor(white: 0.122, alpha: 0.96)
         self.borderColor = isUser ? nil : NSColor.white.withAlphaComponent(isDark ? 0.08 : 0.12)
         self.shadowOpacity = isUser ? 0.04 : 0.10
         self.shadowRadius = isUser ? 4 : 9
@@ -1162,7 +1209,7 @@ private final class TaskLoaderView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 17
-        layer?.backgroundColor = NSColor(srgbRed: 0.075, green: 0.078, blue: 0.09, alpha: 0.96).cgColor
+        layer?.backgroundColor = NSColor(white: 0.122, alpha: 0.96).cgColor
         layer?.borderWidth = 1
         layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
 
