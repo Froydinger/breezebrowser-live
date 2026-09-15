@@ -73,6 +73,8 @@ let sharedConfig: WKWebViewConfiguration = {
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
         injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    c.userContentController.addUserScript(WKUserScript(source: breezeNoPasskeyJS,
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMsg")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
     c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeFullscreen")
@@ -724,6 +726,47 @@ let breezeKeyboardJS = """
 // supported macOS 14–26 releases, route the standard web API through native
 // Core Location so sites receive both Breeze's per-origin prompt and macOS's
 // Location Services prompt instead of an immediate POSITION_UNAVAILABLE error.
+/// Hide WebAuthn from sites.
+///
+/// Breeze is signed with a self-signed certificate, so macOS refuses it the
+/// platform authenticator: Touch ID and iCloud Keychain are off limits without
+/// Apple's `com.apple.developer.web-browser.public-key-credential` entitlement,
+/// which needs a paid developer account and Apple's approval. What the user got
+/// instead was the worst of both worlds — sites saw `window.PublicKeyCredential`,
+/// offered "sign in with a passkey", walked them all the way to the prompt, and
+/// then failed.
+///
+/// Removing the feature-detection surface makes sites offer a password instead,
+/// which is the thing that actually works here. Revisit this the day the
+/// entitlement lands — deleting these is the ONLY thing to undo.
+let breezeNoPasskeyJS = """
+(() => {
+  const nope = () => Promise.reject(new DOMException('Not supported', 'NotSupportedError'));
+  try { delete window.PublicKeyCredential; } catch (_) {}
+  try {
+    Object.defineProperty(window, 'PublicKeyCredential',
+      { configurable: true, get: () => undefined });
+  } catch (_) {}
+  const creds = navigator.credentials;
+  if (!creds) return;
+  // Leave password/federated credentials alone; only refuse publicKey requests.
+  for (const name of ['get', 'create']) {
+    const original = creds[name] && creds[name].bind(creds);
+    if (!original) continue;
+    try {
+      Object.defineProperty(creds, name, {
+        configurable: true,
+        writable: true,
+        value: function (options) {
+          if (options && options.publicKey) return nope();
+          return original(options);
+        }
+      });
+    } catch (_) {}
+  }
+})();
+"""
+
 let breezeGeolocationJS = """
 (function () {
   if (location.protocol === 'file:' || window.__breezeGeolocationInstalled) return;
@@ -850,6 +893,8 @@ final class Tab {
                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.addUserScript(WKUserScript(source: breezeGeolocationJS,
                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            c.userContentController.addUserScript(WKUserScript(source: breezeNoPasskeyJS,
+                injectionTime: .atDocumentStart, forMainFrameOnly: false))
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeMedia")
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeFullscreen")
             c.userContentController.add(BreezeScriptMessageRouter.shared, name: "breezeLinkMenu")

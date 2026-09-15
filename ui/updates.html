@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.6.4', icon: 'key-round', title: 'No More Passkeys That Go Nowhere', hotfix: true, major: false, items: [
+        '<b>Sites Ask For Your Password Again</b> — Signing in with a passkey used to take you all the way to the prompt and then fail. Breeze now tells sites it has no passkey support, so they offer you a password instead of a dead end.',
+        '<b>Why Passkeys Do Not Work</b> — macOS only lets a browser reach Touch ID and iCloud Keychain passkeys if Apple grants it a specific entitlement, which requires a paid developer account and Apple’s approval. Breeze does not have it yet, so the passkey could never finish no matter what. Better to not offer it than to waste your time.',
+        '<b>Honest Wording</b> — The welcome screen used to say system passkeys “just work” while Settings said they were coming later. Both now say the same true thing.',
+        '<b>If A Site Only Takes Passkeys</b> — A small number of sites accept nothing else. Those will not be usable in Breeze until the entitlement is in place — they did not work before either.' ] },
       { v: '5.6.3', icon: 'link', title: 'Links That Actually Open, And You Can See Them Load', hotfix: true, major: false, items: [
         '<b>“Open In Breeze” Links Work</b> — Clicking a link in Mail, Messages, Slack or anywhere else could hand Breeze the address and then show you nothing at all — a blank page, or a tab that never appeared. Those links open properly now, whether Breeze was already running or started up to take them.',
         '<b>What Was Wrong</b> — Breeze switched links to the secure <code>https://</code> address a moment too early, before the part of the browser that watches the connection could see it. That part is what notices a site has no secure version and retries — so it never got the chance, and the page simply dead-ended with nothing to fall back to.',
