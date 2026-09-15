@@ -81,9 +81,26 @@ link prominent on the lander.
 - Do not lose the Developer ID cert once shipping on it — same rule as
   "Breeze Signing" today. Export the .p12 and back it up.
 
-## Current state (5.6.4)
+## Current state (5.6.6)
 
 - Self-signed "Breeze Signing", hardened runtime off, no entitlements file
 - Passkeys hidden from sites via `breezeNoPasskeyJS`, so sites offer passwords
-- Without the entitlement macOS blocks the platform authenticator entirely —
-  no Touch ID, no iCloud Keychain
+- **Passkeys do not work anywhere, Apple's own sites included.** 5.6.5 briefly
+  exempted apple.com/icloud.com on the assumption Apple's own relying parties
+  worked unentitled. They do not. Measured in Breeze on appleid.apple.com:
+  `isUserVerifyingPlatformAuthenticatorAvailable()` returns **false**, and Apple's
+  "Sign in with Passkey" button does nothing when clicked. macOS withholds the
+  platform authenticator from an unentitled browser on **every** origin. The
+  exemption was removed in 5.6.6. Do not market Apple passkey support.
+- Apple Passwords autofill **does** work and is unaffected — it is WebKit-native,
+  with no custom code in Breeze. The passkey block deliberately refuses only pure
+  passkey requests so password/federated credential calls pass through untouched.
+
+## How to re-measure after the entitlement lands
+
+Inject a temporary user script that sets `document.title` to the result of
+`PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()`, load
+`appleid.apple.com/sign-in`, and read the tab title. `UV=true` means the platform
+authenticator is finally being offered; that is the signal to delete
+`breezeNoPasskeyJS`. `UV=false` means the entitlement is not actually in effect,
+no matter what the portal says.
