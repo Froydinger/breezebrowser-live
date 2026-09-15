@@ -6453,8 +6453,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         case "isDefaultBrowser":
             resolve(isDefaultBrowser() ? "true" : "false")
         case "openSystemPasswords":
-            if let url = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension") {
-                NSWorkspace.shared.open(url)
+            // Prefer the real Passwords app (macOS 15+). The old path only ever
+            // opened the System Settings AutoFill pane and ignored whether that
+            // even succeeded, so on a machine where the URL scheme is stale the
+            // button silently did nothing. Fall back down the chain instead.
+            let ws = NSWorkspace.shared
+            let passwordsApp = URL(fileURLWithPath: "/System/Applications/Passwords.app")
+            let settingsPane = URL(string: "x-apple.systempreferences:com.apple.Passwords-Settings.extension")
+            if FileManager.default.fileExists(atPath: passwordsApp.path) {
+                ws.openApplication(at: passwordsApp, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                    guard error != nil, let settingsPane else { return }
+                    DispatchQueue.main.async { ws.open(settingsPane) }
+                }
+            } else if let settingsPane {
+                ws.open(settingsPane)
             }
         default:
             break

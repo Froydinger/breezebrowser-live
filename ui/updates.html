@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.6.6', icon: 'key-round', title: 'Apple Passwords, Tightened Up', hotfix: true, major: false, items: [
+        '<b>No Passkey Button That Does Nothing</b> — 5.6.5 let Apple’s own sites offer passkeys, on the belief they worked there. They do not: clicking “Sign in with Passkey” on Apple’s site simply did nothing, because macOS withholds Touch ID and iCloud Keychain from a browser without Apple’s entitlement on every site, Apple’s included. Passkeys are off everywhere again, so you get a password field that works instead of a button that doesn’t.',
+        '<b>Open Apple Passwords Actually Opens It</b> — The button on the Passwords page only ever opened a System Settings pane, and never checked whether that worked. It now opens the Passwords app itself, and falls back to System Settings if it has to.',
+        '<b>Autofill Protected</b> — Turning passkeys off is now surgical: only pure passkey requests are refused. A site asking for a saved password, or for a password and a passkey together, is left alone, so Apple Passwords autofill can never be caught in the crossfire.',
+        '<b>Honest Wording</b> — The Passwords and Settings pages no longer claim passkeys work on Apple’s sites.' ] },
       { v: '5.6.5', icon: 'key-round', title: 'Apple Passkeys Still Work', hotfix: true, major: false, items: [
         '<b>Apple Sign-In Keeps Its Passkeys</b> — 5.6.4 switched passkeys off everywhere to stop sites walking you to a prompt that could never finish. That went too far: passkeys on Apple’s own sites do work in Breeze, and they got switched off with everything else. Apple ID, iCloud and “Sign in with Apple” use passkeys again.',
         '<b>Everywhere Else Is Unchanged</b> — Other sites still ask for a password rather than offering a passkey that dies at the last step. That stays until Apple grants Breeze the browser entitlement passkeys require.',

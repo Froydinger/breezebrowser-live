@@ -741,14 +741,13 @@ let breezeKeyboardJS = """
 /// entitlement lands — deleting these is the ONLY thing to undo.
 let breezeNoPasskeyJS = """
 (() => {
-  // Apple's own sites are the exception: their passkey sign-in works in Breeze
-  // today even unentitled, so hiding WebAuthn from them would remove something
-  // that actually functions. Everywhere else the ceremony cannot finish, so the
-  // honest move is to not advertise it. Frame-scoped on purpose - an Apple ID
-  // sign-in iframe embedded in another site keeps working.
-  const ALLOW = ['apple.com', 'icloud.com'];
-  const host = (location.hostname || '').toLowerCase();
-  if (ALLOW.some(d => host === d || host.endsWith('.' + d))) return;
+  // No allowlist, deliberately. 5.6.5 exempted apple.com and icloud.com on the
+  // assumption their passkeys worked unentitled. They do not: probing
+  // appleid.apple.com in Breeze returns
+  // isUserVerifyingPlatformAuthenticatorAvailable() === false, and Apple's own
+  // "Sign in with Passkey" button does nothing when clicked. macOS withholds the
+  // platform authenticator from an unentitled browser on every origin, Apple's
+  // included, so exempting them only restored a dead button. Blanket again.
   const nope = () => Promise.reject(new DOMException('Not supported', 'NotSupportedError'));
   try { delete window.PublicKeyCredential; } catch (_) {}
   try {
@@ -766,7 +765,11 @@ let breezeNoPasskeyJS = """
         configurable: true,
         writable: true,
         value: function (options) {
-          if (options && options.publicKey) return nope();
+          // Only ever refuse a pure passkey request. Apple Passwords autofill
+          // rides on password/federated credentials, and a site may ask for a
+          // password and a passkey in one call - let those through untouched so
+          // the password half still works.
+          if (options && options.publicKey && !options.password && !options.federated) return nope();
           return original(options);
         }
       });
