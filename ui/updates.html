@@ -226,7 +226,7 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
-      { v: '5.6.2', icon: 'link', title: 'Links That Actually Open, And You Can See Them Load', hotfix: true, major: false, items: [
+      { v: '5.6.3', icon: 'link', title: 'Links That Actually Open, And You Can See Them Load', hotfix: true, major: false, items: [
         '<b>“Open In Breeze” Links Work</b> — Clicking a link in Mail, Messages, Slack or anywhere else could hand Breeze the address and then show you nothing at all — a blank page, or a tab that never appeared. Those links open properly now, whether Breeze was already running or started up to take them.',
         '<b>What Was Wrong</b> — Breeze switched links to the secure <code>https://</code> address a moment too early, before the part of the browser that watches the connection could see it. That part is what notices a site has no secure version and retries — so it never got the chance, and the page simply dead-ended with nothing to fall back to.',
         '<b>No More Endless Bouncing</b> — A site that answers <code>https://</code> by sending you straight back to <code>http://</code> put Breeze in a loop, upgrading and getting bounced over and over while you stared at a blank page. Refreshing was the only way out. Breeze now spots the bounce the first time it happens and stops.',
