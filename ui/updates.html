@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '5.6.5', icon: 'key-round', title: 'Apple Passkeys Still Work', hotfix: true, major: false, items: [
+        '<b>Apple Sign-In Keeps Its Passkeys</b> — 5.6.4 switched passkeys off everywhere to stop sites walking you to a prompt that could never finish. That went too far: passkeys on Apple’s own sites do work in Breeze, and they got switched off with everything else. Apple ID, iCloud and “Sign in with Apple” use passkeys again.',
+        '<b>Everywhere Else Is Unchanged</b> — Other sites still ask for a password rather than offering a passkey that dies at the last step. That stays until Apple grants Breeze the browser entitlement passkeys require.',
+        '<b>Works Inside Other Sites Too</b> — A “Sign in with Apple” box embedded in someone else’s page is covered, not just apple.com in the address bar.' ] },
       { v: '5.6.4', icon: 'key-round', title: 'No More Passkeys That Go Nowhere', hotfix: true, major: false, items: [
         '<b>Sites Ask For Your Password Again</b> — Signing in with a passkey used to take you all the way to the prompt and then fail. Breeze now tells sites it has no passkey support, so they offer you a password instead of a dead end.',
         '<b>Why Passkeys Do Not Work</b> — macOS only lets a browser reach Touch ID and iCloud Keychain passkeys if Apple grants it a specific entitlement, which requires a paid developer account and Apple’s approval. Breeze does not have it yet, so the passkey could never finish no matter what. Better to not offer it than to waste your time.',

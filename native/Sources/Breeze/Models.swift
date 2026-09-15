@@ -741,6 +741,14 @@ let breezeKeyboardJS = """
 /// entitlement lands — deleting these is the ONLY thing to undo.
 let breezeNoPasskeyJS = """
 (() => {
+  // Apple's own sites are the exception: their passkey sign-in works in Breeze
+  // today even unentitled, so hiding WebAuthn from them would remove something
+  // that actually functions. Everywhere else the ceremony cannot finish, so the
+  // honest move is to not advertise it. Frame-scoped on purpose - an Apple ID
+  // sign-in iframe embedded in another site keeps working.
+  const ALLOW = ['apple.com', 'icloud.com'];
+  const host = (location.hostname || '').toLowerCase();
+  if (ALLOW.some(d => host === d || host.endsWith('.' + d))) return;
   const nope = () => Promise.reject(new DOMException('Not supported', 'NotSupportedError'));
   try { delete window.PublicKeyCredential; } catch (_) {}
   try {
