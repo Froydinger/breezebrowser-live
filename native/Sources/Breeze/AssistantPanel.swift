@@ -9,6 +9,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private let status = NSTextField(labelWithString: "")
     let input = NSTextField()
     private let sendBtn = HoverButton(symbol: "arrow.up.circle.fill", size: 30, point: 20)
+    /// True while a reply is in flight, which is what turns Send into Stop.
+    private(set) var isRunning = false
+    var onStop: (() -> Void)?
     private let attachBtn = HoverButton(symbol: "paperclip", size: 28, point: 15)
     private let creatorBtn = HoverButton(symbol: "play.rectangle.fill", size: 28, point: 14)
     /// Floating "new chat" button shown only in fullscreen (the header is hidden there).
@@ -155,7 +158,12 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         contextDoc.addSubview(contextRow)
         contextScroll.documentView = contextDoc
         contextScroll.isHidden = true
-        sendBtn.onTap = { [weak self] in self?.send() }
+        sendBtn.onTap = { [weak self] in
+            guard let self else { return }
+            // One control, one place: the send button becomes Stop while a reply is
+            // in flight rather than adding a second button that is dead most of the time.
+            if self.isRunning { self.onStop?() } else { self.send() }
+        }
         attachBtn.onTap = { [weak self] in self?.onAttach?() }
         inputWrap.addSubview(attachBtn); inputWrap.addSubview(input); inputWrap.addSubview(sendBtn)
 
@@ -581,6 +589,22 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         tipLabel?.stringValue = navTips.isEmpty ? "" : navTips[tipIndex]
         refreshTipVisibility()   // fresh tip + restart rotation on a new chat
     }
+    /// Flip the composer between Send and Stop.
+    func setRunning(_ running: Bool) {
+        isRunning = running
+        sendBtn.symbol = running ? "stop.circle.fill" : "arrow.up.circle.fill"
+        sendBtn.toolTip = running ? "Stop" : "Send"
+    }
+
+    /// Close out an interrupted run: keep whatever Nav managed to do (the tool
+    /// chips show which pages it opened) and say plainly that it was stopped,
+    /// rather than clearing the bubble as though nothing happened.
+    func addInterrupted(_ note: String, chips: [String]) {
+        hideTaskLoader()
+        setStatus(nil)
+        addAI(note, chips: chips)
+    }
+
     func setStatus(_ s: String?) {
         status.isHidden = (s == nil)
         status.stringValue = s ?? ""

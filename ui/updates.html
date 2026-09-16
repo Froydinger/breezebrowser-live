@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.0.2', icon: 'circle-stop', title: 'You Can Stop Nav', hotfix: true, major: false, items: [
+        '<b>A Stop Button</b> — While Nav is working, the send button becomes a stop button. Press it and the whole thing stops where it is — no finishing the step it was on, no trying to summarise what it had.',
+        '<b>It Keeps What It Did</b> — A stopped run does not vanish. Nav says it was stopped, and the chips stay so you can see which pages it had already opened and read. A stopped research run says “Research interrupted.”',
+        '<b>Only That Request</b> — Stopping cancels the one reply in flight and nothing else. The chat stays, your history stays, and the next thing you send works normally. A reply that arrives after you stop is discarded rather than appearing late.' ] },
       { v: '6.0.1', icon: 'copy', title: 'Copy What Nav Says, And Sites Behave Again', hotfix: true, major: false, items: [
         '<b>Nav Replies Are Text Again</b> — You can select them, right-click them, and copy them. A Copy button appears on a reply when you hover it. Nav’s answers were being drawn as pictures of text, which is why none of that worked.',
         '<b>Replies Float, You Get The Pill</b> — Nav’s answers are plain text on the panel and your own messages are a translucent accent pill outlined in full-strength teal, so it is still obvious who said what without boxing long answers in.',

@@ -299,6 +299,9 @@ enum Agent {
         }
 
         for step in 0..<maxSteps {
+            // Stop means stop: no finishing the current step, no synthesising what
+            // was gathered so far.
+            try Task.checkCancellation()
             let reply: String
             do { reply = try await ask(prompt) }
             catch {

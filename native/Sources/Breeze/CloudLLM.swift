@@ -28,7 +28,8 @@ final class CloudLLM: NSObject {
     func cacheKey(_ key: String) {}
 
     func resetChat() {}
-    func shutdown() {}
+    func shutdown() { cancelCurrent() }
+    private var currentTask: Task<Void, Never>?
 
     private func setStatus(_ s: String) {
         lastStatus = s
@@ -51,7 +52,12 @@ final class CloudLLM: NSObject {
         }
 
         let turnID = UUID().uuidString
-        Task {
+        // Kept so Stop can cancel exactly this run and nothing else. Cancelling
+        // the Task cancels the URLSession request it is awaiting, and Agent.run
+        // checks for cancellation between steps so a multi-step research run
+        // stops where it is instead of finishing the step it was on.
+        currentTask?.cancel()
+        currentTask = Task {
             do {
                 var turnHistory: [[String: String]] = [
                     ["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))]
@@ -75,12 +81,27 @@ final class CloudLLM: NSObject {
                         ]
                         return try await self.complete(history: freshHistory, requestID: turnID)
                     })
+                if Task.isCancelled { return }
                 await MainActor.run { completion(.success((answer, chips))) }
+            } catch is CancellationError {
+                // Stop is a user action, not a failure - the panel decides what to
+                // show, and a late reply must never overwrite it.
+                return
             } catch {
+                if Task.isCancelled { return }
                 await MainActor.run { completion(.failure(error)) }
             }
         }
     }
+
+    /// Stop the run in flight. Only this request: the backend, the chat and any
+    /// later message are untouched.
+    func cancelCurrent() {
+        currentTask?.cancel()
+        currentTask = nil
+    }
+
+    var isRunning: Bool { currentTask != nil && !(currentTask?.isCancelled ?? true) }
 
     private func complete(history: [[String: String]], minimal: Bool = false, requestID: String) async throws -> String {
         guard let url = endpoint(path: "/v1/chat/completions") else {

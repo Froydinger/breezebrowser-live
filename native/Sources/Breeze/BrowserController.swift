@@ -433,6 +433,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onSlashTasks = { [weak self] token in self?.aiSlashTasks(token) }
         assistant.onSlashTasksEnd = { [weak self] in self?.suggestionsPopover.hide() }
         assistant.onClose = { [weak self] in self?.setAssistant(false) }
+        assistant.onStop = { [weak self] in
+            guard let self else { return }
+            self.llm.cancelCurrent()
+            self.hideRainbowGlow()
+            self.assistant.setRunning(false)
+            self.assistant.setInputEnabled(true)
+            self.assistant.focusInput()
+            // Keep what the run actually managed to do. The chips list the pages it
+            // opened and read, so a stopped research run still shows its work.
+            let chips = self.aiVisitedSources.map { $0.0 }
+            let researching = self.pendingCreatorVideoTab == nil && !chips.isEmpty
+            self.assistant.addInterrupted(researching ? "Research interrupted." : "Stopped.", chips: chips)
+            self.pendingCreatorVideoTab = nil
+        }
         assistant.onNewChat = { [weak self] in self?.newChat() }
         assistant.onAtMention = { [weak self] in self?.aiAtMention() }
         assistant.onRemoveContext = { [weak self] i in self?.removeAIContext(i) }
@@ -3979,6 +3993,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let working = text.range(of: "research", options: .caseInsensitive) != nil ? "Researching…" : "Thinking…"
         assistant.setStatus(working)
         assistant.showTaskLoader(working)
+        assistant.setRunning(true)
         showRainbowGlow()
 
         Task { [weak self] in
@@ -3991,6 +4006,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 self.ailog("model returned")
                 self.hideRainbowGlow()
                 self.assistant.hideTaskLoader()
+                self.assistant.setRunning(false)
                 self.assistant.setStatus(nil); self.assistant.setInputEnabled(true); self.assistant.focusInput()
                 switch r {
                 case .success(let (answer, toolChips)):
