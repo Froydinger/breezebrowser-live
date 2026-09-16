@@ -228,7 +228,8 @@
     const RELEASES = [
       { v: '6.0.1', icon: 'copy', title: 'Copy What Nav Says, And Sites Behave Again', hotfix: true, major: false, items: [
         '<b>Nav Replies Are Text Again</b> — You can select them, right-click them, and copy them. A Copy button appears on a reply when you hover it. Nav’s answers were being drawn as pictures of text, which is why none of that worked.',
-        '<b>Replies Float, You Get The Bubble</b> — Nav’s answers are now plain text on the panel and your own messages are the accent pill, so it is still obvious who said what without boxing long answers in.',
+        '<b>Replies Float, You Get The Pill</b> — Nav’s answers are plain text on the panel and your own messages are a translucent accent pill outlined in full-strength teal, so it is still obvious who said what without boxing long answers in.',
+        '<b>Readable In Light Mode</b> — Message colours were baked in when a reply was drawn and never updated, so a chat written in dark mode turned near-invisible after switching to light. Messages re-colour with the theme now, and the context chips above the box have contrast in both.',
         '<b>Right-Click Works On Sites That Have Their Own</b> — Sites with a custom right-click menu, like Suno, showed Breeze’s menu instead of theirs — Breeze grabbed the event before the page could. The page goes first now.',
         '<b>Delete Deletes</b> — Pressing Delete to remove a selected item did nothing on some sites, because Breeze marked the key as handled before the page saw it. The page gets it first; Breeze only steps in to stop the old Backspace-goes-back behaviour when nothing else wanted the key.',
         '<b>No More Phantom Error Sound</b> — Typing the first character of a tweet played the error sound. X starts a navigation there and immediately abandons it; Breeze treated that as a page that failed to load. A load you never actually saw is no longer reported as an error.' ] },

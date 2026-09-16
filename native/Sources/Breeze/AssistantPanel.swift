@@ -465,13 +465,21 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         row.translatesAutoresizingMaskIntoConstraints = false
         for c in visibleChips {
             let clean = cleanPillText(c)
-            let pill = NSView(); pill.wantsLayer = true; pill.layer?.cornerRadius = 8
-            pill.layer?.backgroundColor = p.surface.cgColor
+            // Exactly half the 18pt height: an 8pt radius leaves a 2pt straight
+            // segment at each end, which reads as a lens rather than a pill.
+            let pill = NSView(); pill.wantsLayer = true; pill.layer?.cornerRadius = 9
+            pill.layer?.cornerCurve = .circular
+            // p.surface is white-at-55% in light mode, which is invisible on a light
+            // panel. Tint from the text colour instead so the chip has contrast in
+            // both themes, and give it a hairline edge.
+            pill.layer?.backgroundColor = p.text.withAlphaComponent(p.isDark ? 0.10 : 0.06).cgColor
+            pill.layer?.borderWidth = 1
+            pill.layer?.borderColor = p.text.withAlphaComponent(p.isDark ? 0.14 : 0.12).cgColor
             pill.translatesAutoresizingMaskIntoConstraints = false
             let icon = NSImageView(image: contextIcon(for: clean))
             icon.imageScaling = .scaleProportionallyDown
             icon.translatesAutoresizingMaskIntoConstraints = false
-            let l = NSTextField(labelWithString: compactPillText(clean)); l.font = .systemFont(ofSize: 10.5); l.textColor = p.textSoft
+            let l = NSTextField(labelWithString: compactPillText(clean)); l.font = .systemFont(ofSize: 10.5); l.textColor = p.text.withAlphaComponent(0.75)
             l.lineBreakMode = .byTruncatingTail
             l.translatesAutoresizingMaskIntoConstraints = false
             pill.addSubview(icon); pill.addSubview(l)
@@ -530,7 +538,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
             // in light mode.
             attributed = Self.renderMarkdown(text, color: p.text)   // **bold**, lists, etc.
         }
-        let card = MessageBubbleView(text: attributed, isUser: user, accent: p.accent, isDark: p.isDark)
+        let card = MessageBubbleView(text: attributed, rawText: text, isUser: user, accent: p.accent, isDark: p.isDark)
         card.translatesAutoresizingMaskIntoConstraints = false
         card.setContentHuggingPriority(.required, for: .horizontal)
         card.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -977,6 +985,12 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     @objc func applyTheme() {
         let p = Theme.shared.palette
         appearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)   // sync glass/material so light-mode chat text stays readable
+        // Message colours are baked into their attributed strings, so they have to
+        // be rebuilt here or a chat rendered in one theme stays unreadable in the
+        // other. Sizes are unchanged, so no re-measure is needed.
+        for record in messageBubbles {
+            record.bubble?.applyPalette(p) { text, color in Self.renderMarkdown(text, color: color) }
+        }
         layer?.backgroundColor = p.bg.cgColor
         syncBackgroundLayers()
         // Lift the composer off the panel: brighter fill than the surface behind it
@@ -1118,8 +1132,6 @@ final class GeneratedImageBubble: NSView {
 
 private final class MessageBubbleView: NSView {
     private let isUser: Bool
-    private let fillColor: NSColor?
-    private let strokeColor: NSColor?
     private let insets: NSEdgeInsets
 
     // Measurement runs on its own text system, deliberately NOT the one the text
@@ -1134,8 +1146,15 @@ private final class MessageBubbleView: NSView {
     private var textView: NSTextView!
     private var copyButton: HoverButton?
     private var hovering = false
+    /// The message as it arrived. Colours are baked into the attributed string at
+    /// render time, so without this a chat rendered in dark mode keeps its
+    /// near-white text after switching to light and becomes unreadable.
+    let rawText: String
+    private var accent: NSColor
 
-    init(text: NSAttributedString, isUser: Bool, accent: NSColor, isDark: Bool) {
+    init(text: NSAttributedString, rawText: String, isUser: Bool, accent: NSColor, isDark: Bool) {
+        self.rawText = rawText
+        self.accent = accent
         self.isUser = isUser
         // Only the user gets a container. Nav's replies are free-floating prose on
         // the panel itself - the accent pill vs plain text is what separates them,
@@ -1143,9 +1162,6 @@ private final class MessageBubbleView: NSView {
         // A washed accent fill with the accent itself at full strength on the
         // outline: the pill still reads as yours at a glance without a solid slab
         // of colour competing with the text beside it.
-        let solidAccent = accent.usingColorSpace(.deviceRGB) ?? accent
-        self.fillColor = isUser ? solidAccent.withAlphaComponent(isDark ? 0.18 : 0.14) : nil
-        self.strokeColor = isUser ? solidAccent : nil
         self.insets = isUser
             ? NSEdgeInsets(top: 11, left: 18, bottom: 11, right: 18)
             : NSEdgeInsets(top: 4, left: 2, bottom: 12, right: 2)
@@ -1188,6 +1204,22 @@ private final class MessageBubbleView: NSView {
     override var isFlipped: Bool { true }
 
     var plainText: String { storage.string }
+
+    /// Re-colour for a new theme. `render` rebuilds the attributed string because
+    /// markdown styling and colour are baked together.
+    func applyPalette(_ palette: Palette, render: (String, NSColor) -> NSAttributedString) {
+        accent = palette.accent.usingColorSpace(.deviceRGB) ?? palette.accent
+        let attributed = isUser
+            ? NSAttributedString(string: rawText, attributes: [
+                .font: NSFont.systemFont(ofSize: 14),
+                .foregroundColor: palette.text
+              ])
+            : render(rawText, palette.text)
+        storage.setAttributedString(attributed)
+        textView?.textStorage?.setAttributedString(attributed)
+        needsDisplay = true
+        needsLayout = true
+    }
 
     private func copyMessage() {
         NSPasteboard.general.clearContents()
@@ -1255,7 +1287,9 @@ private final class MessageBubbleView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let fillColor else { return }   // Nav's replies have no container to draw
+        guard isUser else { return }   // Nav's replies have no container to draw
+        let fillColor = accent.withAlphaComponent(Theme.shared.palette.isDark ? 0.18 : 0.14)
+        let strokeColor = accent
         let radius = min(28, bounds.height / 2)
         let path = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
         NSGraphicsContext.saveGraphicsState()
@@ -1266,7 +1300,7 @@ private final class MessageBubbleView: NSView {
         fillColor.setFill()
         path.fill()
         NSGraphicsContext.restoreGraphicsState()
-        if let strokeColor {
+        do {
             strokeColor.setStroke()
             let inset = path.lineWidth / 2
             let stroked = NSBezierPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
