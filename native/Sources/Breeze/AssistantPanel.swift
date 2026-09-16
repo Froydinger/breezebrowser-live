@@ -518,11 +518,17 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         if user {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 14),
-                .foregroundColor: onAccentText(p.accent)
+                // Was white-on-solid-accent. The pill is a translucent wash over the
+                // panel now, so the text has to follow the theme or it disappears
+                // in light mode.
+                .foregroundColor: p.text
             ]
             attributed = NSAttributedString(string: text, attributes: attrs)
         } else {
-            attributed = Self.renderMarkdown(text, color: .white)   // **bold**, lists, etc.
+            // Free-floating on the panel now, not on a dark bubble, so it takes the
+            // theme's text colour instead of a hardcoded white that would vanish
+            // in light mode.
+            attributed = Self.renderMarkdown(text, color: p.text)   // **bold**, lists, etc.
         }
         let card = MessageBubbleView(text: attributed, isUser: user, accent: p.accent, isDark: p.isDark)
         card.translatesAutoresizingMaskIntoConstraints = false
@@ -1111,89 +1117,163 @@ final class GeneratedImageBubble: NSView {
 }
 
 private final class MessageBubbleView: NSView {
-    private let text: NSAttributedString
     private let isUser: Bool
-    private let fillColor: NSColor
-    private let borderColor: NSColor?
-    private let shadowOpacity: Float
-    private let shadowRadius: CGFloat
-    private let shadowYOffset: CGFloat
+    private let fillColor: NSColor?
+    private let strokeColor: NSColor?
     private let insets: NSEdgeInsets
+
+    // Measurement runs on its own text system, deliberately NOT the one the text
+    // view uses. An NSTextView makes its container track the view's width, so a
+    // shared container reports the full panel width for every message and short
+    // replies render as full-width bubbles.
     private let storage = NSTextStorage()
     private let layoutManager = NSLayoutManager()
-    private let textContainer = NSTextContainer()
+    private let measureContainer = NSTextContainer()
     private var textWidth: CGFloat = 0
 
+    private var textView: NSTextView!
+    private var copyButton: HoverButton?
+    private var hovering = false
+
     init(text: NSAttributedString, isUser: Bool, accent: NSColor, isDark: Bool) {
-        self.text = text
         self.isUser = isUser
-        self.insets = NSEdgeInsets(top: isUser ? 11 : 17, left: isUser ? 18 : 20, bottom: isUser ? 11 : 18, right: isUser ? 18 : 20)
-        self.fillColor = isUser
-            ? (accent.usingColorSpace(.deviceRGB) ?? accent)
-            : NSColor(white: 0.122, alpha: 0.96)
-        self.borderColor = isUser ? nil : NSColor.white.withAlphaComponent(isDark ? 0.08 : 0.12)
-        self.shadowOpacity = isUser ? 0.04 : 0.10
-        self.shadowRadius = isUser ? 4 : 9
-        self.shadowYOffset = isUser ? 1 : 3
+        // Only the user gets a container. Nav's replies are free-floating prose on
+        // the panel itself - the accent pill vs plain text is what separates them,
+        // and long answers read better without being boxed.
+        // A washed accent fill with the accent itself at full strength on the
+        // outline: the pill still reads as yours at a glance without a solid slab
+        // of colour competing with the text beside it.
+        let solidAccent = accent.usingColorSpace(.deviceRGB) ?? accent
+        self.fillColor = isUser ? solidAccent.withAlphaComponent(isDark ? 0.18 : 0.14) : nil
+        self.strokeColor = isUser ? solidAccent : nil
+        self.insets = isUser
+            ? NSEdgeInsets(top: 11, left: 18, bottom: 11, right: 18)
+            : NSEdgeInsets(top: 4, left: 2, bottom: 12, right: 2)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
-        storage.addLayoutManager(layoutManager)
-        layoutManager.addTextContainer(textContainer)
-        textContainer.lineFragmentPadding = 0
-        textContainer.widthTracksTextView = false
-        textContainer.heightTracksTextView = false
-        textContainer.lineBreakMode = .byWordWrapping
-        storage.setAttributedString(text)
-    }
 
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(measureContainer)
+        measureContainer.lineFragmentPadding = 0
+        measureContainer.widthTracksTextView = false
+        measureContainer.heightTracksTextView = false
+        measureContainer.lineBreakMode = .byWordWrapping
+        storage.setAttributedString(text)
+
+        let tv = NSTextView()
+        tv.isEditable = false
+        tv.isSelectable = true            // select, right-click, Copy - all native now
+        tv.drawsBackground = false
+        tv.textContainerInset = .zero
+        tv.textContainer?.lineFragmentPadding = 0
+        tv.isVerticallyResizable = false
+        tv.isHorizontallyResizable = false
+        tv.autoresizingMask = []
+        tv.textStorage?.setAttributedString(text)
+        addSubview(tv)
+        textView = tv
+
+        if !isUser {
+            let copy = HoverButton(symbol: "doc.on.doc", size: 22, point: 11)
+            copy.toolTip = "Copy"
+            copy.alphaValue = 0
+            copy.onTap = { [weak self] in self?.copyMessage() }
+            addSubview(copy)
+            copyButton = copy
+        }
+    }
     required init?(coder: NSCoder) { nil }
 
     override var isFlipped: Bool { true }
 
+    var plainText: String { storage.string }
+
+    private func copyMessage() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(plainText, forType: .string)
+        copyButton?.symbol = "checkmark"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.copyButton?.symbol = "doc.on.doc"
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeInActiveApp],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true; syncCopyButton() }
+    override func mouseExited(with event: NSEvent) { hovering = false; syncCopyButton() }
+    private func syncCopyButton() {
+        guard let copyButton else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.14
+            copyButton.animator().alphaValue = hovering ? 1 : 0
+        }
+    }
+
     func update(maxTextWidth: CGFloat) -> CGSize {
         let maxWidth = max(90, maxTextWidth)
-        let minimum: CGFloat = isUser ? 26 : 56
-        let single = measuredTextSize(width: 10_000)
-        let targetWidth = min(maxWidth, max(minimum, ceil(single.width) + 2))
-        let wrapped = measuredTextSize(width: targetWidth)
-        textWidth = min(maxWidth, max(minimum, ceil(wrapped.width) + 2))
+        if isUser {
+            // Hug the text, up to the column width.
+            let single = measuredTextSize(width: 10_000)
+            let target = min(maxWidth, max(26, ceil(single.width) + 2))
+            let wrapped = measuredTextSize(width: target)
+            textWidth = min(maxWidth, max(26, ceil(wrapped.width) + 2))
+        } else {
+            // Prose gets the whole column; wrapping it early just makes it harder to read.
+            textWidth = maxWidth
+        }
         let final = measuredTextSize(width: textWidth)
         let height = ceil(final.height) + insets.top + insets.bottom + 3
         let width = textWidth + insets.left + insets.right
         needsDisplay = true
+        needsLayout = true
         return CGSize(width: ceil(width), height: ceil(height))
     }
 
     private func measuredTextSize(width: CGFloat) -> CGSize {
-        textContainer.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: textContainer)
-        let used = layoutManager.usedRect(for: textContainer)
+        measureContainer.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: measureContainer)
+        let used = layoutManager.usedRect(for: measureContainer)
         return CGSize(width: max(used.width, 1), height: max(used.height, 1))
     }
 
+    override func layout() {
+        super.layout()
+        textView?.frame = NSRect(x: insets.left, y: insets.top,
+                                 width: textWidth,
+                                 height: max(0, bounds.height - insets.top - insets.bottom))
+        textView?.textContainer?.containerSize = NSSize(width: textWidth,
+                                                        height: CGFloat.greatestFiniteMagnitude)
+        if let copyButton {
+            copyButton.frame = NSRect(x: max(0, bounds.width - 24), y: 0, width: 22, height: 22)
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        let radius = min(isUser ? 28 : 26, bounds.height / 2)
+        guard let fillColor else { return }   // Nav's replies have no container to draw
+        let radius = min(28, bounds.height / 2)
         let path = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
         NSGraphicsContext.saveGraphicsState()
         if let context = NSGraphicsContext.current?.cgContext {
-            context.setShadow(offset: CGSize(width: 0, height: shadowYOffset), blur: shadowRadius, color: NSColor.black.withAlphaComponent(CGFloat(shadowOpacity)).cgColor)
+            context.setShadow(offset: CGSize(width: 0, height: 1), blur: 4,
+                              color: NSColor.black.withAlphaComponent(0.04).cgColor)
         }
         fillColor.setFill()
         path.fill()
         NSGraphicsContext.restoreGraphicsState()
-        if let borderColor {
-            borderColor.setStroke()
-            path.lineWidth = 1
-            path.stroke()
+        if let strokeColor {
+            strokeColor.setStroke()
+            let inset = path.lineWidth / 2
+            let stroked = NSBezierPath(roundedRect: bounds.insetBy(dx: inset, dy: inset),
+                                       xRadius: radius, yRadius: radius)
+            stroked.lineWidth = 1
+            stroked.stroke()
         }
-
-        textContainer.containerSize = NSSize(width: textWidth, height: CGFloat.greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: textContainer)
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        let point = CGPoint(x: insets.left, y: insets.top)
-        layoutManager.drawBackground(forGlyphRange: glyphRange, at: point)
-        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: point)
     }
 }
 

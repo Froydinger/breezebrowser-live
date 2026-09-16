@@ -6915,6 +6915,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // a reload or follow-up main-frame load can proceed normally.
         if ns.domain == "WebKitErrorDomain" && ns.code == 102 { return }
         guard let failing = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? w.url else { return }
+        // A navigation that was superseded or abandoned leaves the web view still
+        // showing the page it already had. Sounding an error - and replacing that
+        // page - for a load the user never saw is why typing the first character
+        // of a tweet made an error noise: the composer kicks off a navigation that
+        // is immediately dropped. Only report a failure that actually left the
+        // user somewhere broken.
+        if let showing = w.url, !showing.absoluteString.isEmpty, showing != failing { return }
         BreezeSounds.shared.play(.error)
         let escapedURL = failing.absoluteString.htmlEscaped
         let escapedMessage = error.localizedDescription.htmlEscaped

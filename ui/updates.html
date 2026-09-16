@@ -226,6 +226,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.0.1', icon: 'copy', title: 'Copy What Nav Says, And Sites Behave Again', hotfix: true, major: false, items: [
+        '<b>Nav Replies Are Text Again</b> — You can select them, right-click them, and copy them. A Copy button appears on a reply when you hover it. Nav’s answers were being drawn as pictures of text, which is why none of that worked.',
+        '<b>Replies Float, You Get The Bubble</b> — Nav’s answers are now plain text on the panel and your own messages are the accent pill, so it is still obvious who said what without boxing long answers in.',
+        '<b>Right-Click Works On Sites That Have Their Own</b> — Sites with a custom right-click menu, like Suno, showed Breeze’s menu instead of theirs — Breeze grabbed the event before the page could. The page goes first now.',
+        '<b>Delete Deletes</b> — Pressing Delete to remove a selected item did nothing on some sites, because Breeze marked the key as handled before the page saw it. The page gets it first; Breeze only steps in to stop the old Backspace-goes-back behaviour when nothing else wanted the key.',
+        '<b>No More Phantom Error Sound</b> — Typing the first character of a tweet played the error sound. X starts a navigation there and immediately abandons it; Breeze treated that as a page that failed to load. A load you never actually saw is no longer reported as an error.' ] },
       { v: '6.0.0', icon: 'sparkles', title: 'Breeze 6 — A Real Redesign', hotfix: false, major: true, items: [
         '<b>A New New Tab</b> — The giant clock is gone. The page leads with a greeting and the thing you came for, the input, and the whole page is centred as one block instead of drifting low. The hint under the box now names your actual search engine — “Search with Spectra”, or Google, or whichever you picked.',
         '<b>Suggested Sites</b> — The sites you actually use, one click under the search box. Worked out on your Mac from your own history — nothing is sent anywhere, nothing is profiled, and clearing your history clears them. Hide them with the × on the shelf; a quiet “Show suggested sites” brings them back without a trip to Settings.',

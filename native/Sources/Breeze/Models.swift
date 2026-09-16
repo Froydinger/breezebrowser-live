@@ -536,6 +536,11 @@ let breezeLinkMenuJS = """
     return { kind: '', url: '' };
   }
   document.addEventListener('contextmenu', function (event) {
+    // The site got there first. Apps with their own right-click menus (Suno's
+    // track rows, editors, canvases) call preventDefault in their own handler,
+    // and because this listener is on document in the bubble phase theirs has
+    // already run. Taking over here is what made their menus never appear.
+    if (event.defaultPrevented) return;
     var node = event.target;
     var link = node && node.closest ? node.closest('a[href]') : null;
     var image = closestImage(node);
@@ -715,10 +720,14 @@ let breezeKeyboardJS = """
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Backspace' || e.metaKey || e.ctrlKey || e.altKey) return;
     if (editable(e.target || document.activeElement)) return;
-    // Suppress WebKit's legacy Backspace-to-history behavior, but let web apps
-    // receive the event for their own selected-item/delete shortcuts.
+    // Bubble phase, not capture. This used to run BEFORE the page's own handlers
+    // and mark the event handled, so an app that deletes the selected item on
+    // Delete (Suno, file managers, editors) saw a pre-cancelled event and did
+    // nothing. Now the app goes first, and Backspace is only swallowed to block
+    // WebKit's legacy back-navigation when nothing else wanted it.
+    if (e.defaultPrevented) return;
     e.preventDefault();
-  }, true);
+  }, false);
 })();
 """
 
