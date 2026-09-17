@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.1.1', icon: 'refresh-cw', title: 'A 403 Now Tells You What To Do', hotfix: true, major: false, items: [
+        '<b>Why Some Videos Failed</b> — Downloads were coming back “403 Forbidden” on most videos while a few worked. That was almost never the video. YouTube gates its higher-quality streams — anything above 360p, where video and audio arrive separately — behind checks that yt-dlp has to keep chasing, and it ships fixes within days. An out-of-date copy fails on exactly those streams and manages the occasional ungated one.',
+        '<b>It Says So Now</b> — Instead of a raw HTTP error you can do nothing with, Breeze tells you yt-dlp needs updating and hands you the one command that does it. It only says it once per session rather than once per download.',
+        '<b>The Fix Is One Line</b> — <code>brew upgrade yt-dlp</code>. Measured directly: the same video, same quality, refused on one version and downloaded cleanly on the next.' ] },
       { v: '6.1.0', icon: 'download', title: 'Download YouTube Videos', hotfix: false, major: true, items: [
         '<b>Right-Click, Download Video</b> — On a YouTube video, right-click anywhere on the page and you get <b>Download Video</b> and <b>Download Audio Only</b>. It saves to your Downloads folder and shows up in Breeze’s downloads list with progress, like any other file.',
         '<b>Why It Needed Doing Specially</b> — YouTube does not serve a video as a file. It serves a manifest and hundreds of small pieces, so “Download Video” on the player had nothing to point at. Breeze now hands the page to <code>yt-dlp</code>, which puts the pieces back together.',

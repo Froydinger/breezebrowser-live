@@ -38,6 +38,27 @@ enum MediaGrabber {
 
     /// The install line shown when yt-dlp is missing.
     static let installCommand = "brew install yt-dlp ffmpeg"
+    /// The line shown when it is present but too old to work.
+    static let upgradeCommand = "brew upgrade yt-dlp"
+
+    /// A 403 here almost never means what it says.
+    ///
+    /// YouTube gates its adaptive streams - everything above 360p, where video and
+    /// audio arrive separately - behind checks that yt-dlp has to keep chasing, and
+    /// it ships fixes within days. An out-of-date copy fails on exactly those
+    /// streams while still managing the occasional ungated one, which is why some
+    /// videos download and most do not. Measured directly: the same video and the
+    /// same format 403'd on 2026.07.04 and downloaded cleanly on 2026.08.19.
+    ///
+    /// So a refusal is reported as what it almost certainly is - a stale tool with
+    /// a one-line fix - rather than as a raw HTTP error the user can do nothing with.
+    static func isLikelyStaleToolFailure(_ message: String) -> Bool {
+        let m = message.lowercased()
+        return m.contains("403") || m.contains("forbidden")
+            || m.contains("unable to download video data")
+            || m.contains("nsig") || m.contains("player response")
+            || m.contains("sign in to confirm")
+    }
 
     enum Kind {
         case video, audio

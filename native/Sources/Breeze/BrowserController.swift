@@ -6252,8 +6252,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     let message = error.message
                     item.state = message == "Cancelled." ? .cancelled : .failed
                     if item.state == .failed {
-                        item.filename = "Couldn\u{2019}t download — " + message
+                        let stale = MediaGrabber.isLikelyStaleToolFailure(message)
+                        item.filename = stale
+                            ? "YouTube refused it — yt-dlp needs updating"
+                            : "Couldn\u{2019}t download — " + message
                         BreezeSounds.shared.play(.downloadFailed)
+                        if stale { self.showStaleGrabberNotice() }
                     }
                 }
                 self.broadcastDownloads()
@@ -6261,6 +6265,31 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         if let process { grabberProcesses[item.id] = process }
         BreezeSounds.shared.play(.downloadStarted)
+    }
+
+    /// Only nag once per run of Breeze - the same stale tool will fail every
+    /// download, and an alert per attempt would be its own problem.
+    private static var warnedAboutStaleGrabber = false
+
+    private func showStaleGrabberNotice() {
+        guard !Self.warnedAboutStaleGrabber else { return }
+        Self.warnedAboutStaleGrabber = true
+        let alert = NSAlert()
+        alert.messageText = "YouTube refused the download"
+        alert.informativeText = """
+        This almost always means yt-dlp is out of date rather than anything being \
+        wrong with the video. YouTube keeps changing how it serves the \
+        higher-quality streams, and yt-dlp ships fixes within days — which is why \
+        some videos still work and most do not.
+
+        \(MediaGrabber.upgradeCommand)
+        """
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(MediaGrabber.upgradeCommand, forType: .string)
+        }
     }
 
     /// yt-dlp is the user's own tool, so the honest thing is to say so and give
