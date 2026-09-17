@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.1.0', icon: 'download', title: 'Download YouTube Videos', hotfix: false, major: true, items: [
+        '<b>Right-Click, Download Video</b> — On a YouTube video, right-click anywhere on the page and you get <b>Download Video</b> and <b>Download Audio Only</b>. It saves to your Downloads folder and shows up in Breeze’s downloads list with progress, like any other file.',
+        '<b>Why It Needed Doing Specially</b> — YouTube does not serve a video as a file. It serves a manifest and hundreds of small pieces, so “Download Video” on the player had nothing to point at. Breeze now hands the page to <code>yt-dlp</code>, which puts the pieces back together.',
+        '<b>It Uses Your Copy Of yt-dlp</b> — Breeze does not ship its own. YouTube changes how it serves video constantly and yt-dlp ships fixes within days; a copy frozen inside Breeze would quietly stop working within weeks. If you do not have it, Breeze tells you the one Homebrew command that installs it.',
+        '<b>Video Or Just Audio</b> — Video comes down as an MP4 up to 1080p with the audio merged in. Audio only comes down as an M4A. Either can be cancelled from the downloads list while it runs.' ] },
       { v: '6.0.2', icon: 'circle-stop', title: 'You Can Stop Nav', hotfix: true, major: false, items: [
         '<b>A Stop Button</b> — While Nav is working, the send button becomes a stop button. Press it and the whole thing stops where it is — no finishing the step it was on, no trying to summarise what it had.',
         '<b>It Keeps What It Did</b> — A stopped run does not vanish. Nav says it was stopped, and the chips stay so you can see which pages it had already opened and read. A stopped research run says “Research interrupted.”',

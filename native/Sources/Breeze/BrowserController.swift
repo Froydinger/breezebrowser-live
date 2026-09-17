@@ -110,6 +110,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     var pinSize: PinSize = .large      // Settings: small / medium / large
     lazy var placeholderView = TabPlaceholderView()
     var downloads: [DownloadItem] = []
+    /// yt-dlp processes by DownloadItem id, so Cancel in the downloads list can
+    /// stop one without touching the others.
+    var grabberProcesses: [String: Process] = [:]
     var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
     var pendingDownloadBroadcast: DispatchWorkItem?
     private var lifecycleObservers: [NSObjectProtocol] = []
@@ -5642,6 +5645,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func cancelDownload(_ id: String) {
         guard let it = downloads.first(where: { $0.id == id }) else { return }
+        // A yt-dlp download is a child process, not a WKDownload - terminating it
+        // is what stops it, and its termination handler marks the item cancelled.
+        if let process = grabberProcesses[id] {
+            process.terminate()
+            grabberProcesses[id] = nil
+            return
+        }
         it.wk?.cancel(); it.state = .cancelled; broadcastDownloads()
     }
     func openDownload(_ id: String) {
@@ -6075,6 +6085,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             menu.addItem(.separator())
         }
 
+        // A YouTube video is streamed in segments, so the ordinary media download
+        // has nothing to grab. Offer the real thing instead.
+        if Self.isStreamingVideoPage(pageURL) {
+            menu.addTargetedItem("Download Video", #selector(downloadPageVideo), self)
+            menu.addTargetedItem("Download Audio Only", #selector(downloadPageAudio), self)
+            menu.addItem(.separator())
+        }
+
         if !selection.isEmpty {
             menu.addTargetedItem("Copy", #selector(copyContextSelection), self)
             let short = selection.count > 32 ? String(selection.prefix(32)) + "..." : selection
@@ -6178,6 +6196,90 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc func downloadContextMedia() {
         guard let url = contextMediaURL, let webView = current?.webView else { return }
         startExplicitDownload(url, in: webView)
+    }
+
+    static func isStreamingVideoPage(_ url: URL?) -> Bool {
+        guard var host = url?.host?.lowercased() else { return false }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        guard host == "youtube.com" || host == "m.youtube.com" || host == "youtu.be" else { return false }
+        // The homepage and the subscriptions feed are not a video.
+        if host == "youtu.be" { return true }
+        let path = url?.path ?? ""
+        let query = url?.query ?? ""
+        return path.hasPrefix("/watch") || path.hasPrefix("/shorts/") || query.contains("v=")
+    }
+
+    @objc func downloadPageVideo() { downloadPageMedia(kind: .video) }
+    @objc func downloadPageAudio() { downloadPageMedia(kind: .audio) }
+
+    /// Hand the page URL to yt-dlp and track the result like any other download.
+    func downloadPageMedia(kind: MediaGrabber.Kind) {
+        guard let page = contextPageURL ?? current?.webView.url else { return }
+        guard MediaGrabber.isAvailable else {
+            showMissingGrabberNotice()
+            return
+        }
+        let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let item = DownloadItem(filename: kind == .audio ? "Audio…" : "Video…",
+                                url: page.absoluteString)
+        downloads.insert(item, at: 0)
+        broadcastDownloads()
+
+        let process = MediaGrabber.download(
+            pageURL: page.absoluteString, kind: kind, into: dir,
+            onTitle: { [weak self] title in
+                guard let self else { return }
+                item.filename = title + (kind == .audio ? ".m4a" : ".mp4")
+                self.broadcastDownloads()
+            },
+            onProgress: { [weak self] got, total in
+                guard let self else { return }
+                item.received = got
+                item.total = total
+                self.scheduleDownloadBroadcast()
+            },
+            onFinish: { [weak self] result in
+                guard let self else { return }
+                self.grabberProcesses[item.id] = nil
+                switch result {
+                case .success(let file):
+                    item.localURL = file
+                    item.filename = file.lastPathComponent
+                    item.state = .completed
+                    if item.total == 0 { item.total = item.received }
+                    BreezeSounds.shared.play(.downloadComplete)
+                case .failure(let error):
+                    let message = error.message
+                    item.state = message == "Cancelled." ? .cancelled : .failed
+                    if item.state == .failed {
+                        item.filename = "Couldn\u{2019}t download — " + message
+                        BreezeSounds.shared.play(.downloadFailed)
+                    }
+                }
+                self.broadcastDownloads()
+            })
+
+        if let process { grabberProcesses[item.id] = process }
+        BreezeSounds.shared.play(.downloadStarted)
+    }
+
+    /// yt-dlp is the user's own tool, so the honest thing is to say so and give
+    /// them the one command that installs it, not to fail quietly.
+    private func showMissingGrabberNotice() {
+        let alert = NSAlert()
+        alert.messageText = "Downloading video needs yt-dlp"
+        alert.informativeText = """
+        YouTube streams video in pieces, so it takes a dedicated tool to put it back \
+        together. Install it once with Homebrew and this works from then on:
+
+        \(MediaGrabber.installCommand)
+        """
+        alert.addButton(withTitle: "Copy Command")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(MediaGrabber.installCommand, forType: .string)
+        }
     }
 
     @objc func copyContextMediaAddress() {
