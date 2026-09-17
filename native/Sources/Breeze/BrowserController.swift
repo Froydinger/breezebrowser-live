@@ -6212,13 +6212,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc func downloadPageVideo() { downloadPageMedia(kind: .video) }
     @objc func downloadPageAudio() { downloadPageMedia(kind: .audio) }
 
-    /// Hand the page URL to yt-dlp and track the result like any other download.
-    func downloadPageMedia(kind: MediaGrabber.Kind) {
-        guard let page = contextPageURL ?? current?.webView.url else { return }
-        guard MediaGrabber.isAvailable else {
-            showMissingGrabberNotice()
-            return
-        }
+    /// Breeze fetches and updates its own yt-dlp, so a download can fix itself
+    /// once - refresh the tool and try again - before bothering the user.
+    private func startPageMediaDownload(kind: MediaGrabber.Kind, page: URL, retrying: Bool = false) {
         let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let item = DownloadItem(filename: kind == .audio ? "Audio…" : "Video…",
                                 url: page.absoluteString)
@@ -6250,21 +6246,110 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     BreezeSounds.shared.play(.downloadComplete)
                 case .failure(let error):
                     let message = error.message
-                    item.state = message == "Cancelled." ? .cancelled : .failed
-                    if item.state == .failed {
-                        let stale = MediaGrabber.isLikelyStaleToolFailure(message)
-                        item.filename = stale
-                            ? "YouTube refused it — yt-dlp needs updating"
-                            : "Couldn\u{2019}t download — " + message
-                        BreezeSounds.shared.play(.downloadFailed)
-                        if stale { self.showStaleGrabberNotice() }
+                    if message == "Cancelled." {
+                        item.state = .cancelled
+                        break
                     }
+                    // A refusal from YouTube is nearly always a stale yt-dlp. Update
+                    // it and try once more before saying anything - most of the time
+                    // the user never learns there was a problem.
+                    if !retrying, MediaGrabber.isLikelyStaleToolFailure(message) {
+                        item.filename = "Updating the downloader…"
+                        item.state = .progressing
+                        self.broadcastDownloads()
+                        MediaGrabber.fetchLatestTool { fetchError in
+                            self.downloads.removeAll { $0.id == item.id }
+                            if fetchError == nil {
+                                self.startPageMediaDownload(kind: kind, page: page, retrying: true)
+                            } else {
+                                let failed = DownloadItem(filename: "Couldn\u{2019}t update the downloader",
+                                                          url: page.absoluteString)
+                                failed.state = .failed
+                                self.downloads.insert(failed, at: 0)
+                                BreezeSounds.shared.play(.downloadFailed)
+                                self.broadcastDownloads()
+                            }
+                        }
+                        return
+                    }
+                    item.state = .failed
+                    item.filename = "Couldn\u{2019}t download — " + message
+                    BreezeSounds.shared.play(.downloadFailed)
                 }
                 self.broadcastDownloads()
             })
 
         if let process { grabberProcesses[item.id] = process }
-        BreezeSounds.shared.play(.downloadStarted)
+    }
+
+    /// Hand the page URL to yt-dlp and track the result like any other download.
+    func downloadPageMedia(kind: MediaGrabber.Kind) {
+        guard let page = contextPageURL ?? current?.webView.url else { return }
+
+        // Merging needs ffmpeg, and without it quality is capped at whatever
+        // YouTube serves as a single file. Say so once rather than letting the
+        // user wonder why a 1080p video arrived at 360p.
+        if kind == .video && !MediaGrabber.hasFFmpeg { noteMissingFFmpegOnce() }
+
+        var placeholder: DownloadItem?
+        MediaGrabber.prepareTool(onNeedsFetch: { [weak self] in
+            guard let self else { return }
+            // First ever download: there is nothing to run yet, so show that
+            // something is happening instead of an apparently dead menu item.
+            let item = DownloadItem(filename: "Getting the downloader ready…",
+                                    url: page.absoluteString)
+            placeholder = item
+            self.downloads.insert(item, at: 0)
+            self.broadcastDownloads()
+        }, completion: { [weak self] error in
+            guard let self else { return }
+            if let placeholder {
+                self.downloads.removeAll { $0.id == placeholder.id }
+                self.broadcastDownloads()
+            }
+            if let error {
+                let failed = DownloadItem(filename: "Couldn\u{2019}t get the downloader — " + error,
+                                          url: page.absoluteString)
+                failed.state = .failed
+                self.downloads.insert(failed, at: 0)
+                BreezeSounds.shared.play(.downloadFailed)
+                self.broadcastDownloads()
+                return
+            }
+            BreezeSounds.shared.play(.downloadStarted)
+            self.startPageMediaDownload(kind: kind, page: page)
+        })
+    }
+
+    private static var warnedAboutFFmpeg = false
+
+    /// ffmpeg is the one piece Breeze does not manage for you. There is no
+    /// official static build to fetch, and quietly downloading an unofficial
+    /// binary to run on your machine is not a decision to make on your behalf.
+    private func noteMissingFFmpegOnce() {
+        guard !Self.warnedAboutFFmpeg else { return }
+        Self.warnedAboutFFmpeg = true
+        let alert = NSAlert()
+        alert.messageText = "Downloading at full quality needs ffmpeg"
+        alert.informativeText = """
+        YouTube sends anything above 360p as separate video and audio, and ffmpeg \
+        is what joins them back together. Without it this still works, but you get \
+        the best single file YouTube offers, which is usually 360p.
+
+        To install it, open Terminal and paste:
+
+        \(MediaGrabber.ffmpegInstallCommand)
+        """
+        alert.addButton(withTitle: "Copy Command & Open Terminal")
+        alert.addButton(withTitle: "Continue Anyway")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(MediaGrabber.ffmpegInstallCommand, forType: .string)
+            if let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                NSWorkspace.shared.openApplication(at: terminal,
+                                                   configuration: NSWorkspace.OpenConfiguration())
+            }
+        }
     }
 
     /// Only nag once per run of Breeze - the same stale tool will fail every

@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.0', icon: 'wand-sparkles', title: 'Video Downloads Look After Themselves', hotfix: false, major: true, items: [
+        '<b>No Terminal, No Homebrew</b> — Breeze now fetches and keeps its own copy of the downloader. The first time you download a video it collects it, then gets on with the download. You do not have to install anything or paste anything into Terminal.',
+        '<b>It Fixes Itself</b> — The 403 errors were a downloader that had gone out of date. Now, when YouTube refuses a download, Breeze quietly updates its copy and tries again — usually you never find out anything was wrong. It also refreshes in the background about once a week so it does not drift out of date in the first place.',
+        '<b>Full Quality Still Wants ffmpeg</b> — YouTube sends anything above 360p as separate video and audio, and ffmpeg is what joins them. Breeze does not install that one for you: there is no official build to fetch, and quietly downloading someone’s unofficial binary to run on your Mac is not a decision to make on your behalf. Without it downloads still work, capped at the best single file YouTube offers. Breeze offers to copy <code>brew install ffmpeg</code> and open Terminal for you.',
+        '<b>Your Own Copy Still Counts</b> — If you already have yt-dlp installed, Breeze uses whichever copy is current rather than ignoring yours.' ] },
       { v: '6.1.1', icon: 'refresh-cw', title: 'A 403 Now Tells You What To Do', hotfix: true, major: false, items: [
         '<b>Why Some Videos Failed</b> — Downloads were coming back “403 Forbidden” on most videos while a few worked. That was almost never the video. YouTube gates its higher-quality streams — anything above 360p, where video and audio arrive separately — behind checks that yt-dlp has to keep chasing, and it ships fixes within days. An out-of-date copy fails on exactly those streams and manages the occasional ungated one.',
         '<b>It Says So Now</b> — Instead of a raw HTTP error you can do nothing with, Breeze tells you yt-dlp needs updating and hands you the one command that does it. It only says it once per session rather than once per download.',

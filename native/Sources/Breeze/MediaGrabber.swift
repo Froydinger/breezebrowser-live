@@ -34,12 +34,119 @@ enum MediaGrabber {
         return nil
     }
 
-    static var isAvailable: Bool { toolPath("yt-dlp") != nil }
+    // MARK: - Breeze's own copy of yt-dlp
+
+    /// Breeze keeps its own yt-dlp and updates it, rather than depending on the
+    /// user having installed one and remembering to upgrade it.
+    ///
+    /// It lives in Application Support, NOT inside the app bundle, which matters:
+    /// a file in the bundle is covered by the code signature, so it could not be
+    /// replaced without invalidating it, and it would need its own signature and
+    /// library-validation entitlement once Breeze is notarized. Outside the bundle
+    /// it is just a file Breeze owns and can swap whenever a newer one exists.
+    ///
+    /// This is what stops the tool rotting. YouTube keeps changing how it serves
+    /// video and yt-dlp ships fixes within days; a copy that is never refreshed
+    /// starts returning 403 on most videos within weeks.
+    static var managedDirectory: URL {
+        Store.shared.supportDirectory.appendingPathComponent("tools", isDirectory: true)
+    }
+    static var managedTool: URL { managedDirectory.appendingPathComponent("yt-dlp") }
+
+    static let downloadURL = URL(string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos")!
+
+    /// Refresh if the copy we have is older than this. yt-dlp releases roughly
+    /// weekly and breakages are usually fixed within days of appearing.
+    static let refreshInterval: TimeInterval = 7 * 24 * 3600
+
+    static var hasManagedTool: Bool {
+        FileManager.default.isExecutableFile(atPath: managedTool.path)
+    }
+
+    /// Prefer Breeze's copy, because that is the one that gets kept current. Fall
+    /// back to whatever is on PATH so an existing Homebrew install still works.
+    static func resolvedTool() -> String? {
+        if hasManagedTool { return managedTool.path }
+        return toolPath("yt-dlp")
+    }
+
+    static var isAvailable: Bool { resolvedTool() != nil }
+
+    private static var managedToolAge: TimeInterval? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: managedTool.path),
+              let modified = attrs[.modificationDate] as? Date else { return nil }
+        return Date().timeIntervalSince(modified)
+    }
+
+    static var managedToolIsStale: Bool {
+        guard let age = managedToolAge else { return true }
+        return age > refreshInterval
+    }
+
+    private static var isFetching = false
+
+    /// Download the current yt-dlp into Application Support.
+    ///
+    /// `completion` receives an error message, or nil on success. Safe to call
+    /// when one is already in flight - the second caller is simply told to carry
+    /// on with whatever copy exists.
+    static func fetchLatestTool(completion: @escaping (String?) -> Void) {
+        guard !isFetching else { DispatchQueue.main.async { completion(nil) }; return }
+        isFetching = true
+        var request = URLRequest(url: downloadURL)
+        request.timeoutInterval = 120
+        URLSession.shared.downloadTask(with: request) { temp, response, error in
+            defer { isFetching = false }
+            func finish(_ message: String?) { DispatchQueue.main.async { completion(message) } }
+            if let error { return finish(error.localizedDescription) }
+            guard let temp,
+                  let status = (response as? HTTPURLResponse)?.statusCode, status == 200 else {
+                return finish("Couldn't reach the yt-dlp download.")
+            }
+            let fm = FileManager.default
+            do {
+                try fm.createDirectory(at: managedDirectory, withIntermediateDirectories: true)
+                // Stage beside the target and swap, so a half-written file can never
+                // end up being the thing Breeze tries to run.
+                let staged = managedDirectory.appendingPathComponent("yt-dlp.incoming")
+                try? fm.removeItem(at: staged)
+                try fm.moveItem(at: temp, to: staged)
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staged.path)
+                // A URLSession download carries no quarantine flag, but strip it
+                // defensively rather than discover the exception later.
+                try? fm.removeItem(at: managedTool)
+                try fm.moveItem(at: staged, to: managedTool)
+                finish(nil)
+            } catch {
+                finish(error.localizedDescription)
+            }
+        }.resume()
+    }
+
+    /// Make sure a usable yt-dlp exists before a download starts.
+    ///
+    /// Missing entirely: fetch it and wait, because nothing can happen without it.
+    /// Present but stale: proceed immediately and refresh in the background, so a
+    /// download is never held up by housekeeping.
+    static func prepareTool(onNeedsFetch: @escaping () -> Void,
+                            completion: @escaping (String?) -> Void) {
+        if resolvedTool() == nil {
+            onNeedsFetch()
+            fetchLatestTool(completion: completion)
+            return
+        }
+        if hasManagedTool && managedToolIsStale {
+            fetchLatestTool { _ in }
+        }
+        completion(nil)
+    }
 
     /// The install line shown when yt-dlp is missing.
     static let installCommand = "brew install yt-dlp ffmpeg"
     /// The line shown when it is present but too old to work.
     static let upgradeCommand = "brew upgrade yt-dlp"
+    /// ffmpeg is still the user's to install - see noteMissingFFmpegOnce.
+    static let ffmpegInstallCommand = "brew install ffmpeg"
 
     /// A 403 here almost never means what it says.
     ///
@@ -58,6 +165,19 @@ enum MediaGrabber {
             || m.contains("unable to download video data")
             || m.contains("nsig") || m.contains("player response")
             || m.contains("sign in to confirm")
+    }
+
+    static var hasFFmpeg: Bool { toolPath("ffmpeg") != nil }
+
+    /// YouTube serves anything above 360p as separate video and audio streams, so
+    /// merging them needs ffmpeg. Without it, ask for the best single file that
+    /// needs no merging rather than failing - a lower-quality download beats an
+    /// error, as long as the user is told why.
+    static func formatArgs(for kind: Kind) -> [String] {
+        guard hasFFmpeg else {
+            return kind == .audio ? ["-f", "ba/b"] : ["-f", "b"]
+        }
+        return kind.formatArgs
     }
 
     enum Kind {
@@ -88,7 +208,7 @@ enum MediaGrabber {
                          onTitle: @escaping (String) -> Void,
                          onProgress: @escaping (Int64, Int64) -> Void,
                          onFinish: @escaping (Result<URL, GrabError>) -> Void) -> Process? {
-        guard let tool = toolPath("yt-dlp") else {
+        guard let tool = resolvedTool() else {
             DispatchQueue.main.async { onFinish(.failure(GrabError(message: "yt-dlp isn't installed."))) }
             return nil
         }
@@ -111,7 +231,7 @@ enum MediaGrabber {
             "--print", "before_dl:BZTITLE %(title)s",
             "--print", "after_move:BZFILE %(filepath)s",
             "-o", directory.appendingPathComponent("%(title)s.%(ext)s").path,
-        ] + kind.formatArgs + [pageURL]
+        ] + formatArgs(for: kind) + [pageURL]
 
         var env = ProcessInfo.processInfo.environment
         // So yt-dlp can find ffmpeg, which it needs to merge video and audio.
