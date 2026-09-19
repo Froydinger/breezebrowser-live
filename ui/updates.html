@@ -226,6 +226,12 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.1', icon: 'gauge', title: 'See What Breeze Is Using \u2014 And Take It Back', hotfix: false, major: true, items: [
+        '<b>Right Now</b> \u2014 Settings \u203a Tabs &amp; Performance now shows exactly what Breeze costs your Mac: memory, CPU, and how many pages are actually loaded. It counts every page process Breeze owns, not just the app shell, so the number matches Activity Monitor instead of flattering itself.',
+        '<b>Free up memory</b> \u2014 One button sleeps every idle background tab and drops the page cache. Nothing closes: slept tabs stay in your sidebar and wake exactly where you left them, scroll position and back button intact. Also on \u21e7\u2318K and in View \u203a Free Up Memory.',
+        '<b>Breeze offers first</b> \u2014 When memory or CPU stays high and there are idle tabs to reclaim, a small card appears at the bottom of the sidebar telling you the number and offering the cleanup. Dismiss it and it stays quiet for half an hour.',
+        '<b>Keep Awake</b> \u2014 Right-click any tab to exempt it from sleeping entirely \u2014 a dashboard you want current, a half-filled form, a long-running web app. Pinned apps don\u2019t need it; they already stay awake on their own.',
+        '<b>Wake Tab</b> \u2014 Right-clicking a sleeping tab now offers to wake it without switching to it.' ] },
       { v: '6.2.0', icon: 'wand-sparkles', title: 'Video Downloads Look After Themselves', hotfix: false, major: true, items: [
         '<b>No Terminal, No Homebrew</b> — Breeze now fetches and keeps its own copy of the downloader. The first time you download a video it collects it, then gets on with the download. You do not have to install anything or paste anything into Terminal.',
         '<b>It Fixes Itself</b> — The 403 errors were a downloader that had gone out of date. Now, when YouTube refuses a download, Breeze quietly updates its copy and tries again — usually you never find out anything was wrong. It also refreshes in the background about once a week so it does not drift out of date in the first place.',

@@ -335,6 +335,16 @@
     .dz-btn.danger { background: #e5484d; color: #fff; }
     .dz-btn.danger:hover { background: #c93b40; }
     .dz-done { font-size: 12.5px; color: #30a46c; font-weight: 600; }
+    /* Live resource readout. Static numbers only — no meters, bars, or
+       transitions: a perpetually animating gauge is exactly the idle GPU drain
+       this card exists to help you avoid. */
+    .act-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 100%; }
+    .act-cell { display: flex; flex-direction: column; gap: 2px; }
+    .act-num { font-size: 19px; font-weight: 650; letter-spacing: -0.4px; color: var(--text);
+               font-variant-numeric: tabular-nums; }
+    .act-cap { font-size: 10.5px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+    .act-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; width: 100%; }
+    .act-note { font-size: 12px; color: var(--text-soft); }
     button, input:not([type="checkbox"]), select { border-radius: 999px !important; }
     textarea { border-radius: 18px !important; }
   </style>
@@ -461,7 +471,25 @@
     </section>
     <div class="sec-eyebrow">Tabs &amp; Performance</div>
     <section data-sec="tabs">
-      
+
+      <div class="card">
+        <div class="row" style="flex-direction:column;align-items:flex-start">
+          <div style="width:100%">
+            <div class="row-label">Right now</div>
+            <div class="row-hint">What Breeze is costing this Mac, across every page process it owns.</div>
+          </div>
+          <div class="act-grid" style="margin-top:12px">
+            <div class="act-cell"><div class="act-num" id="act-mem">—</div><div class="act-cap">Memory</div></div>
+            <div class="act-cell"><div class="act-num" id="act-cpu">—</div><div class="act-cap">CPU</div></div>
+            <div class="act-cell"><div class="act-num" id="act-tabs">—</div><div class="act-cap">Tabs loaded</div></div>
+          </div>
+          <div class="act-foot">
+            <button class="dz-btn" id="free-memory-btn">Free up memory</button>
+            <span class="act-note" id="act-note"></span>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="row">
           <div>
@@ -1374,6 +1402,40 @@
       }
     }
     breezeInternal.onReminders((list) => { settings.reminders = list; renderReminders(); });
+
+    // ----- live activity readout -----
+    // Numbers are pushed by the native sampler (every 15s while Breeze is the
+    // active app), so there is no polling loop on this page.
+    function renderActivity(a) {
+      if (!a) return;
+      document.getElementById('act-mem').textContent = a.memoryGB.toFixed(1) + ' GB';
+      document.getElementById('act-cpu').textContent = Math.round(a.cpuPercent) + '%';
+      document.getElementById('act-tabs').textContent =
+        a.liveTabs + (a.sleepingTabs ? ' + ' + a.sleepingTabs + ' asleep' : '');
+      const btn = document.getElementById('free-memory-btn');
+      const note = document.getElementById('act-note');
+      if (a.canFree > 0) {
+        btn.disabled = false;
+        btn.textContent = 'Sleep ' + a.canFree + ' idle tab' + (a.canFree === 1 ? '' : 's');
+        note.textContent = 'They stay in your sidebar and wake where you left them.';
+      } else {
+        btn.disabled = true;
+        btn.textContent = 'Free up memory';
+        note.textContent = a.keptAwake
+          ? 'Nothing idle to sleep — ' + a.keptAwake + ' tab' + (a.keptAwake === 1 ? ' is' : 's are') + ' set to Keep Awake.'
+          : 'Nothing idle to sleep right now.';
+      }
+    }
+    breezeInternal.onActivity(renderActivity);
+    breezeInternal.getActivity().then(renderActivity);
+    document.getElementById('free-memory-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('free-memory-btn');
+      btn.disabled = true;
+      const res = await breezeInternal.freeUpMemory();
+      document.getElementById('act-note').textContent =
+        'Slept ' + res.freed + ' tab' + (res.freed === 1 ? '' : 's') + '.';
+      breezeInternal.getActivity().then(renderActivity);
+    });
 
     // ----- danger zone -----
     document.getElementById('clear-data-btn').addEventListener('click', async () => {

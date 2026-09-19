@@ -870,6 +870,12 @@ final class Tab {
     var lastMediaPauseAt: Date?
     var isInPiP = false
     var sleeping = false         // discarded to save memory; reloads on activate
+    /// User said "never sleep this one". Exempts the tab from idle sweeps, the
+    /// live-tab budget, and manual cleanup alike — a long-running web app, a
+    /// half-filled form, a dashboard you want current. Pinned apps do NOT need
+    /// this: `keepPinnedAppsAwake` already covers them, so the menu item is
+    /// hidden there rather than offering a toggle that changes nothing.
+    var keepAwake = false
     var sleptURL: String?        // URL to restore when woken
     /// WKWebView interaction state captured when the tab went to sleep: the
     /// back/forward list and scroll position. Restoring this instead of re-loading

@@ -756,3 +756,82 @@ final class RemindersView: NSStackView {
         }
     }
 }
+
+/// Sidebar activity banner: the one place Breeze admits what it is costing the
+/// machine. All of the memory management underneath (idle sweeps, the live-tab
+/// budget, memory-pressure shedding) is silent by design, which is exactly why
+/// it never felt like it existed — a browser quietly doing the right thing is
+/// indistinguishable from one doing nothing. This appears only when the load is
+/// genuinely worth acting on AND there is something to act on, offers the
+/// one-press cleanup, and goes away.
+final class ActivityBannerView: NSView {
+    private let icon = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+    private let cleanBtn = NSButton(title: "Free up memory", target: nil, action: nil)
+    let dismissBtn = HoverButton(symbol: "xmark", size: 18, point: 8)
+    var onClean: (() -> Void)?
+    var onDismiss: (() -> Void)?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = 13
+
+        icon.image = NSImage(systemSymbolName: "gauge.with.dots.needle.67percent", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        label.font = .systemFont(ofSize: 11)
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        cleanBtn.bezelStyle = .inline
+        cleanBtn.controlSize = .small
+        cleanBtn.font = .systemFont(ofSize: 10.5, weight: .medium)
+        cleanBtn.target = self
+        cleanBtn.action = #selector(clean)
+        cleanBtn.translatesAutoresizingMaskIntoConstraints = false
+
+        dismissBtn.onTap = { [weak self] in self?.onDismiss?() }
+        dismissBtn.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(icon); addSubview(label); addSubview(cleanBtn); addSubview(dismissBtn)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 48),
+            icon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            icon.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            icon.widthAnchor.constraint(equalToConstant: 13),
+            icon.heightAnchor.constraint(equalToConstant: 13),
+
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+            label.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: dismissBtn.leadingAnchor, constant: -4),
+
+            dismissBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
+            dismissBtn.centerYAnchor.constraint(equalTo: icon.centerYAnchor),
+
+            cleanBtn.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            cleanBtn.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+        ])
+        applyTheme()
+    }
+    required init?(coder: NSCoder) { nil }
+
+    @objc private func clean() { onClean?() }
+
+    func applyTheme() {
+        let p = Theme.shared.palette
+        layer?.backgroundColor = p.surface.cgColor
+        icon.contentTintColor = p.textSoft
+        label.textColor = p.text
+    }
+
+    /// `detail` is the honest reading; `action` names what the button will do so
+    /// the cleanup is never a mystery box.
+    func update(detail: String, action: String) {
+        label.stringValue = detail
+        cleanBtn.title = action
+        applyTheme()
+    }
+}

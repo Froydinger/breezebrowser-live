@@ -225,6 +225,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     lazy var llm = CloudLLM(tools: self)    // Breeze Cloud backend; provider routing lives server-side.
     var navLeadingC: NSLayoutConstraint!      // top-bar nav inset; shrinks in fullscreen (traffic lights hide until hover)
     let remindersView = RemindersView()
+    let activityBanner = ActivityBannerView()
+    /// When the user dismissed the activity banner. We stay quiet for a while
+    /// after — an offer declined and then immediately re-made is nagging, not
+    /// help. Cleared whenever the banner is acted on instead of dismissed.
+    private var activitySnoozedUntil: Date?
+    /// Consecutive heavy samples. One spike is a page loading; two in a row,
+    /// 15s apart, is a state worth surfacing.
+    private var heavySampleStreak = 0
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
     var aiVisitedSources: [(String, String)] = [] // real pages opened during the current Nav turn
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
@@ -516,6 +524,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             warmStartupRenderer()
         }
         startSleepTimer()
+        startResourceMonitor()
         startMemoryPressureMonitor()
         initReminders()
         suggestionsPopover.delegate = self
@@ -640,9 +649,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         nowPlaying.pipBtn.onTap = { [weak self] in self?.nowPlayingPip() }
         nowPlaying.backBtn.onTap = { [weak self] in self?.backToNowPlaying() }
         nowPlaying.dismissBtn.onTap = { [weak self] in self?.dismissNowPlaying() }
-        let bottomStack = NSStackView(views: [remindersView, nowPlaying, footer])
+        let bottomStack = NSStackView(views: [activityBanner, remindersView, nowPlaying, footer])
         bottomStack.orientation = .vertical; bottomStack.spacing = 8; bottomStack.alignment = .leading
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        activityBanner.isHidden = true
+        activityBanner.onClean = { [weak self] in self?.freeUpMemory(userInitiated: true) }
+        activityBanner.onDismiss = { [weak self] in
+            self?.activitySnoozedUntil = Date().addingTimeInterval(30 * 60)
+            self?.activityBanner.isHidden = true
+        }
+        activityBanner.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         remindersView.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         nowPlaying.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
         footer.widthAnchor.constraint(equalTo: bottomStack.widthAnchor).isActive = true
@@ -1801,6 +1817,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // Sleep Tab (Electron: web && not sleeping && not active)
         if canSleepTab(t) {
             e.append(.item("Sleep Tab", { [weak self] in self?.sleepTab(t) }))
+        } else if t.sleeping {
+            e.append(.item("Wake Tab", { [weak self] in self?.wake(t) }))
+        }
+        // Keep Awake — exempt this tab from every sleep path. Pinned apps are
+        // already held awake by the keepPinnedAppsAwake setting, so offering the
+        // toggle there would be a switch that does nothing.
+        if isWeb && t.pinUrl == nil {
+            e.append(.check("Keep Awake", t.keepAwake, { [weak self] in self?.setKeepAwake(t, !t.keepAwake) }))
         }
         e.append(.separator)
         // Split view
@@ -1829,6 +1853,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         e.append(.item("Close Tab", { [weak self] in self?.closeTab(t) }))
         return e
+    }
+
+    /// Toggle "never sleep this tab". Turning it on wakes the tab if it is
+    /// already asleep — the user asking for it to stay loaded means now, not
+    /// only from the next sweep onward.
+    func setKeepAwake(_ t: Tab, _ on: Bool) {
+        t.keepAwake = on
+        if on && t.sleeping { wake(t) }
+        refreshSidebar()
     }
 
     func setPerfMode(_ t: Tab, _ on: Bool) {
@@ -2401,6 +2434,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebarClockTimer = nil
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
+        ResourceMonitor.shared.stop()
         pendingDownloadBroadcast?.cancel()
         pendingDownloadBroadcast = nil
         newTab.stopClock()
@@ -2622,6 +2656,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func canSleepTab(_ t: Tab) -> Bool {
         if t.sleeping || t.isNewTab || t.id == current?.id { return false }
+        if t.keepAwake { return false }                       // explicit "never sleep this one"
         if t.pinUrl != nil && Store.shared.settings["keepPinnedAppsAwake"] as? Bool != false { return false }
         // Everything below would be destroyed, not merely paused, by sleeping.
         // Idle-hours sleeping rarely collided with these; count- and pressure-driven
@@ -2719,6 +2754,103 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         src.resume()
         memoryPressureSource = src
     }
+    // MARK: - Resource monitoring & cleanup ---------------------------------
+
+    /// Tabs a cleanup would actually free. This is the number the button
+    /// promises, so it must be the same set `freeUpMemory` sleeps — a button
+    /// that says "sleep 8 tabs" and sleeps 2 is worse than no button.
+    func cleanupCandidates() -> [Tab] {
+        // 30s of grace: a tab you glanced at seconds ago should not vanish
+        // out from under you just because you pressed the button.
+        sleepCandidatesLRU(idleAtLeast: 30)
+    }
+
+    /// The cleanup. Sleeps every eligible background tab and drops the URL
+    /// cache. Everything protected stays protected: the tab you are on, audio
+    /// and video that is playing, split-view halves, Nav chats, pinned apps,
+    /// and anything marked Keep Awake. Nothing is closed — slept tabs stay in
+    /// the sidebar and come back exactly where they were.
+    @discardableResult
+    func freeUpMemory(userInitiated: Bool = false) -> Int {
+        let before = ResourceMonitor.shared.latest.memoryBytes
+        let targets = cleanupCandidates()
+        for t in targets { sleepTab(t) }
+        URLCache.shared.removeAllCachedResponses()
+        activityBanner.isHidden = true
+        activitySnoozedUntil = nil
+        heavySampleStreak = 0
+        if userInitiated && !targets.isEmpty { BreezeSounds.shared.play(.splitClosed) }
+        // Footprint does not drop the instant a web process is torn down, so
+        // re-read on the next sample rather than reporting a stale number.
+        ResourceMonitor.shared.sample()
+        if !targets.isEmpty {
+            print("Breeze: cleanup slept \(targets.count) tab(s) (was \(String(format: "%.1f", Double(before) / 1_073_741_824)) GB)")
+        }
+        return targets.count
+    }
+
+    func startResourceMonitor() {
+        ResourceMonitor.shared.onSample = { [weak self] sample in
+            self?.handleResourceSample(sample)
+        }
+        ResourceMonitor.shared.start()
+    }
+
+    /// Decide whether Breeze is working hard enough to say so. Two independent
+    /// signals, because they are different complaints: memory is "my machine is
+    /// swapping", CPU is "my fan is on". Either one, sustained, with tabs that
+    /// could actually be freed.
+    private func handleResourceSample(_ s: ResourceSample) {
+        broadcastActivity(s)
+
+        // BREEZE_FORCE_ACTIVITY=1 shows the banner immediately with the real
+        // readings, so the card can be looked at without waiting for the machine
+        // to actually get into trouble. Testing affordance only.
+        let forced = ProcessInfo.processInfo.environment["BREEZE_FORCE_ACTIVITY"] == "1"
+
+        if let until = activitySnoozedUntil, Date() < until, !forced { return }
+
+        let heavy = s.memoryGB >= 4.0 || s.cpuLoad >= 35.0
+        heavySampleStreak = heavy ? heavySampleStreak + 1 : 0
+
+        let targets = cleanupCandidates()
+        guard forced || (heavySampleStreak >= 2 && targets.count >= 2) else {
+            if !heavy { activityBanner.isHidden = true }
+            return
+        }
+        let mem = String(format: "%.1f GB", s.memoryGB)
+        let detail = s.cpuLoad >= 35.0 && s.memoryGB < 4.0
+            ? "Breeze is busy — \(Int(s.cpuLoad))% CPU"
+            : "Breeze is using \(mem)"
+        let action = targets.isEmpty
+            ? "Free up memory"
+            : "Sleep \(targets.count) idle tab\(targets.count == 1 ? "" : "s")"
+        activityBanner.update(detail: detail, action: action)
+        activityBanner.isHidden = false
+    }
+
+    /// The current reading, shaped for the Settings page.
+    func activityPayload() -> [String: Any] {
+        let s = ResourceMonitor.shared.latest
+        return [
+            "memoryGB": s.memoryGB,
+            "cpuPercent": s.cpuLoad,
+            "processes": s.processCount,
+            "liveTabs": tabs.filter { !$0.sleeping && !$0.isNewTab && !$0.isChatTab }.count,
+            "sleepingTabs": tabs.filter { $0.sleeping }.count,
+            "keptAwake": tabs.filter { $0.keepAwake }.count,
+            "canFree": cleanupCandidates().count,
+        ]
+    }
+
+    /// Push the live reading to any open Settings page.
+    private func broadcastActivity(_ s: ResourceSample) {
+        let json = Store.json(activityPayload())
+        for t in tabs where t.webView.url?.absoluteString.contains("settings.html") == true {
+            t.webView.evaluateJavaScript("window.__bzOnActivity && window.__bzOnActivity(\(json))")
+        }
+    }
+
     func startSleepTimer() {
         sleepTimer?.invalidate()
         sleepTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in self?.sweepIdleTabs() }
@@ -6680,6 +6812,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if let id = args["id"] as? String { showDownload(id) }
         case "clearDownloads":
             downloads.removeAll { $0.state != .progressing }; broadcastDownloads()
+        case "getActivity":
+            resolve(Store.json(activityPayload()))
+        case "freeUpMemory":
+            let n = freeUpMemory(userInitiated: true)
+            resolve(Store.json(["freed": n]))
         case "getReminders":
             let rems = Store.shared.settings["reminders"] as? [[String: Any]] ?? []
             resolve(Store.json(rems))
@@ -6955,6 +7092,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc private func themeDidChange() {
         guard !isClosing else { return }
         applyChromeTheme()
+        activityBanner.applyTheme()
         broadcastToInternalPages()
     }
 

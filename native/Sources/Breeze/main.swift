@@ -170,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleSidebar() { activeBrowser?.toggleSidebar() }
     @objc func toggleAssistant() { activeBrowser?.toggleAssistant() }
     @objc func cycleTheme() { activeBrowser?.cycleThemeSetting() }
+    @objc func freeUpMemory() { activeBrowser?.freeUpMemory(userInitiated: true) }
     @objc func openSettings() { activeBrowser?.openInternal(.settings) }
     @objc func openHistory() { activeBrowser?.openInternal(.history) }
     @objc func openBookmarks() { activeBrowser?.openInternal(.bookmarks) }
@@ -263,6 +264,8 @@ viewMenu.addItem(.separator())
 viewMenu.addItem(mi("Toggle Sidebar", #selector(AppDelegate.toggleSidebar), "s"))
 viewMenu.addItem(mi("Toggle Assistant", #selector(AppDelegate.toggleAssistant), "e"))
 viewMenu.addItem(mi("Cycle Theme", #selector(AppDelegate.cycleTheme), "d", [.command, .shift]))
+viewMenu.addItem(.separator())
+viewMenu.addItem(mi("Free Up Memory", #selector(AppDelegate.freeUpMemory), "k", [.command, .shift]))
 viewItem.submenu = viewMenu
 
 // History
