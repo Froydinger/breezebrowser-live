@@ -2741,9 +2741,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         src.setEventHandler { [weak self] in
             guard let self else { return }
             let critical = src.mask.contains(.critical)
-            // Under warning keep a little headroom of recent tabs; under critical
-            // take everything that is not on screen.
-            let candidates = self.sleepCandidatesLRU(idleAtLeast: critical ? 0 : 60)
+            // macOS hands memory-pressure notices freely to apps that are in the
+            // BACKGROUND — that is the whole point of the signal. The old code
+            // answered critical with `idleAtLeast: 0`, i.e. sleep every tab that
+            // is not the current one, with no grace at all. So simply minimising
+            // Breeze could shed the entire session, which is not a saving, it is
+            // losing your work. Keep a real idle window in both cases: a tab you
+            // were reading a minute ago is not a memory leak.
+            let candidates = self.sleepCandidatesLRU(idleAtLeast: critical ? 120 : 600)
             let toSleep = critical ? candidates : Array(candidates.prefix(max(1, candidates.count / 2)))
             for t in toSleep { self.sleepTab(t) }
             if !toSleep.isEmpty {
@@ -7097,6 +7102,31 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     // MARK: - WK delegates --------------------------------------------------
+
+    /// macOS killed this tab's WebKit content process — jetsam does this to
+    /// background apps under memory pressure, and it is not something Breeze
+    /// asks for or can veto. Until now nothing handled it, so the tab was left
+    /// on a blank page with no way back except reopening the window: that is
+    /// the "even my active tab went to sleep" symptom, and it was never our
+    /// sleeping at all.
+    ///
+    /// On screen, reload straight away. Off screen, record it as an ordinary
+    /// Breeze sleep so the tab shows as sleeping in the sidebar and restores
+    /// through the normal wake path when it is next selected.
+    func webViewWebContentProcessDidTerminate(_ w: WKWebView) {
+        guard let t = tabs.first(where: { $0.webView === w }) else { return }
+        let onScreen = t.id == current?.id && window.isVisible && !window.isMiniaturized
+        if onScreen {
+            w.reload()
+            return
+        }
+        guard !t.sleeping else { return }
+        if let u = w.url?.absoluteString, !u.isEmpty { t.sleptURL = u }
+        guard t.sleptURL != nil else { return }   // nothing to restore it from
+        t.sleptInteractionState = nil             // the process is gone; state died with it
+        t.sleeping = true
+        refreshSidebar()
+    }
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
         displayNavigationWebViews.remove(ObjectIdentifier(w))

@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.2', icon: 'circle-check', title: 'Minimising Breeze No Longer Clears Your Tabs', hotfix: true, major: false, items: [
+        '<b>Backgrounding Breeze is safe again</b> \u2014 macOS sends memory warnings freely to apps sitting in the background, and Breeze was answering the strongest of them by sleeping every tab but the one in front, with no grace period. Minimising the window could shed a whole session. Tabs you have touched recently are now left alone.',
+        '<b>Tabs killed by macOS come back properly</b> \u2014 When the system reclaims a tab\u2019s memory itself, that tab used to come back blank and stay blank until you reopened the window \u2014 including the tab you were on. It now reloads immediately if it\u2019s on screen, and otherwise shows as sleeping and restores when you click it.' ] },
       { v: '6.2.1', icon: 'gauge', title: 'See What Breeze Is Using \u2014 And Take It Back', hotfix: false, major: true, items: [
         '<b>Right Now</b> \u2014 Settings \u203a Tabs &amp; Performance now shows exactly what Breeze costs your Mac: memory, CPU, and how many pages are actually loaded. It counts every page process Breeze owns, not just the app shell, so the number matches Activity Monitor instead of flattering itself.',
         '<b>Free up memory</b> \u2014 One button sleeps every idle background tab and drops the page cache. Nothing closes: slept tabs stay in your sidebar and wake exactly where you left them, scroll position and back button intact. Also on \u21e7\u2318K and in View \u203a Free Up Memory.',
