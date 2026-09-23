@@ -1,0 +1,81 @@
+[
+  {
+    "task": "chat",
+    "http": 200,
+    "seconds": 2.3,
+    "types": [
+      "accepted",
+      "completed",
+      "status",
+      "text_delta"
+    ],
+    "sources": 0,
+    "completed": true,
+    "answer": "Hello!"
+  },
+  {
+    "task": "research",
+    "http": 200,
+    "seconds": 6.5,
+    "types": [
+      "accepted",
+      "citation",
+      "completed",
+      "source",
+      "status",
+      "text_delta",
+      "tool_started"
+    ],
+    "sources": 19,
+    "completed": true,
+    "answer": "Rip currents can be hard to spot, and **no single clue is definitive**. From a lifeguard stand, dune, or other elevated viewpoint, scan for a stretch of water that differs from the surf on either side. NOAA and the National Weather Service describe these common clues:\n\n- A **gap or break in incoming waves**, sometimes appearing deceptively calm or darker.\n- A **narrow channel of churning or choppy water** moving away from shore.\n- A **line of foam, seaweed, or debris drifting seaward**.\n- A patch of **different-colored water**, which may look muddy or sandy.\n\nThe sources agree on these clues; the National Weather Service cautions that one, several, or none may be visible, so don\u2019t rely on appearance alone. Ask a lifeguard about local conditions and heed posted warnings. ([nhc.noaa.gov](https://www.nhc.noaa.gov/mobile/rip-currents/overview.html?utm_source=openai))"
+  },
+  {
+    "task": "factcheck",
+    "http": 200,
+    "seconds": 5.5,
+    "types": [
+      "accepted",
+      "citation",
+      "completed",
+      "source",
+      "status",
+      "text_delta",
+      "tool_started"
+    ],
+    "sources": 28,
+    "completed": true,
+    "answer": "**Verdict: Contradicted.** The Moon does not produce its own visible light; what we see as moonlight is sunlight reflected from its surface. NASA and NASA\u2019s Jet Propulsion Laboratory both confirm this. ([science.nasa.gov](https://science.nasa.gov/moon/top-moon-questions/?utm_source=openai))"
+  },
+  {
+    "task": "summarize",
+    "http": 200,
+    "seconds": 1.6,
+    "types": [
+      "accepted",
+      "completed",
+      "status",
+      "text_delta"
+    ],
+    "sources": 0,
+    "completed": true,
+    "answer": "The orchard has 12 apple trees and 8 pear trees, and it is open Saturdays from 9 a.m. to 5 p.m."
+  },
+  {
+    "task": "youtube",
+    "http": 200,
+    "seconds": 8.8,
+    "types": [
+      "accepted",
+      "citation",
+      "completed",
+      "source",
+      "status",
+      "text_delta",
+      "tool_started"
+    ],
+    "sources": 29,
+    "completed": true,
+    "answer": "**Creator analysis:** \u201cMe at the zoo\u201d is an unusually plain, personal title: it describes the moment rather than pitching a topic or optimizing for search. Paired with the minimalist channel name \u201cjawed,\u201d it feels informal and experimental\u2014consistent with a platform\u2019s earliest days, before polished creator branding became standard. The video was uploaded by YouTube co-founder Jawed Karim on April 23, 2005, and its historical significance\u2014not elaborate packaging\u2014made it iconic. ([guinnessworldrecords.com](https://www.guinnessworldrecords.com/world-records/109112-first-video-uploaded-to-youtube?utm_source=openai))"
+  }
+]
