@@ -291,10 +291,19 @@ final class SplitPane: NSView {
     let back = HoverButton(symbol: "chevron.left", size: 26, point: 13)
     let forward = HoverButton(symbol: "chevron.right", size: 26, point: 13)
     let reload = HoverButton(symbol: "arrow.clockwise", size: 26, point: 12)
+    // Same page actions as the main address bar, acting on this pane's tab.
+    let copyLink = HoverButton(symbol: "link", size: 22, point: 12)
+    let clearCache = HoverButton(symbol: "trash", size: 22, point: 11)
+    let bookmark = HoverButton(symbol: "bookmark", size: 22, point: 12)
+    let share = HoverButton(symbol: "square.and.arrow.up", size: 22, point: 12)
     let address = NSTextField()
     private let addressWrap = NSView()
     let content = NSView()
     var onNavigate: ((String) -> Void)?
+    var onCopyLink: (() -> Void)?
+    var onClearCache: (() -> Void)?
+    var onBookmark: (() -> Void)?
+    var onShare: (() -> Void)?
     var onSidebarToggle: (() -> Void)?
     private var activePane = false
     var showsSidebarToggle = false {
@@ -303,6 +312,13 @@ final class SplitPane: NSView {
         }
     }
     private var navLeadingC: NSLayoutConstraint?
+    private var addressTrailingC: NSLayoutConstraint?
+    /// The left pane's toolbar starts right of the window's traffic lights when
+    /// the sidebar is hidden and the lights sit over it.
+    var clearsTrafficLights = false { didSet { needsLayout = true } }
+    /// A view floating above this pane's toolbar (the Nav button on the right
+    /// pane) that the address field must end before instead of running under.
+    weak var trailingObstacle: NSView? { didSet { needsLayout = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -322,11 +338,24 @@ final class SplitPane: NSView {
         address.cell?.truncatesLastVisibleLine = true
         address.translatesAutoresizingMaskIntoConstraints = false
         address.target = self; address.action = #selector(submit)
+        copyLink.translatesAutoresizingMaskIntoConstraints = false
+        copyLink.onTap = { [weak self] in self?.onCopyLink?() }
+        clearCache.onTap = { [weak self] in self?.onClearCache?() }
+        bookmark.onTap = { [weak self] in self?.onBookmark?() }
+        share.onTap = { [weak self] in self?.onShare?() }
+        let actions = NSStackView(views: [clearCache, bookmark, share]); actions.spacing = 2
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        addressWrap.addSubview(copyLink)
         addressWrap.addSubview(address)
+        addressWrap.addSubview(actions)
         NSLayoutConstraint.activate([
-            address.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 10),
-            address.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -10),
+            copyLink.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 5),
+            copyLink.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
+            address.leadingAnchor.constraint(equalTo: copyLink.trailingAnchor, constant: 5),
+            address.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6),
             address.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
+            actions.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -5),
+            actions.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
         ])
 
         let nav = NSStackView(views: [sidebarToggle, back, forward, reload]); nav.spacing = 1
@@ -338,6 +367,8 @@ final class SplitPane: NSView {
 
         let leadingConstraint = nav.leadingAnchor.constraint(equalTo: strip.leadingAnchor, constant: 4)
         self.navLeadingC = leadingConstraint
+        let addressTrailing = addressWrap.trailingAnchor.constraint(equalTo: strip.trailingAnchor, constant: -6)
+        self.addressTrailingC = addressTrailing
 
         NSLayoutConstraint.activate([
             strip.topAnchor.constraint(equalTo: topAnchor),
@@ -347,7 +378,7 @@ final class SplitPane: NSView {
             leadingConstraint,
             nav.centerYAnchor.constraint(equalTo: strip.centerYAnchor),
             addressWrap.leadingAnchor.constraint(equalTo: nav.trailingAnchor, constant: 6),
-            addressWrap.trailingAnchor.constraint(equalTo: strip.trailingAnchor, constant: -6),
+            addressTrailing,
             addressWrap.centerYAnchor.constraint(equalTo: strip.centerYAnchor),
             addressWrap.heightAnchor.constraint(equalToConstant: 30),
             content.topAnchor.constraint(equalTo: strip.bottomAnchor, constant: 2),
@@ -362,7 +393,28 @@ final class SplitPane: NSView {
     required init?(coder: NSCoder) { nil }
 
     func setLeftSpacingForTrafficLights(_ isLeftPaneWithHiddenSidebar: Bool) {
-        navLeadingC?.constant = isLeftPaneWithHiddenSidebar ? 80 : 4
+        clearsTrafficLights = isLeftPaneWithHiddenSidebar
+    }
+
+    /// Measured from where the traffic lights and Nav button really are, not a
+    /// guessed constant, so the toolbar clears them at any sidebar state or
+    /// pane width, and while the sidebar slides.
+    override func layout() {
+        var lead: CGFloat = 4
+        if clearsTrafficLights, let zoom = window?.standardWindowButton(.zoomButton), let host = zoom.superview {
+            let lights = convert(host.convert(zoom.frame, to: nil), from: nil)
+            lead = max(lead, lights.maxX + 14)
+        }
+        var trail: CGFloat = -6
+        if let obstacle = trailingObstacle, !obstacle.isHidden, let host = obstacle.superview {
+            let box = convert(host.convert(obstacle.frame, to: nil), from: nil)
+            if box.minX < bounds.maxX && box.maxX > bounds.minX {
+                trail = min(trail, box.minX - bounds.maxX - 8)
+            }
+        }
+        if navLeadingC?.constant != lead { navLeadingC?.constant = lead }
+        if addressTrailingC?.constant != trail { addressTrailingC?.constant = trail }
+        super.layout()
     }
 
     func host(_ view: NSView) {
@@ -371,6 +423,9 @@ final class SplitPane: NSView {
     }
     func setURL(_ s: String) {
         if !isEditingTextField(address) { address.stringValue = s }
+    }
+    func setBookmarked(_ on: Bool) {
+        bookmark.symbol = on ? "bookmark.fill" : "bookmark"
     }
     func setActive(_ active: Bool) {
         activePane = active

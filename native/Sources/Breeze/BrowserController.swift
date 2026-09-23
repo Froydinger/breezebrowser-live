@@ -50,14 +50,16 @@ private struct SiteFullscreenChromeState {
 
 final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NSTextFieldDelegate, NSSearchFieldDelegate, NSWindowDelegate, WKScriptMessageHandler, WKDownloadDelegate, CLLocationManagerDelegate, BrowserAITools {
     static let didUpdateState = Notification.Name("BrowserControllerDidUpdateState")
-    static var sharedTabs: [Tab] = []
+    /// Pinned slots are app-wide: every window shows the same pins. Tabs and
+    /// groups are not. Each window owns its own, the way Safari works, so a new
+    /// window starts clean and a link handed to one window can never end up
+    /// inside another one's web view.
     static var sharedPins: [Pin] = []
-    static var sharedGroups: [TabGroup] = []
-    static var sharedNextGroupId = 1
-    private var privateTabs: [Tab] = []
+    /// Session restore runs once per launch. A later window (a link arriving
+    /// while every window is minimised or closed) must not restore it again.
+    static var didRestoreSession = false
+    private var windowTabs: [Tab] = []
     private var privatePins: [Pin] = []
-    private var privateGroups: [TabGroup] = []
-    private var privateNextGroupId = 1
     private lazy var locationManager: CLLocationManager = {
         let manager = CLLocationManager()
         manager.delegate = self
@@ -66,11 +68,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var pendingGeolocation: [String: PendingGeolocationRequest] = [:]
 
     var tabs: [Tab] {
-        get { isPrivateWindow ? privateTabs : BrowserController.sharedTabs }
-        set {
-            if isPrivateWindow { privateTabs = newValue }
-            else { BrowserController.sharedTabs = newValue }
-        }
+        get { windowTabs }
+        set { windowTabs = newValue }
     }
     var pins: [Pin] {
         get { isPrivateWindow ? privatePins : BrowserController.sharedPins }
@@ -79,20 +78,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             else { BrowserController.sharedPins = newValue }
         }
     }
-    var groups: [TabGroup] {
-        get { isPrivateWindow ? privateGroups : BrowserController.sharedGroups }
-        set {
-            if isPrivateWindow { privateGroups = newValue }
-            else { BrowserController.sharedGroups = newValue }
-        }
-    }
-    var nextGroupId: Int {
-        get { isPrivateWindow ? privateNextGroupId : BrowserController.sharedNextGroupId }
-        set {
-            if isPrivateWindow { privateNextGroupId = newValue }
-            else { BrowserController.sharedNextGroupId = newValue }
-        }
-    }
+    var groups: [TabGroup] = []
+    var nextGroupId = 1
 
     let window: NSWindow
     var active = 0 {
@@ -202,6 +189,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let nowPlaying = NowPlayingView()
     var nowPlayingTab: Tab?
     var splitRatio: CGFloat = 0.5
+    /// Just enough to grab without being a bar in the middle of the page.
+    let splitDividerWidth: CGFloat = 4
     var splitDragStartRatio: CGFloat = 0.5
     var splitLeftWidthC: NSLayoutConstraint?
     var splitClickMonitor: Any?
@@ -495,7 +484,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             openNewTab(isPrivate: true, playSound: false)
         } else if initialContent == .newTab {
             openNewTab(playSound: false)
-        } else if BrowserController.sharedTabs.isEmpty {
+        } else if !BrowserController.didRestoreSession {
+            BrowserController.didRestoreSession = true
             let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
             if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
                 for url in Store.shared.openTabs { openTab(url: url, playSound: false) }
@@ -516,8 +506,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 openNewTab(playSound: false)
             }
         } else {
-            active = 0
-            showActive()
+            openNewTab(playSound: false)
         }
         if let current, current.isNewTab {
             startupTabID = current.id
@@ -1438,6 +1427,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             rightPane.showsSidebarToggle = false
             leftPane.setLeftSpacingForTrafficLights(sidebarHidden)
             rightPane.setLeftSpacingForTrafficLights(false)
+            leftPane.trailingObstacle = nil
+            rightPane.trailingObstacle = breezeCorner
 
             splitDivider.layer?.backgroundColor = Theme.shared.palette.surfaceHover.cgColor
             [leftPane, splitDivider, rightPane].forEach {
@@ -1452,7 +1443,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 leftPane.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
                 lw,
                 splitDivider.leadingAnchor.constraint(equalTo: leftPane.trailingAnchor),
-                splitDivider.widthAnchor.constraint(equalToConstant: 8),
+                splitDivider.widthAnchor.constraint(equalToConstant: splitDividerWidth),
                 splitDivider.topAnchor.constraint(equalTo: webContainer.topAnchor),
                 splitDivider.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
                 rightPane.leadingAnchor.constraint(equalTo: splitDivider.trailingAnchor),
@@ -1483,6 +1474,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         updateWebViewDisplay()
         syncChrome()
+        alignTrafficLights()  // split view seats them 4pt lower
+        leftPane.needsLayout = true
         scheduleReflow()      // a re-shown web view may have a stale layout width
     }
 
@@ -1538,6 +1531,20 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             if let tab { self?.reloadTabPreservingMedia(tab) }
         }
         pane.onSidebarToggle = { [weak self] in self?.toggleSidebar() }
+        pane.onCopyLink = { [weak self, weak tab] in if let tab { self?.copyLink(tab) } }
+        // The page actions work on current, so focus this pane's tab first.
+        pane.onClearCache = { [weak self, weak tab] in
+            guard let self, let tab else { return }
+            self.activateSplitTab(tab); self.clearCurrentSiteCache()
+        }
+        pane.onBookmark = { [weak self, weak tab] in
+            guard let self, let tab else { return }
+            self.activateSplitTab(tab); self.toggleBookmark()
+        }
+        pane.onShare = { [weak self, weak tab, weak pane] in
+            guard let self, let tab else { return }
+            self.activateSplitTab(tab); self.shareCurrentPage(from: pane?.share)
+        }
     }
 
     func navigateTab(_ t: Tab, _ text: String) {
@@ -1602,8 +1609,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func splitLeftWidth(for containerWidth: CGFloat) -> CGFloat {
         let width = max(containerWidth, 1)
-        let minimumPane = min(240, max(140, (width - 8) * 0.4))
-        return max(minimumPane, min(width - minimumPane - 8, width * splitRatio - 4))
+        let minimumPane = min(240, max(140, (width - splitDividerWidth) * 0.4))
+        return max(minimumPane, min(width - minimumPane - splitDividerWidth, width * splitRatio - splitDividerWidth / 2))
     }
 
     func enterSplit(_ t: Tab) {
@@ -1695,7 +1702,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard !window.styleMask.contains(.fullScreen) else { return }
 
         let offsetX: CGFloat = 10
-        let offsetY: CGFloat = -6
+        // Split view drops the 44pt top bar (lights centred at 22pt) for pane
+        // toolbars centred at 26pt; sit the lights on that line instead.
+        let offsetY: CGFloat = current?.splitPartnerId != nil ? -10 : -6
         for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(type) else { continue }
             if trafficLightBaseFrames[type] == nil {
@@ -2444,54 +2453,38 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pendingGeolocation.removeAll()
     }
 
-    /// Release this controller's ownership of shared tabs before another normal
-    /// window adopts them. Private tabs are never shared and are always destroyed.
-    func finalizeWindowClosure(preservingSharedTabs: Bool) {
+    /// Every window owns its tabs, so closing one destroys them, like Safari.
+    /// The saved session then reflects whichever normal windows remain.
+    func finalizeWindowClosure() {
         beginWindowClosure()
         for download in activeDownloads.values { download.cancel { _ in } }
         activeDownloads.removeAll()
         llm.shutdown()
-
-        if preservingSharedTabs && !isPrivateWindow {
-            for t in tabs { detachObserversAndDelegates(from: t) }
-            return
-        }
 
         let closingTabs = tabs
         for t in closingTabs { tearDownClosedTab(t) }
         tabs.removeAll()
         nowPlayingTab = nil
         updateNowPlaying()
-        if !isPrivateWindow { persistOpenTabsSnapshot() }
+        persistOpenTabsSnapshot()
     }
 
-    /// Rebind shared WKWebViews after their previous owning window closes.
-    func adoptSharedTabsAfterWindowClose() {
-        guard !isClosing else { return }
-        for t in tabs { wire(t) }
-        active = min(active, max(0, tabs.count - 1))
-        if !tabs.isEmpty {
-            showActive()
-            refreshSidebar()
-            syncChrome()
-        }
-    }
-
-    private func detachObserversAndDelegates(from t: Tab) {
-        titleObs[t.id] = nil
-        urlObs[t.id] = nil
-        fullscreenObs[t.id] = nil
-        progressObs[t.id] = nil
-        if t.webView.navigationDelegate === self { t.webView.navigationDelegate = nil }
-        if t.webView.uiDelegate === self { t.webView.uiDelegate = nil }
-    }
-
+    /// The session covers every open normal window, not just this one. Private
+    /// windows never write it: their tabs must not survive a relaunch.
     private func persistOpenTabsSnapshot() {
-        Store.shared.openTabs = tabs.compactMap { tab in
-            guard !tab.isNewTab, !tab.isChatTab else { return nil }
+        guard !isPrivateWindow else { return }
+        var windows = (NSApp.delegate as? AppDelegate)?.restorableBrowsers() ?? []
+        // Still inside init (session restore) this window isn't registered yet.
+        if !isClosing && !windows.contains(where: { $0 === self }) { windows.append(self) }
+        Store.shared.openTabs = windows.flatMap { $0.restorableTabURLs() }
+        Store.shared.saveOpenTabs()
+    }
+
+    func restorableTabURLs() -> [String] {
+        tabs.compactMap { tab in
+            guard !tab.isNewTab, !tab.isChatTab, !tab.isPrivate else { return nil }
             return tab.webView.url?.absoluteString
         }
-        Store.shared.saveOpenTabs()
     }
 
     func closeSplitPair(containing tab: Tab) {
@@ -3397,6 +3390,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             leftPane.forward.isEnabled = leftTab.webView.canGoForward
             rightPane.back.isEnabled = rightTab.webView.canGoBack
             rightPane.forward.isEnabled = rightTab.webView.canGoForward
+            leftPane.setBookmarked(!leftTab.isNewTab && Store.shared.isBookmarked(leftTab.webView.url?.absoluteString ?? ""))
+            rightPane.setBookmarked(!rightTab.isNewTab && Store.shared.isBookmarked(rightTab.webView.url?.absoluteString ?? ""))
         }
     }
 

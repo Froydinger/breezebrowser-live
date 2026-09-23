@@ -10,7 +10,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var savedOpenTabsForTermination = false
     private var closedWindowIds = Set<ObjectIdentifier>()
     var activeBrowser: BrowserController? {
-        browsers.first { isUsable($0) && $0.window.isKeyWindow } ?? browsers.first { isUsable($0) }
+        if let key = browsers.first(where: { isUsable($0) && $0.window.isKeyWindow }) { return key }
+        // Nothing key (Breeze is in the background): the frontmost window, not the oldest.
+        return frontToBack(browsers.filter(isUsable)).first
+    }
+    private func frontToBack(_ list: [BrowserController]) -> [BrowserController] {
+        let zOrder = NSApp.orderedWindows
+        func depth(_ b: BrowserController) -> Int { zOrder.firstIndex { $0 === b.window } ?? Int.max }
+        return list.sorted { depth($0) < depth($1) }
     }
     func applicationDidFinishLaunching(_ n: Notification) {
         // Before any window exists, so no tracking area can be installed first.
@@ -70,47 +77,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
-        let b: BrowserController
-        if let existing = activeBrowser {
-            b = existing
-        } else {
-            b = BrowserController()
-            browsers.append(b)
-        }
-        if !openBreezeURL(url, in: b) {
-            b.openTab(url: url.absoluteString)
-        }
-        NSApp.activate(ignoringOtherApps: true)
+        guard !urls.isEmpty else { return }
+        openExternalURLs(urls)
     }
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: urlString) else { return }
-        DispatchQueue.main.async {
-            let b: BrowserController
-            if let existing = self.activeBrowser {
-                b = existing
-            } else {
-                b = BrowserController()
-                self.browsers.append(b)
-            }
-            if !self.openBreezeURL(url, in: b) {
-                b.openTab(url: url.absoluteString)
-            }
-            NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { self.openExternalURLs([url]) }
+    }
+
+    /// A link from another app goes to the window you'd expect: the frontmost
+    /// normal window on this Space, then any other open normal window, and only
+    /// then a new one. This used to be `activeBrowser`, but nothing in Breeze is
+    /// key while you're clicking in another app, so it fell back to the OLDEST
+    /// window, often one buried behind others or on another Space. The tab opened
+    /// there, out of sight, and the window you were looking at showed a new tab
+    /// page that never finished loading. The target is also brought to the front
+    /// now, so the page always shows up where you can see it.
+    private func openExternalURLs(_ urls: [URL]) {
+        let b = linkTargetBrowser() ?? {
+            let fresh = BrowserController()
+            browsers.append(fresh)
+            return fresh
+        }()
+        for url in urls where !openBreezeURL(url, in: b) {
+            b.openTab(url: url.absoluteString)
         }
+        if b.window.isMiniaturized { b.window.deminiaturize(nil) }
+        b.window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func linkTargetBrowser() -> BrowserController? {
+        let open = browsers.filter { !$0.isPrivateWindow && isOpen($0) }
+        let onScreen = frontToBack(open.filter { $0.window.isVisible })
+        return onScreen.first { $0.window.isOnActiveSpace }
+            ?? onScreen.first
+            ?? open.first { $0.window.isMiniaturized }
     }
     @objc func windowClosed(_ notification: Notification) {
         guard let win = notification.object as? NSWindow else { return }
         closedWindowIds.insert(ObjectIdentifier(win))
         guard let index = browsers.firstIndex(where: { $0.window === win }) else { return }
 
-        let closing = browsers.remove(at: index)
-        let survivor = closing.isPrivateWindow ? nil : browsers.first {
-            !$0.isPrivateWindow && isUsable($0)
-        }
-        closing.finalizeWindowClosure(preservingSharedTabs: survivor != nil)
-        survivor?.adoptSharedTabsAfterWindowClose()
+        browsers.remove(at: index).finalizeWindowClosure()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -129,13 +139,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveRestorableOpenTabs() {
-        Store.shared.openTabs = browsers.filter(isUsable).flatMap { b in
-            b.tabs.compactMap { t in
-                guard !t.isNewTab, !t.isChatTab, !t.isPrivate else { return nil }
-                return t.webView.url?.absoluteString
-            }
-        }
+        Store.shared.openTabs = restorableBrowsers().flatMap { $0.restorableTabURLs() }
         Store.shared.saveOpenTabs()
+    }
+
+    /// Normal windows whose tabs belong in the saved session. Minimised windows
+    /// count: they're still open, just not visible.
+    func restorableBrowsers() -> [BrowserController] {
+        browsers.filter { !$0.isPrivateWindow && isOpen($0) }
+    }
+
+    private func isOpen(_ browser: BrowserController) -> Bool {
+        !closedWindowIds.contains(ObjectIdentifier(browser.window))
     }
 
     private func isUsable(_ browser: BrowserController) -> Bool {

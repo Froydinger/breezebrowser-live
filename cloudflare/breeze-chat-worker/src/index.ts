@@ -152,7 +152,7 @@ async function proxyChat(req: Request, env: Env) {
   const { quotaResp, quota } = await checkQuota(req, env, "chat");
   if (!quotaResp.ok) return json(quota, quotaResp.status);
 
-  const configuredMax = intEnv(env.MAX_OUTPUT_TOKENS, 2400);
+  const configuredMax = intEnv(env.MAX_OUTPUT_TOKENS, 128000);
   const requestedMax = Number.parseInt(String(body.max_completion_tokens ?? configuredMax), 10);
   const maxCompletionTokens = Math.min(
     Number.isFinite(requestedMax) && requestedMax > 0 ? requestedMax : configuredMax,

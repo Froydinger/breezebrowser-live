@@ -111,11 +111,14 @@ final class CloudLLM: NSObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyAuth(to: &req, requestID: requestID)
-        req.timeoutInterval = 120
+        req.timeoutInterval = 300   // long answers take a while to generate
 
         var body: [String: Any] = ["messages": history]
+        // No output cap from the client: Breeze Cloud applies its own ceiling
+        // (MAX_OUTPUT_TOKENS), and a hard 2400 here cut off long answers, which
+        // share that budget with the model's reasoning tokens. Length is steered
+        // by the system prompt instead.
         if !minimal {
-            body["max_completion_tokens"] = 2400
             body["reasoning_effort"] = "low"
         }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)

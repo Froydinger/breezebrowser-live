@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.3', icon: 'columns', title: 'Every Window Is Its Own', hotfix: true, major: false, items: [
+        '<b>Links from other apps open where you can see them</b> \u2014 Clicking a link in another app could send it to a Breeze window buried in the background or on another Space. The tab row showed up in your sidebar, but the page sat on a new-tab screen that never finished loading. Links now go to your frontmost window, which comes forward to show them.',
+        '<b>Separate windows, separate tabs</b> \u2014 A new window now starts clean instead of mirroring every tab from your other windows, just like Safari. Pinned tabs still show up in every window. Closing a window closes its tabs.',
+        '<b>Split view, tidied</b> \u2014 Each pane\u2019s toolbar now makes room for the window buttons and the Nav button instead of crowding under them, the divider is half as thick, and every pane has its own copy link, clear cache, bookmark, and share buttons.',
+        '<b>Nav talks like a person, and finishes its thoughts</b> \u2014 Nav\u2019s replies were capped at a length that cut off long answers and research mid-sentence. The cap is gone. Nav now keeps everyday replies short and conversational, and takes the room it needs when a question really calls for it.' ] },
       { v: '6.2.2', icon: 'circle-check', title: 'Minimising Breeze No Longer Clears Your Tabs', hotfix: true, major: false, items: [
         '<b>Backgrounding Breeze is safe again</b> \u2014 macOS sends memory warnings freely to apps sitting in the background, and Breeze was answering the strongest of them by sleeping every tab but the one in front, with no grace period. Minimising the window could shed a whole session. Tabs you have touched recently are now left alone.',
         '<b>Tabs killed by macOS come back properly</b> \u2014 When the system reclaims a tab\u2019s memory itself, that tab used to come back blank and stay blank until you reopened the window \u2014 including the tab you were on. It now reloads immediately if it\u2019s on screen, and otherwise shows as sleeping and restores when you click it.' ] },
