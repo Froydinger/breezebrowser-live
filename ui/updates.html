@@ -226,6 +226,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.4', icon: 'check-check', title: 'Copy Button, Out of the Way', hotfix: true, major: false, items: [
+        '<b>Nav\u2019s copy button no longer covers the reply</b> \u2014 It sat on top of the first line of every answer. It now has its own spot beside the text, so nothing is hidden when you hover.' ] },
       { v: '6.2.3', icon: 'columns', title: 'Every Window Is Its Own', hotfix: true, major: false, items: [
         '<b>Links from other apps open where you can see them</b> \u2014 Clicking a link in another app could send it to a Breeze window buried in the background or on another Space. The tab row showed up in your sidebar, but the page sat on a new-tab screen that never finished loading. Links now go to your frontmost window, which comes forward to show them.',
         '<b>Separate windows, separate tabs</b> \u2014 A new window now starts clean instead of mirroring every tab from your other windows, just like Safari. Pinned tabs still show up in every window. Closing a window closes its tabs.',

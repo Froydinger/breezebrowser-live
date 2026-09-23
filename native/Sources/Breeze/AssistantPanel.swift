@@ -1169,6 +1169,9 @@ private final class MessageBubbleView: NSView {
 
     private var textView: NSTextView!
     private var copyButton: HoverButton?
+    /// Nav replies keep a strip down the right for the copy button, so it sits
+    /// beside the text instead of on top of the first line.
+    private static let copyGutter: CGFloat = 26
     private var hovering = false
     /// The message as it arrived. Colours are baked into the attributed string at
     /// render time, so without this a chat rendered in dark mode keeps its
@@ -1188,7 +1191,7 @@ private final class MessageBubbleView: NSView {
         // of colour competing with the text beside it.
         self.insets = isUser
             ? NSEdgeInsets(top: 11, left: 18, bottom: 11, right: 18)
-            : NSEdgeInsets(top: 4, left: 2, bottom: 12, right: 2)
+            : NSEdgeInsets(top: 4, left: 2, bottom: 12, right: 2 + Self.copyGutter)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -1280,8 +1283,9 @@ private final class MessageBubbleView: NSView {
             let wrapped = measuredTextSize(width: target)
             textWidth = min(maxWidth, max(26, ceil(wrapped.width) + 2))
         } else {
-            // Prose gets the whole column; wrapping it early just makes it harder to read.
-            textWidth = maxWidth
+            // Prose gets the whole column less the copy gutter, so the reply's
+            // overall width is unchanged.
+            textWidth = max(60, maxWidth - Self.copyGutter)
         }
         let final = measuredTextSize(width: textWidth)
         let height = ceil(final.height) + insets.top + insets.bottom + 3
@@ -1306,7 +1310,7 @@ private final class MessageBubbleView: NSView {
         textView?.textContainer?.containerSize = NSSize(width: textWidth,
                                                         height: CGFloat.greatestFiniteMagnitude)
         if let copyButton {
-            copyButton.frame = NSRect(x: max(0, bounds.width - 24), y: 0, width: 22, height: 22)
+            copyButton.frame = NSRect(x: max(0, bounds.width - 22), y: insets.top - 2, width: 22, height: 22)
         }
     }
 
