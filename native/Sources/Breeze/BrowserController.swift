@@ -1621,11 +1621,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func splitLeftWidth(for containerWidth: CGFloat) -> CGFloat {
-        // Only the space between the outer margins is shared by the panes.
-        let margins = splitOuterMargin + (sidebarHidden ? splitOuterMargin : 0)
-        let width = max(containerWidth - margins, 1)
-        let minimumPane = min(240, max(140, (width - splitDividerWidth) * 0.4))
-        return max(minimumPane, min(width - minimumPane - splitDividerWidth, width * splitRatio - splitDividerWidth / 2))
+        let width = max(containerWidth, 1)
+        let minimumPane = min(240, max(140, (width - 8) * 0.4))
+        return max(minimumPane, min(width - minimumPane - 8, width * splitRatio - 4))
     }
 
     func enterSplit(_ t: Tab) {

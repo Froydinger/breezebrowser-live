@@ -226,6 +226,8 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.6', icon: 'columns', title: 'Split Resizing, Restored', hotfix: true, major: false, items: [
+        '<b>Resizing split view behaves again</b> \u2014 6.2.5 changed how the two panes share space, and resizing started pushing one pane around the other. That sizing is back to exactly how it worked before.' ] },
       { v: '6.2.5', icon: 'columns', title: 'Split View, Squared Away', hotfix: true, major: false, items: [
         '<b>Cleaner corners</b> \u2014 Split panes now sit with an even margin inside the window, so their rounded corners no longer run into the window\u2019s own and leave an odd double edge.',
         '<b>Nav button lines up</b> \u2014 In split view the Nav button now sits level with the pane address bars instead of riding a little high.' ] },
