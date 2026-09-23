@@ -253,6 +253,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     let bookmarkBtn = HoverButton(symbol: "bookmark", size: 22, point: 12)
     let adblockModeBtn = HoverButton(symbol: "shield.slash", size: 22, point: 11)
     let breezeCorner = NSButton()
+    /// 0 on the 44pt top bar; split view's pane toolbars sit 4pt lower.
+    var breezeCornerYC: NSLayoutConstraint!
+    /// Split panes float with an even margin inside the window, so their rounded
+    /// corners never butt against the window's own (differently rounded) corners.
+    let splitOuterMargin: CGFloat = 6
+    var splitLeadC: NSLayoutConstraint?
     let findBar = NSView()
     let findField = NSTextField()
     let findStatus = NSTextField(labelWithString: "")
@@ -369,10 +375,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
         // breeze corner mark — pinned top-right of the window
         root.addSubview(breezeCorner)
+        breezeCornerYC = breezeCorner.centerYAnchor.constraint(equalTo: topBar.centerYAnchor)
         breezeCorner.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             breezeCorner.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            breezeCorner.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            breezeCornerYC,
             breezeCorner.widthAnchor.constraint(equalToConstant: 30),
             breezeCorner.heightAnchor.constraint(equalToConstant: 30),
         ])
@@ -1302,6 +1309,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         splitLeftWidthC = nil
         guard let t = current else { return }
+        breezeCornerYC.constant = t.splitPartnerId != nil ? 4 : 0
 
         // Keep the current tab's WKWebView joined to this window even while a
         // native New Tab or Chat surface covers it. The remote WebKit renderer is
@@ -1437,19 +1445,24 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             let w = max(webContainer.bounds.width, 1)
             let lw = leftPane.widthAnchor.constraint(equalToConstant: splitLeftWidth(for: w))
             splitLeftWidthC = lw
+            // Against the sidebar the left edge stays flush; against the window
+            // edge it gets the same margin as the other sides.
+            let lead = leftPane.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor,
+                                                         constant: sidebarHidden ? splitOuterMargin : 0)
+            splitLeadC = lead
             NSLayoutConstraint.activate([
-                leftPane.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+                lead,
                 leftPane.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                leftPane.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+                leftPane.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor, constant: -splitOuterMargin),
                 lw,
                 splitDivider.leadingAnchor.constraint(equalTo: leftPane.trailingAnchor),
                 splitDivider.widthAnchor.constraint(equalToConstant: splitDividerWidth),
                 splitDivider.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                splitDivider.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+                splitDivider.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor, constant: -splitOuterMargin),
                 rightPane.leadingAnchor.constraint(equalTo: splitDivider.trailingAnchor),
-                rightPane.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+                rightPane.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor, constant: -splitOuterMargin),
                 rightPane.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                rightPane.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+                rightPane.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor, constant: -splitOuterMargin),
             ])
         } else {
             // Clean up partner if it was set but partner is no longer in tabs list
@@ -1608,7 +1621,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func splitLeftWidth(for containerWidth: CGFloat) -> CGFloat {
-        let width = max(containerWidth, 1)
+        // Only the space between the outer margins is shared by the panes.
+        let margins = splitOuterMargin + (sidebarHidden ? splitOuterMargin : 0)
+        let width = max(containerWidth - margins, 1)
         let minimumPane = min(240, max(140, (width - splitDividerWidth) * 0.4))
         return max(minimumPane, min(width - minimumPane - splitDividerWidth, width * splitRatio - splitDividerWidth / 2))
     }
@@ -3583,6 +3598,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         sidebar.layer?.shadowOffset = NSSize(width: 8, height: 0)
         if let current = current, current.splitPartnerId != nil {
             leftPane.setLeftSpacingForTrafficLights(sidebarHidden)
+            splitLeadC?.constant = sidebarHidden ? splitOuterMargin : 0
         }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.18

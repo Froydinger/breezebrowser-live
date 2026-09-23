@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.2.5', icon: 'columns', title: 'Split View, Squared Away', hotfix: true, major: false, items: [
+        '<b>Cleaner corners</b> \u2014 Split panes now sit with an even margin inside the window, so their rounded corners no longer run into the window\u2019s own and leave an odd double edge.',
+        '<b>Nav button lines up</b> \u2014 In split view the Nav button now sits level with the pane address bars instead of riding a little high.' ] },
       { v: '6.2.4', icon: 'check-check', title: 'Copy Button, Out of the Way', hotfix: true, major: false, items: [
         '<b>Nav\u2019s copy button no longer covers the reply</b> \u2014 It sat on top of the first line of every answer. It now has its own spot beside the text, so nothing is hidden when you hover.' ] },
       { v: '6.2.3', icon: 'columns', title: 'Every Window Is Its Own', hotfix: true, major: false, items: [
