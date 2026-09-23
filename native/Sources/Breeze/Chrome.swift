@@ -313,6 +313,15 @@ final class SplitPane: NSView {
     }
     private var navLeadingC: NSLayoutConstraint?
     private var addressTrailingC: NSLayoutConstraint?
+    private var nav: NSStackView!
+    private var actions: NSStackView!
+    // The page-action buttons are fixed width, so a narrow pane can't fit them.
+    // Whichever constraint pair is active decides whether they take space; a
+    // hidden view with live constraints still would.
+    private var addressAfterCopyC: NSLayoutConstraint!
+    private var addressAtStartC: NSLayoutConstraint!
+    private var addressBeforeActionsC: NSLayoutConstraint!
+    private var addressAtEndC: NSLayoutConstraint!
     /// The left pane's toolbar starts right of the window's traffic lights when
     /// the sidebar is hidden and the lights sit over it.
     var clearsTrafficLights = false { didSet { needsLayout = true } }
@@ -345,20 +354,26 @@ final class SplitPane: NSView {
         share.onTap = { [weak self] in self?.onShare?() }
         let actions = NSStackView(views: [clearCache, bookmark, share]); actions.spacing = 2
         actions.translatesAutoresizingMaskIntoConstraints = false
+        self.actions = actions
         addressWrap.addSubview(copyLink)
         addressWrap.addSubview(address)
         addressWrap.addSubview(actions)
+        addressAfterCopyC = address.leadingAnchor.constraint(equalTo: copyLink.trailingAnchor, constant: 5)
+        addressAtStartC = address.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 10)
+        addressBeforeActionsC = address.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6)
+        addressAtEndC = address.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -10)
         NSLayoutConstraint.activate([
             copyLink.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 5),
             copyLink.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
-            address.leadingAnchor.constraint(equalTo: copyLink.trailingAnchor, constant: 5),
-            address.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6),
+            addressAfterCopyC,
+            addressBeforeActionsC,
             address.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
             actions.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -5),
             actions.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
         ])
 
         let nav = NSStackView(views: [sidebarToggle, back, forward, reload]); nav.spacing = 1
+        self.nav = nav
         nav.translatesAutoresizingMaskIntoConstraints = false
         let strip = NSView(); strip.translatesAutoresizingMaskIntoConstraints = false
         strip.addSubview(nav); strip.addSubview(addressWrap)
@@ -414,7 +429,27 @@ final class SplitPane: NSView {
         }
         if navLeadingC?.constant != lead { navLeadingC?.constant = lead }
         if addressTrailingC?.constant != trail { addressTrailingC?.constant = trail }
+
+        // Every toolbar item is fixed width, so when the pane is narrower than
+        // all of them the constraints can't be met and AppKit breaks one at
+        // random, which shoved the panes around while resizing. Shed the page
+        // actions first, then copy link, and keep the address field readable.
+        let wrapRoom = bounds.width - lead - nav.fittingSize.width - 6 + trail
+        let minText: CGFloat = 90
+        let copyW: CGFloat = 22 + 5
+        let actionsW = actions.fittingSize.width + 6 + 5
+        let showCopy = wrapRoom >= 10 + minText + copyW + 10
+        let showActions = showCopy && wrapRoom >= 5 + copyW + minText + actionsW
+        setShown(copyLink, showCopy, on: addressAfterCopyC, off: addressAtStartC)
+        setShown(actions, showActions, on: addressBeforeActionsC, off: addressAtEndC)
         super.layout()
+    }
+
+    private func setShown(_ view: NSView, _ shown: Bool, on: NSLayoutConstraint, off: NSLayoutConstraint) {
+        guard view.isHidden == shown else { return }
+        view.isHidden = !shown
+        if shown { off.isActive = false; on.isActive = true }
+        else { on.isActive = false; off.isActive = true }
     }
 
     func host(_ view: NSView) {
