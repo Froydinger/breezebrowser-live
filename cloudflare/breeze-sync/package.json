@@ -1,0 +1,17 @@
+{
+  "name": "breeze-sync-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.example.toml",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy --config wrangler.toml"
+  },
+  "dependencies": { "jose": "^6.0.11" },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260923.1",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.103.0"
+  }
+}

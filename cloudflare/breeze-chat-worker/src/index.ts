@@ -1,3 +1,6 @@
+import { proxyMobileResponses } from "./mobile";
+import { proxyMobileTranscription } from "./transcription";
+
 interface Env {
   AI_PROVIDER_API_KEY?: string;
   OPENAI_API_KEY?: string;        // legacy secret; used as a fallback for the key
@@ -7,17 +10,19 @@ interface Env {
   AI_REASONING_EFFORT?: string;
   MAX_OUTPUT_TOKENS: string;
   CHAT_DAILY_LIMIT: string;
+  MOBILE_DAILY_LIMIT?: string;
   REALTIME_DAILY_LIMIT?: string;
   BREEZE_CLIENT_TOKEN?: string;
   QUOTA: DurableObjectNamespace<QuotaTracker>;
 }
 
-type QuotaKind = "chat" | "realtime";
+type QuotaKind = "chat" | "realtime" | "mobile";
 
 interface QuotaState {
   day: string;
   chat: number;
   realtime: number;
+  mobile?: number;
   seenChat: string[];
 }
 
@@ -32,53 +37,41 @@ export class QuotaTracker {
   constructor(private state: DurableObjectState, private env: Env) {}
 
   async fetch(req: Request): Promise<Response> {
-    const { kind, requestId } = await req.json<{ kind: QuotaKind; requestId?: string }>();
-    const day = new Date().toISOString().slice(0, 10);
-
-    let quota = await this.state.storage.get<QuotaState>("quota");
-    if (!quota || quota.day !== day) {
-      quota = { day, chat: 0, realtime: 0, seenChat: [] };
-    }
-
-    // Existing Durable Object state predates realtime quota tracking.
-    quota.realtime ??= 0;
-
-    const seen = quota.seenChat;
-    const uniqueId = (requestId || "").trim();
-    const alreadyCounted = uniqueId.length > 0 && seen.includes(uniqueId);
-    const used = kind === "realtime" ? quota.realtime : quota.chat;
-    const limit = intEnv(
-      kind === "realtime" ? this.env.REALTIME_DAILY_LIMIT : this.env.CHAT_DAILY_LIMIT,
-      kind === "realtime" ? 120 : 30,
-    );
-
-    if (!alreadyCounted) {
-      if (used >= limit) {
-        return Response.json({
-          ok: false,
-          kind,
-          limit,
-          used,
-          remaining: 0,
-          error: `Daily ${kind} limit reached.`,
-        }, { status: 429 });
+    let body: { kind?: unknown; requestId?: unknown };
+    try { body = await req.json(); } catch { return Response.json({ ok: false }, { status: 400 }); }
+    if (body.kind !== "chat" && body.kind !== "realtime" && body.kind !== "mobile") return Response.json({ ok: false }, { status: 400 });
+    const kind = body.kind;
+    return this.state.storage.transaction(async (txn) => {
+      const day = new Date().toISOString().slice(0, 10);
+      let quota = await txn.get<QuotaState>("quota");
+      if (!quota || quota.day !== day) quota = { day, chat: 0, realtime: 0, mobile: 0, seenChat: [] };
+      quota.realtime ??= 0;
+      quota.mobile ??= 0;
+      quota.seenChat ??= [];
+      const seen = quota.seenChat;
+      const uniqueId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+      // The development mobile bucket intentionally ignores caller-generated request IDs.
+      const alreadyCounted = kind !== "mobile" && uniqueId.length > 0 && seen.includes(uniqueId);
+      const used = kind === "realtime" ? quota.realtime : kind === "mobile" ? quota.mobile : quota.chat;
+      const limit = intEnv(
+        kind === "realtime" ? this.env.REALTIME_DAILY_LIMIT : kind === "mobile" ? this.env.MOBILE_DAILY_LIMIT : this.env.CHAT_DAILY_LIMIT,
+        kind === "realtime" ? 120 : kind === "mobile" ? 9999 : 30,
+      );
+      if (!alreadyCounted && used >= limit) {
+        return Response.json({ ok: false, kind, limit, used, remaining: 0, error: `Daily ${kind} limit reached.` }, { status: 429 });
       }
-
-      if (kind === "realtime") quota.realtime += 1;
-      else quota.chat += 1;
-      if (uniqueId) {
-        seen.push(uniqueId);
-        if (seen.length > 100) seen.splice(0, seen.length - 100);
+      if (!alreadyCounted) {
+        if (kind === "realtime") quota.realtime += 1;
+        else if (kind === "mobile") quota.mobile += 1;
+        else quota.chat += 1;
+        if (kind !== "mobile" && uniqueId) {
+          seen.push(uniqueId);
+          if (seen.length > 100) seen.splice(0, seen.length - 100);
+        }
       }
-      await this.state.storage.put("quota", quota);
-    }
-
-    return Response.json({
-      ok: true,
-      kind,
-      limit,
-      used: kind === "realtime" ? quota.realtime : quota.chat,
-      remaining: Math.max(0, limit - (kind === "realtime" ? quota.realtime : quota.chat)),
+      await txn.put("quota", quota);
+      const updatedUsed = kind === "realtime" ? quota.realtime : kind === "mobile" ? quota.mobile : quota.chat;
+      return Response.json({ ok: true, kind, limit, used: updatedUsed, remaining: Math.max(0, limit - updatedUsed) });
     });
   }
 }
@@ -121,6 +114,17 @@ async function checkQuota(req: Request, env: Env, kind: QuotaKind) {
       kind,
       requestId: req.headers.get("X-Breeze-Request-Id") || "",
     }),
+  });
+  const quota = await quotaResp.json<Record<string, unknown>>();
+  return { quotaResp, quota };
+}
+
+async function checkMobileQuota(env: Env) {
+  // One development-only shared budget. Never let the caller select its DO identity.
+  const id = env.QUOTA.idFromName("development-mobile-shared-token");
+  const quotaResp = await env.QUOTA.get(id).fetch("https://quota.local/check", {
+    method: "POST",
+    body: JSON.stringify({ kind: "mobile", requestId: "" }),
   });
   const quota = await quotaResp.json<Record<string, unknown>>();
   return { quotaResp, quota };
@@ -249,6 +253,7 @@ async function proxyRealtimeToken(req: Request, env: Env) {
   return withQuotaHeaders(upstream, quota);
 }
 
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (req.method === "OPTIONS") {
@@ -264,6 +269,14 @@ export default {
     if (req.method !== "POST") return json({ error: "not_found" }, 404);
     if (path === "/v1/chat/completions") return proxyChat(req, env);
     if (path === "/v1/realtime/token") return proxyRealtimeToken(req, env);
+    if (path === "/v1/mobile/responses") {
+      if (!env.BREEZE_CLIENT_TOKEN?.trim()) return json({ error: "mobile_auth_not_configured" }, 503);
+      return proxyMobileResponses(req, env, { json, checkQuota: () => checkMobileQuota(env), corsHeaders });
+    }
+    if (path === "/v1/mobile/transcriptions") {
+      if (!env.BREEZE_CLIENT_TOKEN?.trim()) return json({ error: "mobile_auth_not_configured" }, 503);
+      return proxyMobileTranscription(req, env, { json, checkQuota: () => checkMobileQuota(env) });
+    }
     return json({ error: "not_found" }, 404);
   },
 } satisfies ExportedHandler<Env>;

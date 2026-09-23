@@ -1,0 +1,21 @@
+name = "breeze-mobile"
+main = "src/index.ts"
+compatibility_date = "2026-09-23"
+workers_dev = true
+
+[vars]
+JWT_ISSUER = "https://auth.example.invalid/"
+JWT_AUDIENCE = "breeze-mobile-staging"
+JWT_JWKS_URL = "https://auth.example.invalid/.well-known/jwks.json"
+ALLOWED_ORIGINS = ""
+CHAT_DAILY_LIMIT = "100"
+RESEARCH_DAILY_LIMIT = "20"
+MAX_CONCURRENT_RUNS = "2"
+
+[[durable_objects.bindings]]
+name = "RESERVATIONS"
+class_name = "Reservations"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Reservations"]
