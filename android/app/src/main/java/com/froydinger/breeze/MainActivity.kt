@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import com.froydinger.breeze.core.*
 import com.froydinger.breeze.ui.*
@@ -911,6 +912,7 @@ private data class AddressSuggestion(val title: String, val url: String)
     onPageViewportBoundsChanged: (Rect) -> Unit = {},
 ) {
     val tab = state.selected ?: return
+    val captureScope = androidx.compose.runtime.rememberCoroutineScope()
     val addressEntrance = remember { Animatable(0f) }
     LaunchedEffect(addressEntrance) { addressEntrance.animateTo(1f, tween(360, easing = FastOutSlowInEasing)) }
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -978,10 +980,9 @@ private data class AddressSuggestion(val title: String, val url: String)
             .onGloballyPositioned { screenBounds = it.boundsInRoot() }
             .background(if (pageMorph != null) Color.Transparent else if (darkChrome) Color.Black else Color.White),
     ) {
-      Column(Modifier.fillMaxSize().graphicsLayer {
-          val progress = pageMorph?.progress?.invoke()?.coerceIn(0f, 1f) ?: 0f
-          alpha = 1f - progress
-      }) {
+      Column(Modifier.fillMaxSize().then(if (pageMorph != null) Modifier.graphicsLayer {
+          alpha = 1f - pageMorph.progress().coerceIn(0f, 1f)
+      } else Modifier)) {
         if (!state.isPictureInPicture && !state.isStandalonePwa) {
         BrowserAddressChrome(
             state = state,
@@ -1060,16 +1061,22 @@ private data class AddressSuggestion(val title: String, val url: String)
                     view.postDelayed({ finish() }, 220)
                     view.capturePixels().accept({ bitmap ->
                         if (bitmap != null) {
-                            // A capture may finish after a fast tab switch/close. Do not cache
-                            // pixels from a now-replaced view session under the previous tab.
-                            if (view.session === session && state.tabs.any { it === targetTab }) {
-                                val thumbnail = android.graphics.Bitmap.createScaledBitmap(bitmap, 360, (bitmap.height * 360f / bitmap.width).toInt().coerceAtLeast(1), true)
-                                state.saveThumbnail(targetTab, thumbnail)
-                                state.tabs.filter { it.id != targetTab.id && it.thumbnail != null }.dropLast(5).forEach { it.thumbnail = null }
-                                if (thumbnail !== bitmap) bitmap.recycle()
-                            } else if (!bitmap.isRecycled) bitmap.recycle()
-                        }
-                        finish()
+                            captureScope.launch {
+                                try {
+                                    val thumbnail = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                        android.graphics.Bitmap.createScaledBitmap(bitmap, 360, (bitmap.height * 360f / bitmap.width).toInt().coerceAtLeast(1), true)
+                                    }
+                                    // A capture may finish after a fast tab switch or close.
+                                    if (view.session === session && state.tabs.any { it === targetTab }) {
+                                        state.saveThumbnail(targetTab, thumbnail)
+                                        state.tabs.filter { it.id != targetTab.id && it.thumbnail != null }.dropLast(5).forEach { it.thumbnail = null }
+                                    } else if (thumbnail !== bitmap && !thumbnail.isRecycled) thumbnail.recycle()
+                                } finally {
+                                    if (!bitmap.isRecycled) bitmap.recycle()
+                                    finish()
+                                }
+                            }
+                        } else finish()
                     }, { _ -> finish() })
                 } else onCaptured()
             }
@@ -1087,8 +1094,7 @@ private data class AddressSuggestion(val title: String, val url: String)
               Box(Modifier.fillMaxSize()) {
                 AndroidView(
                 factory = { context -> GeckoView(context).apply {
-                    // Keep TextureView because Breeze uses in-window overlays and clipping.
-                    // The SurfaceView experiment rendered black inside this Compose layout.
+                    // SurfaceView renders black inside this Compose hierarchy.
                     setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
                     setBackgroundColor(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
                     installTab(this, tab)
@@ -1157,7 +1163,7 @@ private data class AddressSuggestion(val title: String, val url: String)
             if (tab.loading && !state.isPictureInPicture) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color=BreezeTeal)
             tab.error?.let { Text(it, style=MaterialTheme.typography.bodySmall, modifier=Modifier.align(Alignment.TopCenter).padding(12.dp).breezeGlass(14.dp).padding(10.dp)) }              }
           },
-          modifier = pageSurfaceModifier.graphicsLayer { alpha = if (snapshotMorph) 0f else 1f },
+          modifier = pageSurfaceModifier.then(if (snapshotMorph) Modifier.graphicsLayer { alpha = 0f } else Modifier),
       ) { measurables, constraints ->
           val sourceWidthPx = (if (state.isPictureInPicture) constraints.maxWidth else morphSource?.width?.toInt() ?: constraints.maxWidth).coerceAtLeast(1)
           val sourceHeightPx = (if (state.isPictureInPicture) constraints.maxHeight else morphSource?.height?.toInt() ?: constraints.maxHeight).coerceAtLeast(1)
