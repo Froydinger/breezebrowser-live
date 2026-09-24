@@ -38,6 +38,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +65,7 @@ import com.froydinger.breeze.SavedPage
 import com.froydinger.breeze.core.HomeInputMode
 import com.froydinger.breeze.core.SearchEngine
 import com.froydinger.breeze.core.ThemeMode
+import com.froydinger.breeze.data.BrowserImport
 
 /** A short, alpha-only screen entrance keeps navigation calm without moving layout. */
 @Composable
@@ -367,6 +370,22 @@ fun SettingsScreen(state: BrowserState) {
 
 @Composable
 private fun SettingsContent(state: BrowserState, onBack: () -> Unit, onChooseBackground: () -> Unit) {
+    val context = LocalContext.current
+    var importMessage by remember { mutableStateOf<String?>(null) }
+    val bookmarkImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val text = readBookmarkImportText(context, uri)
+                BrowserImport.bookmarksHtml(text)
+            }.onSuccess { imported ->
+                val existing = state.bookmarks.mapTo(mutableSetOf()) { it.url }
+                val additions = imported.filter { existing.add(it.url) }
+                state.bookmarks.addAll(0, additions)
+                state.persist()
+                importMessage = "Imported ${additions.size} bookmarks."
+            }.onFailure { importMessage = it.message ?: "Bookmarks could not be imported." }
+        }
+    }
     Column(Modifier.fillMaxSize().then(screenEntrance())) {
         SettingsHeader("Settings", onBack)
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -378,6 +397,8 @@ private fun SettingsContent(state: BrowserState, onBack: () -> Unit, onChooseBac
             item { BackgroundSettingsCard(state, onChooseBackground) }
             item { SettingSectionTitle("Your stuff") }
             item { PersonalSettingsCard(state) }
+            item { SettingsActionCard(BreezeIcons.Bookmark, "Import bookmarks", "Choose a browser bookmarks HTML export", "Import", line = MaterialTheme.colorScheme.outline) { bookmarkImporter.launch(arrayOf("text/html", "text/plain", "application/octet-stream")) } }
+            if (importMessage != null) item { Text(importMessage!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             item { SettingSectionTitle("Privacy & security") }
             item { PrivacySettingsCard(state) }
             item { SettingSectionTitle("General") }
@@ -390,6 +411,23 @@ private fun SettingsContent(state: BrowserState, onBack: () -> Unit, onChooseBac
             item { HomeOptionsCard(state) }
         }
     }
+}
+
+private fun readBookmarkImportText(context: android.content.Context, uri: android.net.Uri): String {
+    val limit = 8 * 1024 * 1024
+    val input = context.contentResolver.openInputStream(uri) ?: error("File could not be opened.")
+    val output = java.io.ByteArrayOutputStream()
+    input.use { stream ->
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            require(output.size() + count <= limit) { "File is too large to import." }
+            output.write(buffer, 0, count)
+        }
+    }
+    require(output.size() > 0) { "File is empty." }
+    return output.toString(Charsets.UTF_8.name())
 }
 
 @Composable
@@ -534,7 +572,7 @@ private fun BackgroundPickerScreen(state: BrowserState, onBack: () -> Unit) {
 @Composable
 private fun PrivacySettingsCard(state: BrowserState) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(MaterialTheme.colorScheme.surface).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(17.dp))) {
-        SettingsToggleRow(BreezeIcons.Shield, "Known ad and tracker blocking", "Uses GeckoView’s built-in protection lists", state.trackingProtection, onChange = { state.updateProtection(it) })
+        SettingsToggleRow(BreezeIcons.Shield, "Known ad and tracker blocking", "Blocks known ad and tracker requests", state.trackingProtection, onChange = { state.updateProtection(it) })
         SettingsDivider()
         SettingsToggleRow(BreezeIcons.Lock, "Third-party tracking cookies", "Reject cookies from known trackers", state.cookieProtection, onChange = { state.updateCookieProtection(it) })
         SettingsDivider()

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import com.froydinger.breeze.data.CredentialVault
 import com.froydinger.breeze.data.CredentialVaultAuthentication
+import com.froydinger.breeze.data.BrowserImport
 import com.froydinger.breeze.data.VaultCredential
 import java.util.UUID
 
@@ -149,6 +150,34 @@ fun PasswordVaultScreen() {
         )
     }
 
+    val passwordImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { readImportText(context, uri) }
+                .mapCatching { BrowserImport.passwordsCsv(it) }
+                .onSuccess { imported ->
+                    if (imported.isEmpty()) {
+                        error = "No logins found. Choose a browser password CSV export."
+                    } else {
+                        authenticate {
+                            val next = credentials.toMutableList()
+                            var added = 0
+                            imported.forEach { entry ->
+                                val origin = runCatching { vault.normalizeOrigin(entry.url) }.getOrNull() ?: return@forEach
+                                if (next.none { it.origin == origin && it.username == entry.username }) {
+                                    next.add(VaultCredential(UUID.randomUUID().toString(), origin, entry.username, entry.password))
+                                    added++
+                                }
+                            }
+                            runCatching { vault.writeAfterAuthentication(next) }
+                                .onSuccess { credentials.clear(); credentials.addAll(next); lastInteraction = SystemClock.elapsedRealtime(); error = "Imported $added logins." }
+                                .onFailure { error = it.message ?: "Logins could not be imported." }
+                        }
+                    }
+                }
+                .onFailure { error = it.message ?: "Password file could not be read." }
+        }
+    }
+
     androidx.compose.runtime.LaunchedEffect(unlocked, lastInteraction) {
         if (unlocked) {
             kotlinx.coroutines.delay(60_000)
@@ -172,6 +201,11 @@ fun PasswordVaultScreen() {
                     androidx.compose.material3.TextButton(onClick = { lockVault() }) { Text("Lock") }
                 }
             }
+        }
+        GlassCard(Modifier.fillMaxWidth()) {
+            Text("Import from another browser", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Choose a CSV password export. Imported logins are saved only in this device’s encrypted vault after authentication. Delete the unencrypted CSV when you’re done.", style = MaterialTheme.typography.bodySmall)
+            Button(onClick = { passwordImporter.launch(arrayOf("text/csv", "text/comma-separated-values", "application/octet-stream", "text/plain")) }, enabled = !loading) { Text("Import passwords") }
         }
         if (unlocked) {
             GlassCard(Modifier.fillMaxWidth()) {
@@ -245,4 +279,21 @@ private fun Context.findFragmentActivity(): FragmentActivity? {
         current = current.baseContext
     }
     return current as? FragmentActivity
+}
+
+private fun readImportText(context: Context, uri: android.net.Uri): String {
+    val limit = 8 * 1024 * 1024
+    val input = context.contentResolver.openInputStream(uri) ?: error("File could not be opened.")
+    val output = java.io.ByteArrayOutputStream()
+    input.use { stream ->
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = stream.read(buffer)
+            if (count < 0) break
+            require(output.size() + count <= limit) { "File is too large to import." }
+            output.write(buffer, 0, count)
+        }
+    }
+    require(output.size() > 0) { "File is empty." }
+    return output.toString(Charsets.UTF_8.name())
 }
