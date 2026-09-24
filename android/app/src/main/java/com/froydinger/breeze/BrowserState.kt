@@ -63,6 +63,7 @@ class LiveTab(val id: String = UUID.randomUUID().toString(), val private: Boolea
     var restoredSessionState: Boolean = false
     var lastAccessedAt by mutableLongStateOf(System.currentTimeMillis())
     var thumbnail by mutableStateOf<android.graphics.Bitmap?>(null)
+    var paintGeneration by mutableIntStateOf(0)
     var captureOverlay: (() -> Unit)? = null
     // Only the scroll delegate needs this value to detect toolbar direction changes.
     // It is not UI state, so publishing every scroll frame through Compose adds needless work.
@@ -304,6 +305,8 @@ class BrowserState(private val app: Application) {
     private val thumbnailLock = Mutex()
     private var saveJob: Job? = null
     private var appInForeground = false
+    var foregroundGeneration by mutableIntStateOf(0)
+        private set
     val isAppInForeground: Boolean get() = appInForeground
     private var backgroundedAt = 0L
     private var backgroundExpiryJob: Job? = null
@@ -459,6 +462,7 @@ class BrowserState(private val app: Application) {
 
     /** Called from Activity lifecycle; no foreground service or wakelock is used. */
     fun onAppForegrounded() {
+        if (!appInForeground) foregroundGeneration++
         appInForeground = true
         backgroundedAt = 0L
         backgroundExpiryJob?.cancel()
@@ -728,7 +732,7 @@ class BrowserState(private val app: Application) {
                 val scheme = Uri.parse(request.uri).scheme
                 val unsolicitedWindow = request.target == GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW &&
                     !request.hasUserGesture && !request.isDirectNavigation
-                if (scheme in setOf("mailto", "tel", "sms", "geo", "market") && request.hasUserGesture) launchExternalUri(request.uri)
+                if (scheme !in setOf("http", "https", "about") && request.hasUserGesture) launchExternalUri(request.uri)
                 return GeckoResult.fromValue(if (scheme in listOf("http", "https", "about") && !unsolicitedWindow) AllowOrDeny.ALLOW else AllowOrDeny.DENY)
             }
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
@@ -741,6 +745,9 @@ class BrowserState(private val app: Application) {
         }
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) { tab.title = title ?: tab.url; persist() }
+            override fun onFirstContentfulPaint(session: GeckoSession) {
+                if (tab.session === session) tab.paintGeneration++
+            }
             override fun onWebAppManifest(session: GeckoSession, manifest: JSONObject) {
                 if (tab.session === session && !tab.private) tab.webAppManifest = manifest
             }
@@ -1625,18 +1632,33 @@ class BrowserState(private val app: Application) {
     fun share(): Intent? = selected?.url?.takeIf { it.isNotBlank() }?.let { Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, it), "Share page") }
     private fun launchExternalUri(uriText: String) {
         val uri = Uri.parse(uriText)
+        if (uri.scheme.equals("intent", ignoreCase = true)) {
+            val parsed = runCatching { Intent.parseUri(uriText, Intent.URI_INTENT_SCHEME) }.getOrNull()
+                ?: return
+            val fallback = parsed.getStringExtra("browser_fallback_url")
+                ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+                ?.takeIf { it.scheme in setOf("http", "https") && !it.host.isNullOrBlank() }
+            parsed.removeExtra("browser_fallback_url")
+            parsed.component = null
+            parsed.selector = null
+            parsed.action = Intent.ACTION_VIEW
+            if (parsed.data?.scheme?.lowercase() in setOf("javascript", "data", "file", "content", "about", "blob")) return
+            parsed.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER
+            parsed.addCategory(Intent.CATEGORY_BROWSABLE)
+            if (runCatching { app.startActivity(parsed) }.isSuccess) return
+            if (fallback != null) navigate(fallback.toString()) else notice = "No installed app can open this link."
+            return
+        }
         val action = when (uri.scheme?.lowercase()) {
             "mailto", "sms" -> Intent.ACTION_SENDTO
             "tel" -> Intent.ACTION_DIAL
             "geo", "market" -> Intent.ACTION_VIEW
-            else -> return
+            "javascript", "data", "file", "content", "about", "blob" -> return
+            else -> Intent.ACTION_VIEW
         }
         val intent = Intent(action, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (intent.resolveActivity(app.packageManager) == null) {
-            notice = "No installed app can open this link."
-            return
-        }
-        runCatching { app.startActivity(intent) }.onFailure { notice = "The link could not be opened in another app." }
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        runCatching { app.startActivity(intent) }.onFailure { notice = "No installed app can open this link." }
     }
     fun persist() {
         if (!ready || writeBlocked) return

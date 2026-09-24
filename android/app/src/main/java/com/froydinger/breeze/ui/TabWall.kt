@@ -153,7 +153,7 @@ fun TabWallScreen(
             }
             items(tabs, key = { it.id }) { tab ->
                 var previewBounds by remember(tab.id) { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-                Box(Modifier.animateItem(placementSpec = tween(220, easing = FastOutSlowInEasing))) {
+                Box(Modifier.animateItem(placementSpec = if (pageTransitionInProgress) null else tween(220, easing = FastOutSlowInEasing))) {
                     TabPreviewCard(
                         tab = tab,
                         dark = dark,
@@ -258,7 +258,8 @@ private fun TabPreviewCard(
                 } else if (bitmap != null && !bitmap.isRecycled) {
                     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(11.dp))) {
                         Image(bitmap.asImageBitmap(), contentDescription = "Preview of ${tab.title}",
-                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                            alignment = Alignment.TopCenter)
                     }
                 } else if (tab.url.isBlank() || tab.url.equals("about:blank", ignoreCase = true)) {
                     NewTabPreviewArtwork(dark, wallpaper)

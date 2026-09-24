@@ -34,6 +34,14 @@ private fun nativeAppFor(context: Context, uri: Uri): NativeAppDestination? {
         .firstOrNull()?.let { NativeAppDestination(it.loadLabel(manager).toString(), ComponentName(it.activityInfo.packageName, it.activityInfo.name)) }
 }
 
+/** External web links that reach Breeze may continue to a matching installed app. */
+fun openExternalLinkInApp(context: Context, uri: Uri): Boolean {
+    if (uri.scheme !in setOf("http", "https") || uri.host.isNullOrBlank()) return false
+    val intent = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+        .addFlags(Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER)
+    return runCatching { context.startActivity(intent); true }.getOrDefault(false)
+}
+
 @Composable
 fun OpenInAppBanner(url: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current

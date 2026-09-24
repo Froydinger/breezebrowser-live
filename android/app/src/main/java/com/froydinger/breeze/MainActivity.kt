@@ -124,7 +124,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         when (intent?.action) {
             Intent.ACTION_VIEW -> intent.dataString?.let { url ->
-                browser.openExternalUrl(url, intent.getBooleanExtra(EXTRA_STANDALONE_PWA, false))
+                val standalone = intent.getBooleanExtra(EXTRA_STANDALONE_PWA, false)
+                val openedNative = !standalone && com.froydinger.breeze.ui.openExternalLinkInApp(this, android.net.Uri.parse(url))
+                if (!openedNative) browser.openExternalUrl(url, standalone)
             }
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let(browser::openSharedText)
         }
@@ -936,6 +938,19 @@ private data class AddressSuggestion(val title: String, val url: String)
         Modifier.fillMaxSize().graphicsLayer { alpha = 0f }
     }
     val pageSnapshot = (transitionSnapshot ?: tab.thumbnail)?.takeUnless { it.isRecycled }
+    val foregroundGeneration = state.foregroundGeneration
+    var lastForegroundWithView by remember { mutableIntStateOf(foregroundGeneration) }
+    val returnedFromBackground = remember(tab.id, foregroundGeneration) { lastForegroundWithView != foregroundGeneration }
+    SideEffect { lastForegroundWithView = foregroundGeneration }
+    val paintAtAttach = remember(tab.id, foregroundGeneration) { tab.paintGeneration }
+    var holdPagePreview by remember(tab.id, foregroundGeneration) { mutableStateOf(pageSnapshot != null && !tab.private) }
+    LaunchedEffect(tab.id, foregroundGeneration, tab.paintGeneration) {
+        if (tab.paintGeneration > paintAtAttach) holdPagePreview = false
+    }
+    LaunchedEffect(tab.id, foregroundGeneration) {
+        kotlinx.coroutines.delay(if (returnedFromBackground) 1100 else 320)
+        holdPagePreview = false
+    }
     // Compose shared-element transitions do not support AndroidView. Animate the cached page
     // image instead of transforming GeckoView's TextureView surface on every frame.
     val snapshotMorph = pageMorph != null
@@ -981,6 +996,7 @@ private data class AddressSuggestion(val title: String, val url: String)
         })
       }
         val attachedTab = remember { mutableStateOf<LiveTab?>(null) }
+        var lastViewForeground by remember { mutableIntStateOf(foregroundGeneration) }
         val activity = LocalContext.current as? android.app.Activity
         fun installTab(view: GeckoView, targetTab: LiveTab) {
             val previousTab = attachedTab.value
@@ -1060,6 +1076,21 @@ private data class AddressSuggestion(val title: String, val url: String)
                 } },
                 modifier = Modifier.fillMaxSize(),
                 update = { view ->
+                    if (lastViewForeground != foregroundGeneration) {
+                        lastViewForeground = foregroundGeneration
+                        val attachedSession = view.session
+                        view.post {
+                            // A retained TextureView can return with a stale gray buffer after
+                            // Android backgrounds the Activity. Rebind Gecko's live session to
+                            // this surface without reloading the page or losing its scroll state.
+                            if (view.isAttachedToWindow && attachedSession != null && view.session === attachedSession) {
+                                view.releaseSession()
+                                view.setSession(attachedSession)
+                            }
+                            view.requestLayout()
+                            view.postInvalidateOnAnimation()
+                        }
+                    }
                     view.setBackgroundColor(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
                     view.setVerticalClipping(viewportBottomPx)
                     installTab(view, tab)
@@ -1117,6 +1148,15 @@ private data class AddressSuggestion(val title: String, val url: String)
           }
       }
 
+      if (!snapshotMorph && holdPagePreview && pageSnapshot != null && !state.isPictureInPicture) {
+          Image(
+              bitmap = pageSnapshot.asImageBitmap(),
+              contentDescription = null,
+              modifier = pageSurfaceModifier,
+              contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
+          )
+      }
+
       if (snapshotMorph) {
           Box(movingPageFrameModifier.zIndex(3f)) {
               if (tab.private) {
@@ -1129,7 +1169,8 @@ private data class AddressSuggestion(val title: String, val url: String)
                       bitmap = pageSnapshot.asImageBitmap(),
                       contentDescription = null,
                       modifier = Modifier.fillMaxSize(),
-                      contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
+                      contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                      alignment = Alignment.TopCenter,
                   )
               } else {
                   Box(
