@@ -62,9 +62,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -339,10 +341,6 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
                     // flips back to false this effect runs again and captures the finished page.
                     if (selectedPage?.loading == true) return@LaunchedEffect
                     selectedPage?.captureOverlay?.invoke()
-                    delay(140)
-                    if (state.overlayBackdropRequested && selectedPage != null && state.selectedId == selectedPage.id) {
-                        selectedPage.captureOverlay?.invoke()
-                    }
                 } else {
                     delay(240)
                     if (!state.overlayBackdropRequested) state.clearOverlayBackdrop()
@@ -558,19 +556,32 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
 @Composable private fun BottomBar(state: BrowserState, collapseProgress: androidx.compose.runtime.State<Float>, modifier: Modifier = Modifier, onOpenTabs: () -> Unit) {
     val page = state.selected
     val canCollapse = state.screen == "browser" || state.screen == "chat" && state.chatReturnScreen == "browser"
-    val progress = if (canCollapse) collapseProgress.value else 0f
+    // Read each tick in layout/draw so scrolling does not recompose every dock control.
+    val progress = { if (canCollapse) collapseProgress.value.coerceIn(0f, 1f) else 0f }
+    val showControls by remember(canCollapse, collapseProgress) { derivedStateOf { !canCollapse || collapseProgress.value < 1f } }
+    val showCaret by remember(canCollapse, collapseProgress) { derivedStateOf { canCollapse && collapseProgress.value > .001f } }
+    val caretEnabled by remember(canCollapse, collapseProgress) { derivedStateOf { canCollapse && collapseProgress.value > .82f } }
     val buttonSize = 48.dp
     val iconSize = 24.dp
     val navSize = 56.dp
     val tint = MaterialTheme.colorScheme.onSurface
-    val bodyHeight = BottomBarHeight * (1f - progress) + CollapsedBottomBarHeight * progress
-    val verticalPadding = BottomBarVerticalPadding * (1f - progress) + CompactBottomBarVerticalPadding * progress
     var recentTabsOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val view = LocalView.current
-    Box(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal=12.dp).padding(vertical=verticalPadding), contentAlignment=Alignment.Center) {
-        if (progress < 1f) Row(
-            Modifier.fillMaxWidth().height(bodyHeight).graphicsLayer {
+    Box(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal=12.dp).layout { measurable, constraints ->
+        val p = progress()
+        val padding = (BottomBarVerticalPadding * (1f - p) + CompactBottomBarVerticalPadding * p).roundToPx()
+        val placeable = measurable.measure(constraints.offset(vertical = -padding * 2))
+        layout(placeable.width, placeable.height + padding * 2) { placeable.placeRelative(0, padding) }
+    }, contentAlignment=Alignment.Center) {
+        if (showControls) Row(
+            Modifier.fillMaxWidth().layout { measurable, constraints ->
+                val p = progress()
+                val height = (BottomBarHeight * (1f - p) + CollapsedBottomBarHeight * p).roundToPx()
+                val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+                layout(placeable.width, height) { placeable.placeRelative(0, 0) }
+            }.graphicsLayer {
+                val progress = progress()
                 val uniformScale = 1f - .20f * progress
                 scaleX = uniformScale
                 scaleY = uniformScale
@@ -638,10 +649,11 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
                 }
             } else Spacer(Modifier.size(buttonSize))
         }
-        if (progress < 1f) {
+        if (showControls) {
             Box(
                 Modifier.align(Alignment.Center).offset(y = (-2).dp).size(72.dp)
                     .graphicsLayer {
+                        val progress = progress()
                         val uniformScale = 1f - .20f * progress
                         scaleX = uniformScale
                         scaleY = uniformScale
@@ -673,13 +685,13 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
                 }
             }
         }
-        if (progress > .001f) {
+        if (showCaret) {
             Box(
                 Modifier.size(34.dp)
-                    .graphicsLayer { alpha = progress; scaleX = .82f + .18f * progress; scaleY = .82f + .18f * progress }
+                    .graphicsLayer { val p = progress(); alpha = p; scaleX = .82f + .18f * p; scaleY = .82f + .18f * p }
                     .offset(y = 5.dp)
-                    .semantics { if (progress > .82f) contentDescription = "Show browser controls" }
-                    .clickable(enabled = progress > .82f) { page?.chromeCollapsed = false },
+                    .semantics { if (caretEnabled) contentDescription = "Show browser controls" }
+                    .clickable(enabled = caretEnabled) { page?.chromeCollapsed = false },
                 contentAlignment = Alignment.Center,
             ) { Icon(BreezeIcons.ChevronUp, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp)) }
         }
@@ -1013,10 +1025,14 @@ private data class AddressSuggestion(val title: String, val url: String)
                     view.postDelayed({ finish() }, 220)
                     view.capturePixels().accept({ bitmap ->
                         if (bitmap != null) {
-                            val thumbnail = android.graphics.Bitmap.createScaledBitmap(bitmap, 360, (bitmap.height * 360f / bitmap.width).toInt().coerceAtLeast(1), true)
-                            state.saveThumbnail(targetTab, thumbnail)
-                            state.tabs.filter { it.id != targetTab.id && it.thumbnail != null }.dropLast(5).forEach { it.thumbnail = null }
-                            if (thumbnail !== bitmap) bitmap.recycle()
+                            // A capture may finish after a fast tab switch/close. Do not cache
+                            // pixels from a now-replaced view session under the previous tab.
+                            if (view.session === session && state.tabs.any { it === targetTab }) {
+                                val thumbnail = android.graphics.Bitmap.createScaledBitmap(bitmap, 360, (bitmap.height * 360f / bitmap.width).toInt().coerceAtLeast(1), true)
+                                state.saveThumbnail(targetTab, thumbnail)
+                                state.tabs.filter { it.id != targetTab.id && it.thumbnail != null }.dropLast(5).forEach { it.thumbnail = null }
+                                if (thumbnail !== bitmap) bitmap.recycle()
+                            } else if (!bitmap.isRecycled) bitmap.recycle()
                         }
                         finish()
                     }, { _ -> finish() })
@@ -1025,7 +1041,7 @@ private data class AddressSuggestion(val title: String, val url: String)
             targetTab.captureOverlay = {
                 if (!targetTab.private && view.isAttachedToWindow) view.capturePixels().accept({ bitmap ->
                     if (bitmap != null) {
-                        if (state.overlayBackdropRequested && state.selectedId == targetTab.id) state.updateOverlayBackdrop(bitmap)
+                        if (view.session === session && state.overlayBackdropRequested && state.selectedId == targetTab.id) state.updateOverlayBackdrop(bitmap)
                         else if (!bitmap.isRecycled) bitmap.recycle()
                     }
                 }, { _ -> })
@@ -1164,7 +1180,8 @@ private fun BrowserAddressChrome(
                 if (darkChrome) listOf(Color.Transparent, Color.White.copy(alpha = .045f), Color.Transparent)
                 else listOf(Color.Transparent, Color.Black.copy(alpha = .035f), Color.Transparent),
             )).blur(6.dp))
-        if (expanded || collapseProgress.value < .999f) {
+        val showAddress by remember(expanded, collapseProgress) { derivedStateOf { expanded || collapseProgress.value < .999f } }
+        if (showAddress) {
             Row(Modifier.fillMaxSize().graphicsLayer {
                 val collapse = collapseProgress.value.coerceIn(0f, 1f)
                 val chromeAlpha = 1f - collapse
@@ -1197,15 +1214,16 @@ private fun CollapsedUrlChip(
     collapsed: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val progress = collapseProgress.value
+    val visible by remember(collapsed, collapseProgress) { derivedStateOf { collapsed || collapseProgress.value > .001f } }
+    val interactive by remember(collapseProgress) { derivedStateOf { collapseProgress.value > .82f } }
     val tab = state.selected ?: return
-    if (!collapsed && progress <= .001f) return
+    if (!visible) return
     val host = remember(tab.url) { android.net.Uri.parse(tab.url).host.orEmpty().removePrefix("www.") }
     Row(
-        modifier.graphicsLayer { alpha = progress.coerceIn(0f, 1f) }
+        modifier.graphicsLayer { alpha = collapseProgress.value.coerceIn(0f, 1f) }
             .breezeGlass(50.dp)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .72f), RoundedCornerShape(50.dp))
-            .clickable(enabled = progress > .82f) { tab.chromeCollapsed = false }
+            .clickable(enabled = interactive) { tab.chromeCollapsed = false }
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
