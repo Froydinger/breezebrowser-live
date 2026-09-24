@@ -24,8 +24,12 @@ android {
         }
         release {
             isMinifyEnabled = false
-            buildConfigField("String", "CLOUD_TOKEN", "\"\"")
-            buildConfigField("String", "CLOUD_URL", "\"\"")
+            val tokenFile = rootProject.file("../cloudflare/breeze-chat-worker/.breeze-client-token")
+            require(tokenFile.exists()) { "Local Breeze Cloud client credential required for release" }
+            val token = tokenFile.readText().trim()
+            require(token.matches(Regex("[A-Za-z0-9._~+/=-]+"))) { "Invalid local client credential format" }
+            buildConfigField("String", "CLOUD_TOKEN", "\"$token\"")
+            buildConfigField("String", "CLOUD_URL", "\"https://breeze-chat.jakefroydinger.workers.dev/v1/mobile/responses\"")
         }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
