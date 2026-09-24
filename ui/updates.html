@@ -226,6 +226,13 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.0', icon: 'search-check', title: 'Nav Actually Does the Work', hotfix: false, major: true, items: [
+        '<b>Research really reads now</b> — /research used to glance at one page and give up. It now runs real searches, opens and reads several of the best results in its own tab (you can watch), follows a link deeper when a page points somewhere better, and writes up a sourced answer. It reads the article itself, not the site’s menus, so long lists and tables come through complete.',
+        '<b>Nav can see the page</b> — Ask about a comic, a chart, an image or “what’s on my screen” and Nav takes a look. It reads the screen on your Mac and only sends the text, so it costs no more than reading a page.',
+        '<b>/factcheck checks for real</b> — It searches, reads several sources, and gives a clear verdict (true, false, mixed or unverified) with the evidence linked.',
+        '<b>/summarize covers the whole page</b> — It summarizes the full article instead of the first screen of menus, and reads image-heavy pages off the screen.',
+        '<b>Creator Tools sees your thumbnail</b> — The YouTube breakdown now reads the video page, so its notes on title, thumbnail and views reflect what’s actually there.',
+        '<b>Nav follows through</b> — No more “let me check that” and then nothing. Nav now does the step it says it will, and lines in its answers like “Click Settings” are never mistaken for commands on your page.' ] },
       { v: '6.2.7', icon: 'columns', title: 'Split Resizing, Actually Fixed', hotfix: true, major: false, items: [
         '<b>Panes stay put when you resize</b> \u2014 The page buttons added to each split pane in 6.2.3 made the toolbar wider than a narrow pane, and the layout gave way by shoving the panes around. A narrow pane\u2019s toolbar now drops those buttons until there\u2019s room again, so resizing is smooth at any width.' ] },
       { v: '6.2.6', icon: 'columns', title: 'Split Resizing, Restored', hotfix: true, major: false, items: [

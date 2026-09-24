@@ -14,6 +14,18 @@ protocol BrowserAITools: AnyObject {
     @MainActor func aiSetReminder(_ text: String, minutes: Int) async -> String
     @MainActor func aiClick(_ target: String) async -> String
     @MainActor func aiType(_ target: String, text: String) async -> String
+    // Research mode (Research.swift): a dedicated tab the user can watch.
+    @MainActor func aiResearchBegin() async
+    @MainActor func aiResearchStatus(_ status: String) async
+    @MainActor func aiResearchSearch(_ query: String) async -> [ResearchLink]
+    @MainActor func aiResearchRead(_ url: String, focus: [String]) async -> ResearchPage?
+    @MainActor func aiResearchKeepSource(title: String, url: String) async
+    @MainActor func aiResearchLook() async -> ResearchPage?
+    // Vision: screenshot the visible page and OCR it on-device (text only).
+    @MainActor func aiLookAtPage() async -> String
+    // Tasks: main content of the user's page, and the pending /task pipeline.
+    @MainActor func aiReadCurrentMain() async -> ResearchPage?
+    @MainActor func aiTakeTaskMode() async -> String?
 }
 
 enum AgentAction {
@@ -23,6 +35,7 @@ enum AgentAction {
     case remind(Int, String)   // set a reminder in N minutes
     case click(String)         // click on a button/link/element matching text or selector
     case type(String, String)  // type text into a field matching text or selector
+    case look                  // screenshot + OCR what's visibly on screen
 }
 
 enum Agent {
@@ -94,6 +107,10 @@ enum Agent {
           READ                  — read the page the user is viewing. Use when they ask \
         about "this page" / "this article", OR before you CLICK/TYPE on the current \
         page, to load its numbered Interactive Elements.
+          LOOK                  — see the page visually (screenshot read on-device). Use \
+        when READ's text is missing or doesn't match what the user describes, or for \
+        images, charts, canvas apps, video frames, PDFs, or "what's on my screen / what \
+        does this look like". Returns the visible text with its position on screen.
           REMIND: <minutes> | <text>  — set a reminder.
           CLICK: <ID or selector>   — click on a link, button, input field, or element. Prefer using the ID in brackets (e.g. CLICK: 3 or CLICK: [3]) from the Interactive Elements list.
           TYPE: <ID or selector> | <value> — type a value into an input field, text area, or textbox. Prefer using the ID in brackets (e.g. TYPE: 2 | value or TYPE: [2] | value) from the Interactive Elements list.
@@ -115,6 +132,12 @@ enum Agent {
 
         After an action you'll get the result, then you can act again or answer. When \
         ready, reply normally (NO action keyword) with a helpful answer.
+
+        ACT, DON'T ANNOUNCE. A reply without an action line ENDS your turn and is shown \
+        to the user as your final answer. So never say "let me check", "I'll open it", \
+        "one sec" or "I'm going to look" on its own — nothing happens. If you're going \
+        to do something, put the action line in that same reply. Keep going step after \
+        step (you have up to 12) until the task is actually done, then answer.
 
         KEEP SEARCHES PLAIN AND SHORT. When you SEARCH, type only short, natural \
         keywords — the way a person types into a search box ("current tiktok trends", \
@@ -154,6 +177,8 @@ enum Agent {
         • You can plan and chain steps: for complex tasks (e.g. "do some research, write a blog post, then create a new post on my wordpress site that is logged in"), formulate a multi-step plan, navigate, and perform sequential form fills, button clicks, and search queries across websites to complete the task.
         • You are aware of the user's active reminders. You can read, inspect, or suggest new reminders based on this state.
         • NEVER invent facts, URLs, prices, or sources. SEARCH if truly unsure.
+        • NEVER describe what an image, comic, chart, photo, video frame or the screen \
+        shows from memory or guesswork — only from LOOK output. If you haven't looked, LOOK.
         • Don't describe your own model, architecture, or training.
         • Use the user's open-tab context below when it's relevant.
 
@@ -165,47 +190,68 @@ enum Agent {
     }
 
     /// Parse a model reply into an action, scanning for the first action line.
+    /// Protocol lines are matched strictly so prose can't fire one by accident:
+    /// "- Click Settings" in a how-to answer used to CLICK on the user's page.
+    /// Accepted: `KEYWORD: value` in any case (the colon marks it as protocol) or
+    /// an ALL-CAPS `KEYWORD value`; markdown noise (bullets, **bold**, `code`,
+    /// "1.", brackets, "Action:") is ignored. A capitalised `KEYWORD:` in the
+    /// middle of a line ("Sure — OPEN: apple.com") counts too.
     static func parse(_ reply: String) -> AgentAction? {
-        for raw in reply.split(separator: "\n") {
-            var l = raw.trimmingCharacters(in: .whitespaces)
-            // strip common markdown/bullet noise the small model sometimes adds
-            while l.hasPrefix("`") || l.hasPrefix("*") || l.hasPrefix("-") || l.hasPrefix(">") {
-                l.removeFirst()
-            }
-            l = l.trimmingCharacters(in: .whitespaces)
-            var up = l.uppercased()
-            if up.hasPrefix("ACTION: ") { l = String(l.dropFirst(8)).trimmingCharacters(in: .whitespaces); up = l.uppercased() }
-            else if up.hasPrefix("ACTION ") { l = String(l.dropFirst(7)).trimmingCharacters(in: .whitespaces); up = l.uppercased() }
+        let lines = reply.split(separator: "\n").map(String.init)
+        for line in lines { if let a = parseLine(line) { return a } }
+        for line in lines {
+            if let r = line.range(of: #"\b(OPEN|SEARCH|CLICK|TYPE|REMIND|READ|LOOK):"#, options: .regularExpression),
+               let a = parseLine(String(line[r.lowerBound...])) { return a }
+        }
+        return nil
+    }
 
-            if up.hasPrefix("OPEN:") || up.hasPrefix("OPEN ") {
-                let v = clean(String(l.dropFirst(5))); if !v.isEmpty { return .open(v) }
-            } else if up.hasPrefix("SEARCH:") || up.hasPrefix("SEARCH ") {
-                let v = clean(String(l.dropFirst(7)))
-                if !v.isEmpty {
-                    if isURL(v) {
-                        return .open(v)
-                    } else {
-                        return .search(v)
-                    }
-                }
-            } else if up.hasPrefix("CLICK:") || up.hasPrefix("CLICK ") {
-                let v = clean(String(l.dropFirst(6))); if !v.isEmpty { return .click(v) }
-            } else if up.hasPrefix("TYPE:") || up.hasPrefix("TYPE ") {
-                let body = String(l.dropFirst(5))
-                let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                if parts.count > 1 {
-                    return .type(clean(parts[0]), clean(parts[1]))
-                }
-            } else if up.hasPrefix("REMIND:") || up.hasPrefix("REMIND ") {
-                let body = String(l.dropFirst(7))
-                let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-                let mins = Int(parts.first?.filter { $0.isNumber } ?? "") ?? 5
-                let txt = parts.count > 1 ? parts[1] : "Reminder"
-                return .remind(mins, clean(txt))
-            } else if up == "READ" || up == "READ:" || up.hasPrefix("READ ") {
-                return .read
+    static func parseLine(_ raw: String) -> AgentAction? {
+        var l = raw.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        // leading bullets / quote marks / brackets / list numbers ("1." "2)")
+        var wrapped = ""   // closers to strip at the end, only for openers we stripped
+        while let f = l.first, "*->•#[(\"'“".contains(f) {
+            if let c = ["[": "]", "(": ")", "\"": "\"", "'": "'", "“": "”"][f] { wrapped += c }
+            l.removeFirst(); l = l.trimmingCharacters(in: .whitespaces)
+        }
+        if let r = l.range(of: #"^\d+[.)]\s*"#, options: .regularExpression) { l.removeSubrange(r) }
+        while let e = l.last, wrapped.contains(e) { l.removeLast() }
+        l = l.trimmingCharacters(in: .whitespaces)
+        if l.uppercased().hasPrefix("ACTION:") { l = String(l.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
+        else if l.hasPrefix("ACTION ") { l = String(l.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
+
+        // Returns the value after KEYWORD if this line is that action, else nil.
+        func arg(_ kw: String) -> String? {
+            let up = l.uppercased()
+            if up == kw { return "" }
+            if up.hasPrefix(kw + ":") { return String(l.dropFirst(kw.count + 1)).trimmingCharacters(in: .whitespaces) }
+            if l.hasPrefix(kw + " ") { return String(l.dropFirst(kw.count + 1)).trimmingCharacters(in: .whitespaces) }  // ALL-CAPS only
+            return nil
+        }
+        if let v = arg("OPEN").map(clean), !v.isEmpty { return .open(v) }
+        if let v = arg("SEARCH").map(clean), !v.isEmpty { return isURL(v) ? .open(v) : .search(v) }
+        if let v = arg("CLICK").map(clean), !v.isEmpty { return .click(v) }
+        if let body = arg("TYPE") {
+            let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count > 1, !parts[0].isEmpty { return .type(clean(parts[0]), clean(parts[1])) }
+            // "TYPE: 3 hello" / "TYPE: [3] hello" — element ID then the text
+            if let r = body.range(of: #"^\[?\d+\]?\s+"#, options: .regularExpression) {
+                let id = body[r].trimmingCharacters(in: CharacterSet(charactersIn: "[] "))
+                let v = clean(String(body[r.upperBound...]))
+                if !v.isEmpty { return .type(id, v) }
             }
         }
+        if let body = arg("REMIND"), !body.isEmpty {
+            let parts = body.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            let mins = Int(parts.first?.filter { $0.isNumber } ?? "") ?? 5
+            let txt = parts.count > 1 ? parts[1] : "Reminder"
+            return .remind(mins, clean(txt))
+        }
+        // READ/LOOK take no argument; allow a trailing note ("LOOK: read the comic").
+        let up = l.uppercased()
+        if up == "READ" || up.hasPrefix("READ:") || l.hasPrefix("READ ") { return .read }
+        if up == "LOOK" || up.hasPrefix("LOOK:") || l.hasPrefix("LOOK ") { return .look }
         return nil
     }
 
@@ -229,9 +275,9 @@ enum Agent {
     /// self-contained prompt — used to recover from a context-window overflow so
     /// the assistant never hard-fails. Returns the final answer + tool chips.
     static func run(userText: String, contexts: [AIContext], tools: any BrowserAITools,
-                    maxSteps: Int = 8, contextBudget: Int = 8000,
+                    maxSteps: Int = 12, contextBudget: Int = 8000,
                     ask: (String) async throws -> String,
-                    askFresh: (String) async throws -> String) async throws -> (answer: String, chips: [String]) {
+                    askFresh: @escaping @Sendable (String) async throws -> String) async throws -> (answer: String, chips: [String]) {
         // The page the user is actively viewing is presented FIRST and labelled as
         // such, so "what is this about / this page / this video" resolves to it.
         // Everything else (history, bookmarks, other tabs) is reference-only.
@@ -240,6 +286,17 @@ enum Agent {
         for c in contexts {
             let block = "[\(c.label)]\n\(String(c.text.prefix(contextBudget)))\n\n"
             if c.isCurrent { currentCtx += block } else { refCtx += block }
+        }
+        // Research is its own pipeline: search, pick, open and read several real
+        // pages, then write up from notes. See Research.swift.
+        let taskMode = await tools.aiTakeTaskMode()
+        if taskMode == "summarize" {
+            return try await Research.summarize(userText: userText, tools: tools, askFresh: askFresh)
+        }
+        if taskMode == "factcheck" || Research.wants(userText) {
+            return try await Research.run(userText: userText, contexts: contexts, tools: tools,
+                                          mode: taskMode == "factcheck" ? .factcheck : .research,
+                                          ask: ask, askFresh: askFresh)
         }
         var prompt = ""
         if !currentCtx.isEmpty {
@@ -276,6 +333,16 @@ enum Agent {
         // question verbatim. Measured across reasoning levels this is a prompt
         // problem, not a reasoning one (research succeeded 0/5 at none, 1/5 at
         // medium, 3/5 at high), so state the directive on the first turn too.
+        let visual = wantsVisual(userText)
+        // Skip the glance when they're sending Nav somewhere else ("go to xkcd.com
+        // and…") — the post-OPEN look covers that page instead.
+        let navigatesAway = userText.range(of: #"(?i)\b(go to|open|visit|navigate to|head to)\b|https?://|\b[\w-]+\.(com|org|net|io|dev|app|co|ai)\b"#,
+                                           options: .regularExpression) != nil
+        if visual, !navigatesAway, !currentCtx.isEmpty {
+            let seen = await tools.aiLookAtPage()
+            chips.append("👁️ Looked")
+            prompt += "\n\n\(String(seen.prefix(6000)))"
+        }
         if isResearch {
             prompt += "\n\nThis is a RESEARCH request. Do NOT ask clarifying questions, do NOT restate the plan, and do NOT answer from memory. Your very next reply must be exactly one SEARCH: line with short, plain keywords for this topic — nothing else."
         }
@@ -289,6 +356,7 @@ enum Agent {
         // with no new information, instead of burning steps until maxSteps.
         var lastSig = ""
         var prevResult = ""
+        var nudges = 0
 
         // If the model overflows its context (or errors), start a clean window
         // seeded only with the question + the most relevant info, and answer.
@@ -334,6 +402,13 @@ enum Agent {
             // everything gathered. This is what was stranding /research on a bare
             // "opened the page" reply instead of producing the summary.
             guard let action = parse(reply) else {
+                // "Let me check that…" with no action line would end the run on a
+                // promise. Hold the model to it: ask for the action it announced.
+                if nudges < 2, announcesAction(reply) {
+                    nudges += 1
+                    prompt = "\(goal)\n\nYou said you'd do something but didn't send an action line, so nothing happened. Don't describe it — reply with ONLY the action line now (OPEN: / SEARCH: / READ / LOOK / CLICK: / TYPE:). If you truly already have everything you need, give the actual answer instead."
+                    continue
+                }
                 let finalized = finalize(reply, fallback: "")
                 return (finalized.isEmpty ? await recover() : finalized, chips)
             }
@@ -344,6 +419,12 @@ enum Agent {
                 if !chips.contains(chip) { chips.append(chip) }
                 lastFallback = "I've opened \(host) for you."
                 lastResult = await tools.aiOpenURL(u)
+                // Visual question → look at the page too, and put it first so the
+                // per-step cap can't trim it away behind the page text.
+                if visual {
+                    if !chips.contains("👁️ Looked") { chips.append("👁️ Looked") }
+                    lastResult = await tools.aiLookAtPage() + "\n\n" + lastResult
+                }
                 let openNote = isResearch
                     ? "This is one of your research sources — read it. If you've read fewer than ~3–4 sources so far, go OPEN another result link (OPEN: <url> or CLICK: <ID>) and keep gathering before you answer. Once you've read several, write a thorough synthesized answer that pulls together what each source said."
                     : "The page is now open. If finishing the request clearly needs a click or further reading, do it with CLICK: <ID> (use the Interactive Elements IDs above) or OPEN: <url>. If the request is already answered, or it's unclear what to do next, just answer or ask the user in plain language — do NOT click random elements."
@@ -373,6 +454,11 @@ enum Agent {
                 lastFallback = "Here's a summary of the page."
                 lastResult = await tools.aiReadCurrentPage()
                 prompt = "\(goal)\n\n\(cap(lastResult))\n\nUsing this, answer the user's question about the page now in plain language."
+            case .look:
+                if !chips.contains("👁️ Looked") { chips.append("👁️ Looked") }
+                lastFallback = "Here's what I can see on the page."
+                lastResult = await tools.aiLookAtPage()
+                prompt = "\(goal)\n\n\(cap(lastResult, 6000))\n\nThat's what's visibly on screen. Use it to answer or continue; to click something you saw, READ first for element IDs."
             case .remind(let m, let t):
                 chips.append("⏰ Reminder")
                 lastFallback = "Reminder set."
@@ -391,12 +477,37 @@ enum Agent {
         return (lastFallback, chips)
     }
 
+    /// The request is about something you have to SEE (text inside an image, a
+    /// chart, "what's on my screen") — page text alone won't have it.
+    static func wantsVisual(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let cues = ["image", "picture", "photo", "pic ", "comic", "drawing", "chart", "graph", "diagram",
+                    "screenshot", "screen", "meme", "infographic", "thumbnail", "logo", "map ", "what does it look",
+                    "looks like", "look like", "visual", "see on", "you see", "in the video", "slide", "poster"]
+        return cues.contains { t.contains($0) }
+    }
+
+    /// A reply that promises an action ("let me look", "I'll open it", "checking
+    /// now…") instead of containing one. Only short replies count, so a real
+    /// answer that happens to say "let me know" still ends the turn.
+    static func announcesAction(_ reply: String) -> Bool {
+        let t = reply.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, t.count < 350 else { return false }
+        let cleaned = t.replacingOccurrences(of: "let me know", with: "")
+        let promises = ["let me ", "i'll ", "i will ", "i’ll ", "i'm going to", "i’m going to", "i am going to",
+                        "gonna ", "one sec", "one moment", "hang on", "hang tight", "hold on", "stand by",
+                        "give me a sec", "give me a moment", "working on it", "on it!", "on it."]
+        if promises.contains(where: { cleaned.contains($0) }) { return true }
+        return t.hasSuffix("…") || t.hasSuffix("...") || t.hasSuffix(":")
+    }
+
     /// Stable identity for an action, used to detect a stuck repeat-loop.
     private static func signature(of a: AgentAction) -> String {
         switch a {
         case .open(let u):       return "open:\(u.lowercased())"
         case .search(let q):     return "search:\(q.lowercased())"
         case .read:              return "read"
+        case .look:              return "look"
         case .remind(let m, let t): return "remind:\(m):\(t.lowercased())"
         case .click(let t):      return "click:\(t.lowercased())"
         case .type(let t, let v): return "type:\(t.lowercased()):\(v.lowercased())"
@@ -409,14 +520,12 @@ enum Agent {
         return s.isEmpty ? fallback : s
     }
 
-    /// Remove any stray action lines from a final answer (defensive).
+    static func stripActionLinesPublic(_ s: String) -> String { stripActionLines(s) }
+
+    /// Remove any stray action lines from a final answer (defensive). Uses the
+    /// parser's own rules so ordinary prose ("Open Settings → Privacy") survives.
     private static func stripActionLines(_ s: String) -> String {
-        let kept = s.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
-            var up = line.trimmingCharacters(in: .whitespaces).uppercased()
-            if up.hasPrefix("ACTION: ") { up = String(up.dropFirst(8)).trimmingCharacters(in: .whitespaces) }
-            else if up.hasPrefix("ACTION ") { up = String(up.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
-            return !(up.hasPrefix("OPEN:") || up.hasPrefix("SEARCH:") || up.hasPrefix("REMIND:") || up == "READ" || up.hasPrefix("OPEN ") || up.hasPrefix("SEARCH ") || up.hasPrefix("REMIND ") || up.hasPrefix("CLICK:") || up.hasPrefix("CLICK ") || up.hasPrefix("TYPE:") || up.hasPrefix("TYPE "))
-        }
+        let kept = s.split(separator: "\n", omittingEmptySubsequences: false).filter { parseLine(String($0)) == nil }
         return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

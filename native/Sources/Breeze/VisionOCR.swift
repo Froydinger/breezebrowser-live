@@ -31,3 +31,35 @@ enum VisionOCR {
         return out
     }
 }
+
+extension VisionOCR {
+    /// OCR a rendered page (a WKWebView snapshot) into reading-order lines, each
+    /// tagged with where it sits on screen so the model can talk about layout
+    /// ("the banner at the top", "the price on the right"). Text only — nothing
+    /// is sent as an image, so it costs the same as reading page text.
+    static func readScreen(_ cg: CGImage) -> [String] {
+        let req = VNRecognizeTextRequest()
+        req.recognitionLevel = .accurate
+        req.usesLanguageCorrection = true
+        try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([req])
+        let obs = (req.results ?? []).compactMap { o -> (String, CGRect)? in
+            guard let s = o.topCandidates(1).first?.string, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            return (s, o.boundingBox)   // normalized, origin bottom-left
+        }
+        // Group into visual rows (similar vertical centre), rows top→bottom, words left→right.
+        let sorted = obs.sorted { $0.1.midY > $1.1.midY }
+        var rows: [[(String, CGRect)]] = []
+        for o in sorted {
+            if let last = rows.last?.first, abs(last.1.midY - o.1.midY) < max(0.008, o.1.height * 0.5) {
+                rows[rows.count - 1].append(o)
+            } else { rows.append([o]) }
+        }
+        return rows.map { row in
+            let r = row.sorted { $0.1.minX < $1.1.minX }
+            let y = 1 - (r.first?.1.midY ?? 0.5), x = r.first?.1.minX ?? 0
+            let v = y < 0.2 ? "top" : (y > 0.8 ? "bottom" : "middle")
+            let h = x < 0.33 ? "left" : (x > 0.6 ? "right" : "centre")
+            return "[\(v)-\(h)] " + r.map(\.0).joined(separator: "   ")
+        }
+    }
+}

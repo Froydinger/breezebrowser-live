@@ -224,6 +224,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var heavySampleStreak = 0
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
     var aiVisitedSources: [(String, String)] = [] // real pages opened during the current Nav turn
+    weak var aiResearchTab: Tab?                  // the tab a research run browses in
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     let ASSISTANT_W: CGFloat = 360
 
@@ -3957,6 +3958,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             guard let self else { return }
             let transcript = await self.youTubeTranscript(of: t)
             self.ailog("YouTube transcript characters: \(transcript.count)")
+            // The analysis covers packaging (title, thumbnail, views) — give it eyes:
+            // on-device OCR of what's on screen, sent as text.
+            let seen = await self.screenRead(t, screens: 1)
             let tBlock = transcript.isEmpty
                 ? "(No captions/transcript available for this video — analyze from the page metadata.)"
                 : "Video transcript (the actual spoken content — use this as your primary source):\n\(String(transcript.prefix(14000)))"
@@ -3967,7 +3971,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             URL: \(url.absoluteString)
 
             \(tBlock)
-
+            \(seen.isEmpty ? "" : "\nWhat's visibly on the video page right now (screenshot read with OCR — title, thumbnail/frame text, channel, view counts, description snippet; [position] = where on screen):\n\(String(seen.prefix(3000)))\n")
             Keep it practical and concise. If this looks like YouTube Studio or the user's own channel/video, focus on actionable improvements. If it's another channel, treat it as competitive creative analysis.
 
             Cover:
@@ -3993,6 +3997,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Set by the /research Task so the next Nav answer is forced onto the
     /// "Research, wrapped." page even if the keyword heuristic wouldn't catch it.
     var forceResearchSummary = false
+
+    /// Set by a Task that needs its own pipeline ("summarize" / "factcheck");
+    /// Agent.run takes it (once) at the start of the next Nav turn.
+    var aiPendingTaskMode: String?
+    @MainActor func aiTakeTaskMode() async -> String? {
+        defer { aiPendingTaskMode = nil }
+        return aiPendingTaskMode
+    }
 
     /// The YouTube tab a Creator Tools run was launched from. When the analysis comes
     /// back, the summary opens in a split right next to the video.
@@ -4023,6 +4035,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     guard let self else { return }
                     let transcript = await self.youTubeTranscript(of: t)
                     if transcript.isEmpty {
+                        self.aiPendingTaskMode = "summarize"
                         self.sendToAI(self.pageSummarizePrompt(prompt))
                     } else {
                         let focus = prompt.isEmpty ? "" : " Focus on: \(prompt)."
@@ -4030,10 +4043,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     }
                 }
             } else {
+                aiPendingTaskMode = "summarize"
                 sendToAI(pageSummarizePrompt(prompt))
             }
         case "factcheck":
             let claim = prompt.isEmpty ? "the main claim on the page I'm currently viewing" : prompt
+            aiPendingTaskMode = "factcheck"
             sendToAI("Fact-check this and tell me plainly whether it's TRUE, FALSE, or MIXED, then explain briefly with the sources you checked: \(claim)")
         case "research":
             // The literal word "research" is what flips Nav into multi-source research
@@ -4262,6 +4277,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let regex = try? NSRegularExpression(pattern: #"\*\*(.*?)\*\*"#) {
             html = regex.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: (html as NSString).length), withTemplate: "<strong>$1</strong>")
         }
+        if let regex = try? NSRegularExpression(pattern: #"(?<![\w*])\*([^*\n]+?)\*(?![\w*])"#) {
+            html = regex.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: (html as NSString).length), withTemplate: "<em>$1</em>")
+        }
         if let regex = try? NSRegularExpression(pattern: #"\[(.*?)\]\((https?://[^\s)]+)\)"#) {
             html = regex.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: (html as NSString).length), withTemplate: "<a href=\"$2\">$1</a>")
         }
@@ -4273,7 +4291,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         var inList = false
         for raw in lines {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("## ") {
+            if line.hasPrefix("### ") {
+                if inList { out.append("</ul>"); inList = false }
+                out.append("<h3>\(String(line.dropFirst(4)))</h3>")
+            } else if line.hasPrefix("## ") {
                 if inList { out.append("</ul>"); inList = false }
                 out.append("<h2>\(String(line.dropFirst(3)))</h2>")
             } else if line.hasPrefix("# ") {
@@ -4332,7 +4353,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         header{text-align:center;margin-bottom:34px;animation:rise .45s cubic-bezier(.22,1,.36,1)}.mark{width:64px;height:64px;margin:0 auto 16px;display:grid;place-items:center;filter:drop-shadow(0 18px 42px color-mix(in srgb,var(--accent) 32%,transparent))}.mark img{width:64px;height:64px;border-radius:18px;display:block}.mark--draw{border-radius:18px;background:linear-gradient(135deg,var(--accent),#7c5bfa)}.mark--draw svg{width:30px;height:30px;fill:white;stroke:white;stroke-width:1.6;stroke-linejoin:round}
         .pill{display:inline-block;color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent);font-size:12px;font-weight:750;padding:6px 12px;border-radius:999px;margin-bottom:12px}h1{font-size:44px;line-height:1.02;margin:0;font-weight:800;letter-spacing:-.8px}header p{color:var(--soft);font-size:16px;line-height:1.5;margin:14px auto 0;max-width:720px}
         .panel{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,.14);backdrop-filter:blur(18px);animation:rise .55s cubic-bezier(.22,1,.36,1)}
-        .summary h1{font-size:30px}.summary h2{font-size:20px;margin:28px 0 10px}.summary p,.summary li{font-size:15.5px;line-height:1.62;color:var(--text)}.summary ul{padding-left:20px}.summary a{color:var(--accent);font-weight:700}
+        .summary h1{font-size:30px}.summary h2{font-size:20px;margin:28px 0 10px}.summary h3{font-size:17px;margin:22px 0 8px}.summary p,.summary li{font-size:15.5px;line-height:1.62;color:var(--text)}.summary ul{padding-left:20px}.summary a{color:var(--accent);font-weight:700}
         .sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:26px}.source{display:flex;flex-direction:column;gap:3px;padding:13px 14px;border-radius:16px;background:color-mix(in srgb,var(--accent) 9%,transparent);text-decoration:none;border:1px solid color-mix(in srgb,var(--accent) 18%,transparent)}.source span{color:var(--text);font-weight:750}.source small{color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
         @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
         </style></head><body><div class="wrap"><header>\(mark)<div class="pill">\(pill.htmlEscaped)</div><h1>\(heading.htmlEscaped)</h1><p>\(query.htmlEscaped)</p></header><main class="panel summary">\(body)\(links.isEmpty ? "" : "<h2>Sources</h2><div class=\"sources\">\(linkCards)</div>")</main></div></body></html>
@@ -4897,7 +4918,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         t.webView.load(URLRequest(url: u))
         await waitForLoad(t)
         try? await Task.sleep(nanoseconds: 700_000_000)   // let the page settle
-        let text = await readText(of: t)
+        var text = await readText(of: t)
+        // Next to no DOM text (canvas app, image-only page, embedded PDF) → read it
+        // off the screen so Nav isn't blind.
+        if let r = text.range(of: "Page text content:\n"), text[r.upperBound...].count < 300 {
+            let seen = await screenRead(t, screens: 1)
+            if !seen.isEmpty { text += "\n\nVisible on screen (OCR):\n" + seen }
+        }
         let source = (t.webView.title?.isEmpty == false ? t.webView.title! : hostOf(u), u.absoluteString)
         if !aiVisitedSources.contains(where: { $0.1 == source.1 }) { aiVisitedSources.append(source) }
         syncChrome(); refreshSidebar()
@@ -5000,6 +5027,313 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 cont.resume(returning: arr.compactMap { $0.count == 2 ? ($0[0], $0[1]) : nil })
             }
         }
+    }
+
+    // MARK: Research mode tools (driven by Research.swift)
+
+    /// Fresh research run: sources list only what it actually reads (not the tab
+    /// the user happened to be on), and it browses in its own visible tab.
+    @MainActor func aiResearchBegin() async {
+        aiVisitedSources.removeAll()
+        aiResearchTab = nil
+    }
+
+    @MainActor func aiResearchStatus(_ status: String) async {
+        assistant.setStatus(status)
+    }
+
+    // MARK: Vision (screenshot + on-device OCR — text only, no image tokens)
+
+    /// Snapshot what `t` is rendering and OCR it on a background queue.
+    @MainActor func screenLines(_ t: Tab) async -> [String] {
+        let img: NSImage? = await withCheckedContinuation { c in
+            t.webView.takeSnapshot(with: nil) { i, _ in c.resume(returning: i) }
+        }
+        guard let img else { return [] }
+        var rect = NSRect(origin: .zero, size: img.size)
+        guard let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return [] }
+        return await withCheckedContinuation { c in
+            DispatchQueue.global(qos: .userInitiated).async { c.resume(returning: VisionOCR.readScreen(cg)) }
+        }
+    }
+
+    /// OCR up to `screens` viewports of `t`, scrolling between them, then put the
+    /// scroll position back. Repeated lines (sticky headers) are dropped.
+    @MainActor func screenRead(_ t: Tab, screens: Int) async -> String {
+        let startY = await withCheckedContinuation { (c: CheckedContinuation<Double, Never>) in
+            t.webView.evaluateJavaScript("window.scrollY") { r, _ in c.resume(returning: (r as? Double) ?? 0) }
+        }
+        var seen = Set<String>(), out: [String] = []
+        for i in 0..<max(1, screens) {
+            if i > 0 {
+                let moved = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                    t.webView.evaluateJavaScript("(function(){var y=window.scrollY;window.scrollBy(0,Math.round(innerHeight*0.85));return window.scrollY!==y;})()") { r, _ in
+                        c.resume(returning: (r as? Bool) ?? false)
+                    }
+                }
+                if !moved { break }
+                try? await Task.sleep(nanoseconds: 450_000_000)   // let lazy content paint
+                out.append("— scrolled —")
+            }
+            for l in await screenLines(t) {
+                let key = String(l.drop(while: { $0 != "]" }))
+                if seen.insert(key).inserted { out.append(l) }
+            }
+        }
+        if screens > 1 { t.webView.evaluateJavaScript("window.scrollTo(0,\(startY))", completionHandler: nil) }
+        return out.joined(separator: "\n")
+    }
+
+    /// LOOK: what's visibly on the user's current page, via screenshot OCR.
+    @MainActor func aiLookAtPage() async -> String {
+        guard let t = current, !t.isNewTab, !t.isChatTab else {
+            return "There's no web page on screen to look at (the user is on a new tab or the full-window chat)."
+        }
+        assistant.setStatus("Looking at the page…")
+        let seen = await screenRead(t, screens: 1)
+        assistant.setStatus("Thinking…")
+        let url = t.webView.url?.absoluteString ?? ""
+        return seen.isEmpty
+            ? "Looked at \(url) but no readable text is visible on screen (it may be an image, video or blank area)."
+            : "What's visibly on screen at \(url) (screenshot read with OCR, top to bottom; [position] = where it sits):\n\(seen)"
+    }
+
+    /// Research fallback: the page's DOM had no usable text (canvas, image-only,
+    /// scanned PDF, locked-down site) — read it off the screen instead.
+    @MainActor func aiResearchLook() async -> ResearchPage? {
+        guard let t = aiResearchTab else { return nil }
+        assistant.setStatus("Reading \(hostOf(t.webView.url)) visually…")
+        let text = await screenRead(t, screens: 4)
+        guard !text.isEmpty else { return nil }
+        return ResearchPage(title: t.webView.title?.isEmpty == false ? t.webView.title! : hostOf(t.webView.url),
+                            url: t.webView.url?.absoluteString ?? "",
+                            text: "(Read visually from screenshots via OCR — spelling may be imperfect.)\n" + text,
+                            links: [])
+    }
+
+    @MainActor func aiResearchKeepSource(title: String, url: String) async {
+        if !aiVisitedSources.contains(where: { $0.1 == url }) { aiVisitedSources.append((title, url)) }
+    }
+
+    /// The tab research browses in, recreated if the user closed it mid-run.
+    @MainActor private func researchTab() -> Tab {
+        if let t = aiResearchTab, let i = tabs.firstIndex(where: { $0 === t }) {
+            if active != i { active = i; showActive(); refreshSidebar() }
+            return t
+        }
+        let t = Tab(); t.isNewTab = false; t.title = "Researching…"
+        wire(t); tabs.append(t); active = tabs.count - 1
+        aiResearchTab = t
+        showActive(); refreshSidebar()
+        if !assistantOpen { setAssistant(true) }   // keep the chat docked beside it
+        return t
+    }
+
+    /// Load `url` in the research tab and wait until its text stops growing, so
+    /// JS-rendered pages (search engines, SPAs) aren't scraped half-painted.
+    @MainActor private func researchLoad(_ url: URL, minWait: Double, maxWait: Double) async -> Tab {
+        let t = researchTab()
+        t.webView.load(URLRequest(url: url))
+        await waitForLoad(t)
+        let start = Date()
+        var last = -1, stable = 0
+        while Date().timeIntervalSince(start) < maxWait {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            let len = await withCheckedContinuation { (c: CheckedContinuation<Int, Never>) in
+                t.webView.evaluateJavaScript("(document.body ? document.body.innerText.length : 0)") { r, _ in
+                    c.resume(returning: (r as? Int) ?? 0)
+                }
+            }
+            stable = (len > 0 && abs(len - last) < 40) ? stable + 1 : 0
+            last = len
+            if Date().timeIntervalSince(start) >= minWait && stable >= 2 { break }
+        }
+        syncChrome(); refreshSidebar()
+        return t
+    }
+
+    @MainActor func aiResearchSearch(_ query: String) async -> [ResearchLink] {
+        var results: [ResearchLink] = []
+        if let u = URL(string: searchURL(for: query)) {
+            let t = await researchLoad(u, minWait: 2.5, maxWait: 14)
+            let engine = (u.host ?? "").lowercased()
+            // Spectra streams its results in a beat after the page (and its "Quick
+            // answer" box) settle, so page-text stability alone can fire early.
+            // Keep polling until the result links themselves stop arriving.
+            results = await researchResultLinks(of: t, engineHost: engine)
+            let start = Date()
+            var stable = 0
+            while Date().timeIntervalSince(start) < 15 && stable < 3 && !(results.count >= 8 && stable >= 1) {
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                let fresh = await researchResultLinks(of: t, engineHost: engine)
+                stable = fresh.count > results.count ? 0 : stable + 1
+                if fresh.count >= results.count { results = fresh }
+            }
+        }
+        // Our default engine can come back thin; top up from DuckDuckGo's plain
+        // HTML results so research always has real pages to choose from.
+        if results.count < 4,
+           let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let u = URL(string: "https://html.duckduckgo.com/html/?q=\(q)") {
+            let t = await researchLoad(u, minWait: 1, maxWait: 8)
+            for r in await researchResultLinks(of: t, engineHost: "duckduckgo.com")
+            where !results.contains(where: { Research.normalize($0.url) == Research.normalize(r.url) }) {
+                results.append(r)
+            }
+        }
+        return results
+    }
+
+    /// Outbound result links with their snippet text, engine chrome excluded.
+    @MainActor private func researchResultLinks(of t: Tab, engineHost: String) async -> [ResearchLink] {
+        let js = """
+        (function(eng){
+          var out = [], seen = {};
+          var bad = ["google.","bing.","duckduckgo.","gstatic","googleusercontent","schema.org","w3.org"];
+          var anchors = document.querySelectorAll('a[href]');
+          for (var i = 0; i < anchors.length && out.length < 15; i++) {
+            var a = anchors[i], href = a.href || "";
+            var uo; try { uo = new URL(href); } catch(e) { continue; }
+            var fwd = uo.searchParams.get('uddg') || uo.searchParams.get('q') || uo.searchParams.get('url');
+            if (fwd && /^https?:\\/\\//.test(fwd)) { href = fwd; try { uo = new URL(href); } catch(e) { continue; } }
+            if (!/^https?:$/.test(uo.protocol)) continue;
+            var host = (uo.hostname || "").toLowerCase();
+            if (!host || (eng && host.indexOf(eng) !== -1)) continue;
+            if (bad.some(function(b){ return host.indexOf(b) !== -1; })) continue;
+            href = href.split('#')[0];
+            if (seen[href]) continue;
+            var title = (a.innerText || a.textContent || "").replace(/\\s+/g, " ").trim();
+            if (title.length < 15) continue;
+            seen[href] = 1;
+            var box = a.closest('li, article, [class*="result"], [class*="Result"]') || a.parentElement;
+            var snip = box ? (box.innerText || "").replace(/\\s+/g, " ").trim() : "";
+            if (snip.indexOf(title) === 0) snip = snip.slice(title.length).trim();
+            out.push([title.slice(0, 120), href, snip.slice(0, 240)]);
+          }
+          return JSON.stringify(out);
+        })(\(jsString(engineHost)))
+        """
+        return await withCheckedContinuation { cont in
+            t.webView.evaluateJavaScript(js) { result, _ in
+                guard let s = result as? String, let d = s.data(using: .utf8),
+                      let arr = try? JSONSerialization.jsonObject(with: d) as? [[String]] else {
+                    cont.resume(returning: []); return
+                }
+                cont.resume(returning: arr.compactMap { $0.count == 3 ? ResearchLink(title: $0[0], url: $0[1], snippet: $0[2]) : nil })
+            }
+        }
+    }
+
+    /// Open a source in the research tab and pull its MAIN content: the article
+    /// body with nav, headers, footers, sidebars and reference lists stripped, and
+    /// table rows kept one per line (discographies, stats, specs live in tables).
+    /// Huge pages are cut down to the lines that mention the question's terms.
+    @MainActor func aiResearchRead(_ url: String, focus: [String]) async -> ResearchPage? {
+        var s = url.trimmingCharacters(in: .whitespaces)
+        if !s.contains("://") { s = "https://" + s }
+        guard let u0 = URL(string: s), u0.host != nil else { return nil }
+        let t = await researchLoad(httpsUpgraded(u0), minWait: 1.2, maxWait: 8)
+        return await mainContent(of: t, focus: focus, fallbackURL: url)
+    }
+
+    /// Main content of the page the user is on (for /summarize, /factcheck and
+    /// "research this page") — the article, not the nav, unlike the per-message
+    /// context snippet.
+    @MainActor func aiReadCurrentMain() async -> ResearchPage? {
+        guard let t = current, !t.isNewTab, !t.isChatTab,
+              ["http", "https"].contains(t.webView.url?.scheme?.lowercased() ?? "") else { return nil }
+        return await mainContent(of: t, focus: [], fallbackURL: t.webView.url?.absoluteString ?? "")
+    }
+
+    @MainActor func mainContent(of t: Tab, focus: [String], fallbackURL url: String) async -> ResearchPage? {
+        let js = #"""
+        (function(focus){
+          var root = document.querySelector('#mw-content-text') || document.querySelector('article') ||
+                     document.querySelector('main, [role="main"]') || document.body;
+          if (!root) return null;
+          if (root !== document.body && (root.innerText || '').length < 800) root = document.body;
+          var c = root.cloneNode(true);
+          var junk = 'script,style,noscript,svg,canvas,iframe,video,audio,nav,footer,aside,form,button,' +
+            '[role="navigation"],[role="banner"],[role="contentinfo"],[role="complementary"],[aria-hidden="true"],' +
+            '.navbox,.vertical-navbox,.mw-editsection,.reference,.reflist,.mw-references-wrap,.catlinks,' +
+            '.infobox-navbar,.sidebar,.cookie-banner,.newsletter,.related-posts,.share,.social-share';
+          c.querySelectorAll(junk).forEach(function(e){ e.remove(); });
+          if (root === document.body) c.querySelectorAll('header').forEach(function(e){ e.remove(); });
+          var links = [], seen = {};
+          c.querySelectorAll('a[href]').forEach(function(a){
+            var raw = a.getAttribute('href') || '';
+            if (!raw || raw.charAt(0) === '#' || /^(javascript|mailto|tel):/i.test(raw)) return;
+            var abs; try { abs = new URL(raw, location.href).href.split('#')[0]; } catch(e) { return; }
+            if (!/^https?:/.test(abs) || abs === location.href.split('#')[0] || seen[abs]) return;
+            var text = (a.textContent || '').replace(/\s+/g, ' ').trim();
+            if (text.length < 3) return;
+            seen[abs] = 1;
+            var hay = (text + ' ' + abs).toLowerCase(), score = 0;
+            focus.forEach(function(f){ if (hay.indexOf(f) !== -1) score++; });
+            links.push({t: text.slice(0, 100), u: abs, s: score});
+          });
+          links.sort(function(a, b){ return b.s - a.s; });
+          c.querySelectorAll('li').forEach(function(e){ e.insertBefore(document.createTextNode('• '), e.firstChild); });
+          c.querySelectorAll('td,th').forEach(function(e){ e.appendChild(document.createTextNode(' | ')); });
+          c.querySelectorAll('p,div,section,li,h1,h2,h3,h4,h5,h6,tr,dd,dt,blockquote,pre,br,table,ul,ol,figcaption,caption')
+            .forEach(function(e){ e.appendChild(document.createTextNode('\n')); });
+          c.querySelectorAll('h1,h2,h3,h4').forEach(function(e){ e.insertBefore(document.createTextNode('\n## '), e.firstChild); });
+          var lines = (c.textContent || '').split('\n').map(function(l){
+            return l.replace(/[ \t ]+/g, ' ').replace(/(\s*\|\s*)+$/, '').trim();
+          }).filter(function(l){ return l.length > 1 && l !== '##' && l !== '•'; });
+          var out = [];
+          lines.forEach(function(l){ if (out[out.length - 1] !== l) out.push(l); });
+          return JSON.stringify({ title: document.title || '', url: location.href, lines: out,
+                                  links: links.slice(0, 60).map(function(l){ return [l.t, l.u]; }) });
+        })
+        """# + "(\(jsArray(focus)))"
+        let raw: String? = await withCheckedContinuation { cont in
+            t.webView.evaluateJavaScript(js) { r, _ in cont.resume(returning: r as? String) }
+        }
+        guard let raw, let d = raw.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+        let lines = o["lines"] as? [String] ?? []
+        let title = (o["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? hostOf(t.webView.url)
+        let finalURL = o["url"] as? String ?? url
+        let links = (o["links"] as? [[String]] ?? []).compactMap { $0.count == 2 ? ResearchLink(title: $0[0], url: $0[1], snippet: "") : nil }
+        return ResearchPage(title: title, url: finalURL, text: Self.researchSlice(lines, focus: focus), links: links)
+    }
+
+    /// Whole page if it fits; otherwise the intro plus every line (with a little
+    /// surrounding context) that mentions a focus term, in page order.
+    static func researchSlice(_ lines: [String], focus: [String], limit: Int = Research.pageChars) -> String {
+        let all = lines.joined(separator: "\n")
+        if all.count <= limit { return all }
+        // No question terms (e.g. /summarize): read from the top, as far as fits.
+        // Keeping only the intro lines here used to hand over just the infobox.
+        if focus.isEmpty { return String(all.prefix(limit)) + "\n…" }
+        var keep = Set(0..<min(lines.count, 30))
+        if !focus.isEmpty {
+            for (i, l) in lines.enumerated() {
+                let low = l.lowercased()
+                if focus.contains(where: { low.contains($0) }) || l.hasPrefix("## ") {
+                    for j in max(0, i - 2)...min(lines.count - 1, i + 8) { keep.insert(j) }   // table rowspans: rows under a match often omit the name
+                }
+            }
+        }
+        var out = "", prev = -1
+        for i in keep.sorted() {
+            let piece = (prev >= 0 && i != prev + 1 ? "…\n" : "") + lines[i] + "\n"
+            if out.count + piece.count > limit { break }
+            out += piece; prev = i
+        }
+        return out
+    }
+
+    private func jsString(_ s: String) -> String {
+        let d = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data("[\"\"]".utf8)
+        let arr = String(data: d, encoding: .utf8) ?? "[\"\"]"
+        return String(arr.dropFirst().dropLast())
+    }
+
+    private func jsArray(_ a: [String]) -> String {
+        let d = (try? JSONSerialization.data(withJSONObject: a)) ?? Data("[]".utf8)
+        return String(data: d, encoding: .utf8) ?? "[]"
     }
 
     @MainActor func aiClick(_ target: String) async -> String {
