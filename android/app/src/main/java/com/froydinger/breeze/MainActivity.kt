@@ -82,6 +82,9 @@ private const val ACTION_PIP_PLAYBACK = "com.froydinger.breeze.PIP_PLAYBACK"
 const val EXTRA_STANDALONE_PWA = "com.froydinger.breeze.extra.STANDALONE_PWA"
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
+    private var devFpsTracker: DevFpsTracker? = null
+    internal val devFps: Int get() = devFpsTracker?.fps ?: 0
+    internal fun watchDevPage(session: org.mozilla.geckoview.GeckoSession?) { devFpsTracker?.watchPage(session) }
     private var browserCredentials: com.froydinger.breeze.browser.BrowserCredentials? = null
     private var browserPrompts: com.froydinger.breeze.browser.BrowserPrompts? = null
     private var browserPermissions: com.froydinger.breeze.browser.BrowserPermissions? = null
@@ -94,6 +97,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
+        if (BuildConfig.DEBUG) devFpsTracker = DevFpsTracker(window)
         androidx.core.content.ContextCompat.registerReceiver(this, pipPlaybackReceiver,
             android.content.IntentFilter(ACTION_PIP_PLAYBACK), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         val prompts = com.froydinger.breeze.browser.BrowserPrompts(this, onNotice = { browser.notice = it }, onDownloadSaved = { uri, name -> browser.saveDownload(uri, name) })
@@ -155,7 +159,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         if (isInPictureInPictureMode) pipPlaybackPendingStop = true
         browser.setPictureInPictureMode(isInPictureInPictureMode)
     }
-    override fun onStart() { super.onStart(); if (!isInPictureInPictureMode) browser.setPictureInPictureMode(false); browser.onAppForegrounded() }
+    override fun onStart() { super.onStart(); devFpsTracker?.start(); devFpsTracker?.watchPage(browser.selected?.session); if (!isInPictureInPictureMode) browser.setPictureInPictureMode(false); browser.onAppForegrounded() }
     override fun onResume() {
         super.onResume()
         if (!isInPictureInPictureMode) {
@@ -169,7 +173,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             pipPlaybackPendingStop = false
             browser.setPictureInPictureMode(false)
         }
-        browser.onAppBackgrounded(); browser.persist(); super.onStop()
+        devFpsTracker?.stop(); browser.onAppBackgrounded(); browser.persist(); super.onStop()
     }
     override fun onDestroy() { unregisterReceiver(pipPlaybackReceiver); browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
 }
@@ -697,7 +701,21 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
                 contentAlignment = Alignment.Center,
             ) { Icon(BreezeIcons.ChevronUp, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp)) }
         }
+        if (BuildConfig.DEBUG) DevFpsBadge(Modifier.align(Alignment.BottomStart))
     }
+}
+
+@Composable
+private fun DevFpsBadge(modifier: Modifier = Modifier) {
+    val fps = (LocalContext.current as? MainActivity)?.devFps ?: 0
+    Text(
+        text = if (fps <= 3) "FPS idle" else "FPS $fps",
+        modifier = modifier.padding(start = 3.dp, bottom = 1.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .78f),
+        fontSize = 10.sp,
+        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+        maxLines = 1,
+    )
 }
 private val BottomBarHeight = 58.dp
 private val BottomBarVerticalPadding = 8.dp
@@ -1002,6 +1020,7 @@ private data class AddressSuggestion(val title: String, val url: String)
             val previousTab = attachedTab.value
             val freshSession = targetTab.session == null
             val session = state.session(targetTab)
+            if (BuildConfig.DEBUG) (activity as? MainActivity)?.watchDevPage(session)
             if (view.session !== session) {
                 previousTab?.session?.setFocused(false)
                 view.releaseSession()
