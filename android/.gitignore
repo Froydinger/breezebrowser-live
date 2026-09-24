@@ -1,0 +1,7 @@
+.gradle/
+**/build/
+local.properties
+qa/avd/
+*.jks
+*.keystore
+.breeze-client-token
