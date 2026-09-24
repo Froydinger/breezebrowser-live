@@ -680,28 +680,36 @@ class BrowserState(private val app: Application) {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
                 val delta = scrollY - tab.scrollY
                 val now = android.os.SystemClock.uptimeMillis()
-                val chromeSettled = now - tab.lastChromeTransitionAt >= 300L
-                if (delta > 0) {
-                    tab.scrollDownDistance = (tab.scrollDownDistance + delta).coerceAtMost(500)
-                    tab.scrollUpDistance = 0
-                    if (!tab.chromeCollapsed && chromeSettled && scrollY > 64 && tab.scrollDownDistance >= 72) {
-                        tab.chromeCollapsed = true
-                        tab.lastChromeTransitionAt = now
-                        tab.scrollDownDistance = 0
-                    }
-                } else if (delta < 0) {
-                    tab.scrollUpDistance = (tab.scrollUpDistance - delta).coerceAtMost(500)
-                    tab.scrollDownDistance = 0
-                    if (tab.chromeCollapsed && chromeSettled && tab.scrollUpDistance >= 48) {
-                        tab.chromeCollapsed = false
-                        tab.lastChromeTransitionAt = now
-                        tab.scrollUpDistance = 0
-                    }
-                }
+                val chromeSettled = now - tab.lastChromeTransitionAt >= 500L
                 if (scrollY <= 4) {
                     tab.scrollDownDistance = 0
                     tab.scrollUpDistance = 0
                     tab.chromeCollapsed = false
+                } else if (delta > 2) {
+                    if (tab.chromeCollapsed) {
+                        // A small reverse movement should not fight the collapsed toolbar.
+                        tab.scrollUpDistance = (tab.scrollUpDistance - delta * 2).coerceAtLeast(0)
+                    } else {
+                        tab.scrollDownDistance = (tab.scrollDownDistance + delta).coerceAtMost(500)
+                    }
+                    if (!tab.chromeCollapsed && chromeSettled && scrollY > 96 && tab.scrollDownDistance >= 128) {
+                        tab.chromeCollapsed = true
+                        tab.lastChromeTransitionAt = now
+                        tab.scrollDownDistance = 0
+                        tab.scrollUpDistance = 0
+                    }
+                } else if (delta < -2) {
+                    if (tab.chromeCollapsed) {
+                        tab.scrollUpDistance = (tab.scrollUpDistance - delta).coerceAtMost(500)
+                    } else {
+                        tab.scrollDownDistance = (tab.scrollDownDistance + delta * 2).coerceAtLeast(0)
+                    }
+                    if (tab.chromeCollapsed && chromeSettled && tab.scrollUpDistance >= 96) {
+                        tab.chromeCollapsed = false
+                        tab.lastChromeTransitionAt = now
+                        tab.scrollUpDistance = 0
+                        tab.scrollDownDistance = 0
+                    }
                 }
                 tab.scrollY = scrollY
             }
