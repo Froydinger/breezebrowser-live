@@ -6,6 +6,8 @@ import android.net.Uri
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -32,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +44,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.froydinger.breeze.BrowserState
+import com.froydinger.breeze.EXTRA_STANDALONE_PWA
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.URI
+import java.net.URL
 
 /** Finger-friendly page actions menu for the address bar. */
 @Composable
@@ -53,6 +64,7 @@ fun AddressPageTools(state: BrowserState, modifier: Modifier = Modifier) {
     var librarySettingsExpanded by remember { mutableStateOf(false) }
     val menuScrollState = rememberScrollState()
     val context = LocalContext.current
+    val shortcutScope = rememberCoroutineScope()
     androidx.compose.runtime.SideEffect { state.pageToolsOpen = expanded }
     androidx.compose.runtime.DisposableEffect(state) {
         onDispose { state.pageToolsOpen = false }
@@ -65,6 +77,7 @@ fun AddressPageTools(state: BrowserState, modifier: Modifier = Modifier) {
         uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
     }.getOrDefault(false)
     val canCreateHomeShortcut = validWebPage && page?.private != true
+    val isPwaInstallable = page?.webAppManifest?.optString("display", "browser") in setOf("standalone", "minimal-ui", "fullscreen")
     val associatedAppTargets = remember(url, context.packageName) { findAssociatedAppTargets(context, url) }
     val hiddenItems = state.hiddenPageElements(url)
 
@@ -143,9 +156,9 @@ fun AddressPageTools(state: BrowserState, modifier: Modifier = Modifier) {
                 if (associatedAppTargets.isNotEmpty()) {
                     PageAction("Open in app", BreezeIcons.OpenInNew) { expanded = false; openCurrentInApp(context, state) }
                 }
-                PageAction("Add to Home screen", BreezeIcons.Add, enabled = canCreateHomeShortcut) {
+                PageAction(if (isPwaInstallable) "Install app" else "Add to Home screen", BreezeIcons.Add, enabled = canCreateHomeShortcut) {
                     expanded = false
-                    requestHomeShortcut(context, state)
+                    shortcutScope.launch { requestHomeShortcut(context, state) }
                 }
 
             }
@@ -286,7 +299,7 @@ private fun PageAction(label: String, icon: androidx.compose.ui.graphics.vector.
     )
 }
 
-private fun requestHomeShortcut(context: android.content.Context, state: BrowserState) {
+private suspend fun requestHomeShortcut(context: android.content.Context, state: BrowserState) {
     val page = state.selected ?: return
     if (page.private) {
         state.notice = "Private pages can’t be added to the Home screen."
@@ -302,18 +315,86 @@ private fun requestHomeShortcut(context: android.content.Context, state: Browser
         state.notice = "This launcher doesn’t support Home screen shortcuts."
         return
     }
-    val title = page.title.ifBlank { uri.host.orEmpty() }.take(40)
-    val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+    val manifest = page.webAppManifest
+    val displayMode = manifest?.optString("display", "browser") ?: "browser"
+    val launchesStandalone = displayMode in setOf("standalone", "minimal-ui", "fullscreen")
+    val launchUri = manifestStartUri(uri, manifest) ?: uri
+    val title = manifest?.optString("short_name")?.takeIf { it.isNotBlank() }
+        ?: manifest?.optString("name")?.takeIf { it.isNotBlank() }
+        ?: page.title.ifBlank { uri.host.orEmpty() }
+    val pageIcon = if (launchesStandalone && manifest != null) loadManifestIcon(uri, manifest) else null
+    val intent = Intent(Intent.ACTION_VIEW, launchUri).apply {
         setClass(context, com.froydinger.breeze.MainActivity::class.java)
         addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        putExtra(EXTRA_STANDALONE_PWA, launchesStandalone)
     }
     val shortcut = ShortcutInfo.Builder(context, "breeze-page-${page.url.hashCode()}")
         .setShortLabel(title.take(25))
-        .setLongLabel(title)
-        .setIcon(Icon.createWithResource(context, com.froydinger.breeze.R.drawable.breeze_logo_flat))
+        .setLongLabel(title.take(80))
+        .setIcon(pageIcon?.let(Icon::createWithBitmap) ?: Icon.createWithResource(context, com.froydinger.breeze.R.drawable.breeze_logo_flat))
         .setIntent(intent)
         .build()
-    state.notice = if (manager.requestPinShortcut(shortcut, null)) "Home screen shortcut requested." else "Couldn’t request a Home screen shortcut."
+    state.notice = if (manager.requestPinShortcut(shortcut, null)) {
+        if (launchesStandalone) "PWA install shortcut requested." else "Home screen shortcut requested."
+    } else "Couldn’t request a Home screen shortcut."
+}
+
+private fun manifestStartUri(pageUri: Uri, manifest: JSONObject?): Uri? {
+    val start = manifest?.optString("start_url")?.takeIf { it.isNotBlank() } ?: return pageUri
+    return runCatching {
+        val base = URI(pageUri.toString())
+        val resolved = base.resolve(start)
+        if (resolved.scheme != base.scheme || resolved.host != base.host || resolved.port != base.port) return@runCatching pageUri
+        val scopeValue = manifest.optString("scope").takeIf { it.isNotBlank() }
+        if (scopeValue != null) {
+            val scope = base.resolve(scopeValue)
+            if (scope.scheme != resolved.scheme || scope.host != resolved.host || !resolved.path.orEmpty().startsWith(scope.path.orEmpty())) return@runCatching pageUri
+        }
+        Uri.parse(resolved.toString())
+    }.getOrNull() ?: pageUri
+}
+
+private suspend fun loadManifestIcon(pageUri: Uri, manifest: JSONObject): Bitmap? = withContext(Dispatchers.IO) {
+    runCatching {
+        val icons = manifest.optJSONArray("icons") ?: return@runCatching null
+        val page = URI(pageUri.toString())
+        val candidates = (0 until icons.length()).mapNotNull { index ->
+            val item = icons.optJSONObject(index) ?: return@mapNotNull null
+            val src = item.optString("src").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val sizes = item.optString("sizes")
+            Triple(src, sizes.contains("192x192") || sizes.contains("512x512"), item.optString("type"))
+        }.sortedByDescending { it.second }
+        for ((src, _, type) in candidates) {
+            if (type.isNotBlank() && type !in setOf("image/png", "image/webp", "image/jpeg", "image/svg+xml")) continue
+            val iconUri = page.resolve(src)
+            if (iconUri.scheme != page.scheme || iconUri.host != page.host || iconUri.port != page.port) continue
+            val connection = URL(iconUri.toString()).openConnection().apply {
+                connectTimeout = 2500
+                readTimeout = 2500
+            }
+            if (connection.contentLengthLong > 1_500_000) continue
+            val bytes = connection.getInputStream().use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > 1_500_000) return@use ByteArray(0)
+                    output.write(buffer, 0, read)
+                }
+                output.toByteArray()
+            }
+            if (bytes.isEmpty()) continue
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+            val size = 192
+            val fitted = Bitmap.createScaledBitmap(decoded, size, size, true)
+            if (fitted !== decoded) decoded.recycle()
+            return@runCatching fitted
+        }
+        null
+    }.getOrNull()
 }
 
 private fun findAssociatedAppTargets(context: android.content.Context, url: String): List<Intent> {

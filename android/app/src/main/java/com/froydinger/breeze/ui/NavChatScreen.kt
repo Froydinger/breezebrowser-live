@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -203,7 +204,7 @@ fun NavChatScreen(state: BrowserState, modifier: Modifier = Modifier) {
         .then(if (trayMode) Modifier.border(1.dp, faintBorder.copy(alpha = panelReveal.value), trayShape) else Modifier)
 
     Column(
-        screenModifier.padding(start = 22.dp, end = 22.dp, top = 7.dp, bottom = composerBottomGap)
+        screenModifier.padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = composerBottomGap)
             .onGloballyPositioned { panelBounds = it.boundsInRoot() }
             .pointerInput(trayMode) {
                 val closeThreshold = 48.dp.toPx()
@@ -535,21 +536,23 @@ fun NavChatScreen(state: BrowserState, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
             IconButton(onClick = photoAction, modifier = Modifier.size(42.dp)) {
-                Icon(BreezeIcons.PhotoCamera, contentDescription = "Attach a photo", tint = MaterialTheme.colorScheme.onSurface)
+                Icon(BreezeIcons.PhotoCamera, contentDescription = "Attach a photo", modifier = Modifier.offset(x = (-5).dp), tint = MaterialTheme.colorScheme.onSurface)
             }
-            BasicTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f).padding(vertical = 10.dp).focusRequester(composerFocusRequester),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { keyboardController?.hide(); submitNavChat(draft, selectedTool, chat?.running == true, state, { draft = "" }) { reminderDraft = it; showReminderComposer = true } }),
-                decorationBox = { inner ->
-                    if (draft.isEmpty()) Text(if (selectedTool.localReminder) "What should Breeze remind you?" else "Ask anything…", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    inner()
-                },
-            )
+            Box(Modifier.weight(1f)) {
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).focusRequester(composerFocusRequester),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { keyboardController?.hide(); submitNavChat(draft, selectedTool, chat?.running == true, state, { draft = "" }) { reminderDraft = it; showReminderComposer = true } }),
+                    decorationBox = { inner ->
+                        if (draft.isEmpty()) Text(if (selectedTool.localReminder) "What should Breeze remind you?" else "Ask anything…", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        inner()
+                    },
+                )
+            }
             VoiceTranscriptionButton(
                 enabled = chat?.running != true,
                 cloudConsentAccepted = state.cloudDisclosureAccepted,

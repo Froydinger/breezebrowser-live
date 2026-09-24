@@ -376,18 +376,32 @@ private fun SettingsContent(state: BrowserState, onBack: () -> Unit, onChooseBac
             item { SearchSettingsCard(state) }
             item { SettingSectionTitle("New tab") }
             item { BackgroundSettingsCard(state, onChooseBackground) }
+            item { SettingSectionTitle("Your stuff") }
+            item { PersonalSettingsCard(state) }
             item { SettingSectionTitle("Privacy & security") }
             item { PrivacySettingsCard(state) }
             item { SettingSectionTitle("General") }
             item { GeneralSettingsCard(state) }
-            item { SettingSectionTitle("Reminders") }
-            item { SettingsActionCard(BreezeIcons.Notifications, "Reminders", "Scheduled privately on this phone", "Open", line = MaterialTheme.colorScheme.outline) { state.screen = "reminders" } }
             item { SettingSectionTitle("Passwords") }
             item { SettingsActionCard(BreezeIcons.Lock, "Password vault", "Encrypted on this device", "Open", line = MaterialTheme.colorScheme.outline) { state.screen = "passwords" } }
             item { SettingSectionTitle("Cloud sync") }
             item { CloudSyncCard() }
             item { SettingSectionTitle("More home options") }
             item { HomeOptionsCard(state) }
+        }
+    }
+}
+
+@Composable
+private fun PersonalSettingsCard(state: BrowserState) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(MaterialTheme.colorScheme.surface).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(17.dp))) {
+        SettingsActionRow(BreezeIcons.Notifications, "Reminders", "Scheduled on this phone", null, MaterialTheme.colorScheme.outline) { state.screen = "reminders" }
+        SettingsDivider()
+        SettingsActionRow(BreezeIcons.Download, "Downloads", "", null, MaterialTheme.colorScheme.outline) { state.screen = "downloads" }
+        SettingsDivider()
+        SettingsActionRow(BreezeIcons.Bookmark, "Bookmarks", "", null, MaterialTheme.colorScheme.outline) {
+            state.historyInitialFilter = "Bookmarks"
+            state.screen = "library"
         }
     }
 }
@@ -540,8 +554,6 @@ private fun GeneralSettingsCard(state: BrowserState) {
     var clearCache by remember { mutableStateOf(true) }
     var clearSiteData by remember { mutableStateOf(true) }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(MaterialTheme.colorScheme.surface).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(17.dp))) {
-        SettingsActionRow(BreezeIcons.Download, "Downloads", "", null, MaterialTheme.colorScheme.outline) { state.screen = "downloads" }
-        SettingsDivider()
         SettingsActionRow(BreezeIcons.Delete, "Clear browsing data", "History, cookies, and cache", null, MaterialTheme.colorScheme.outline) { confirmClear = true }
         SettingsDivider()
         SettingsActionRow(BreezeIcons.Info, "About Breeze", "App version and information", null, MaterialTheme.colorScheme.outline) { showAbout = true }

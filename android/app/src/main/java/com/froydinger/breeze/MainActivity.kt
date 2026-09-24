@@ -1,22 +1,19 @@
 package com.froydinger.breeze
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -56,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,19 +68,32 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import com.froydinger.breeze.core.*
 import com.froydinger.breeze.ui.*
 import org.mozilla.geckoview.GeckoView
 
+private const val ACTION_PIP_PLAYBACK = "com.froydinger.breeze.PIP_PLAYBACK"
+
+const val EXTRA_STANDALONE_PWA = "com.froydinger.breeze.extra.STANDALONE_PWA"
+
 class MainActivity : androidx.fragment.app.FragmentActivity() {
     private var browserCredentials: com.froydinger.breeze.browser.BrowserCredentials? = null
     private var browserPrompts: com.froydinger.breeze.browser.BrowserPrompts? = null
     private var browserPermissions: com.froydinger.breeze.browser.BrowserPermissions? = null
     private val browser get() = (application as BreezeApplication).browser
+    private var pipPlaybackPendingStop = false
+    private val pipPlaybackReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: Intent) {
+            if (intent.action == ACTION_PIP_PLAYBACK) browser.controlPictureInPicturePlayback(intent.getBooleanExtra("play", false))
+        }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
+        androidx.core.content.ContextCompat.registerReceiver(this, pipPlaybackReceiver,
+            android.content.IntentFilter(ACTION_PIP_PLAYBACK), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
         val prompts = com.froydinger.breeze.browser.BrowserPrompts(this, onNotice = { browser.notice = it }, onDownloadSaved = { uri, name -> browser.saveDownload(uri, name) })
         browserPrompts = prompts
         val credentials = com.froydinger.breeze.browser.BrowserCredentials(this) { browser.notice = it }
@@ -110,52 +121,87 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleIncomingIntent(intent) }
     private fun handleIncomingIntent(intent: Intent?) {
         when (intent?.action) {
-            Intent.ACTION_VIEW -> intent.dataString?.let(browser::openExternalUrl)
+            Intent.ACTION_VIEW -> intent.dataString?.let { url ->
+                browser.openExternalUrl(url, intent.getBooleanExtra(EXTRA_STANDALONE_PWA, false))
+            }
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let(browser::openSharedText)
         }
     }
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S &&
-            browser.selectedVideoIsPlaying &&
+        if (browser.selectedVideoIsPlaying && browser.screen == "browser" &&
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
         ) {
-            enterPictureInPictureMode(pictureInPictureParams(browser.selected))
+            browser.preparePictureInPicture()
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+                val entered = runCatching { enterPictureInPictureMode(pictureInPictureParams(this, browser)) }.getOrDefault(false)
+                if (!entered) browser.setPictureInPictureMode(false)
+            }
         }
+    }
+    override fun onPictureInPictureUiStateChanged(pipState: android.app.PictureInPictureUiState) {
+        super.onPictureInPictureUiStateChanged(pipState)
+        if (android.os.Build.VERSION.SDK_INT >= 35 && pipState.isTransitioningToPip) browser.preparePictureInPicture()
     }
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
         newConfig: android.content.res.Configuration,
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) pipPlaybackPendingStop = true
         browser.setPictureInPictureMode(isInPictureInPictureMode)
     }
-    override fun onStart() { super.onStart(); browser.onAppForegrounded() }
-    override fun onStop() { browser.onAppBackgrounded(); browser.persist(); super.onStop() }
-    override fun onDestroy() { browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
+    override fun onStart() { super.onStart(); if (!isInPictureInPictureMode) browser.setPictureInPictureMode(false); browser.onAppForegrounded() }
+    override fun onResume() {
+        super.onResume()
+        if (!isInPictureInPictureMode) {
+            pipPlaybackPendingStop = false
+            if (browser.preparingPictureInPicture || browser.isPictureInPicture) browser.setPictureInPictureMode(false)
+        }
+    }
+    override fun onStop() {
+        if (pipPlaybackPendingStop || browser.isPictureInPicture || browser.preparingPictureInPicture) {
+            browser.stopPictureInPicturePlayback()
+            pipPlaybackPendingStop = false
+            browser.setPictureInPictureMode(false)
+        }
+        browser.onAppBackgrounded(); browser.persist(); super.onStop()
+    }
+    override fun onDestroy() { unregisterReceiver(pipPlaybackReceiver); browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
 }
 
 private data class BrowserPageMorph(
     val source: Rect,
     val target: Rect?,
-    val progress: Float,
+    val progress: () -> Float,
 )
 
-private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureParams {
+private const val TabMorphDurationMillis = 245
+
+private fun pictureInPictureParams(context: android.content.Context, state: BrowserState): android.app.PictureInPictureParams {
+    val tab = state.selected
     val builder = android.app.PictureInPictureParams.Builder()
     val width = tab?.videoWidth ?: 0
     val height = tab?.videoHeight ?: 0
-    if (width > 0 && height > 0) {
-        val ratio = (width.toFloat() / height).coerceIn(.42f, 2.39f)
-        val scale = 1000
-        builder.setAspectRatio(android.util.Rational((ratio * scale).toInt().coerceAtLeast(1), scale))
-    } else {
-        builder.setAspectRatio(android.util.Rational(16, 9))
+    val ratio = if (width > 0 && height > 0) (width.toFloat() / height).coerceIn(.42f, 2.39f) else 16f / 9f
+    builder.setAspectRatio(android.util.Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000))
+    state.pictureInPictureSourceRect?.takeUnless { it.isEmpty }?.let(builder::setSourceRectHint)
+    val playing = tab?.videoPlaying == true
+    val playbackIntent = Intent(ACTION_PIP_PLAYBACK).setPackage(context.packageName).putExtra("play", !playing)
+    val pendingIntent = android.app.PendingIntent.getBroadcast(context, if (playing) 1 else 2, playbackIntent,
+        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+    val label = if (playing) "Pause" else "Play"
+    builder.setActions(listOf(android.app.RemoteAction(
+        android.graphics.drawable.Icon.createWithResource(context, if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play),
+        label, label, pendingIntent)))
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        builder.setAutoEnterEnabled(state.selectedVideoIsPlaying && state.screen == "browser")
+        // A web document is relaid out to isolate the video; don't stretch an old page frame.
+        builder.setSeamlessResizeEnabled(false)
     }
     return builder.build()
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable fun BreezeApp(state: BrowserState) {
     val dark = when (state.theme) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.DARK -> true; ThemeMode.LIGHT -> false }
     val palette = if (dark) darkColorScheme(primary=BreezeTeal, onPrimary=Color.White, onSecondary=Color.White, background=Color.Black, surface=Color.Black, onSurface=Color(0xFFF4F4F4), onSurfaceVariant=Color(0xFFB6B6B6), surfaceVariant=Color.Black, outline=Color(0xFF292929), outlineVariant=Color(0xFF191919), secondary=BreezeTeal, surfaceContainer=Color.Black, surfaceContainerHigh=Color.Black) else lightColorScheme(primary=Color(0xFF087C89), onPrimary=Color.White, onSecondary=Color.White, background=Color(0xFFF2F0ED), surface=Color(0xFFFAF9F7), onSurface=Color(0xFF23282B), onSurfaceVariant=Color(0xFF6A7075), surfaceVariant=Color(0xFFE5E6E5), outline=Color(0xFFC5C9CA), secondary=Color(0xFF087C89), surfaceContainer=Color(0xFFF9F8F6), surfaceContainerHigh=Color(0xFFE8E9E7))
@@ -165,23 +211,11 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
     var showOnboarding by remember(onboardingPreferences) { mutableStateOf(!onboardingPreferences.getBoolean("complete", false)) }
     LaunchedEffect(activity, dark) { activity?.let { AppIconManager.applyTheme(it, dark) } }
     val selectedForPip = state.selected
-    LaunchedEffect(activity, state.selectedId, selectedForPip?.videoPlaying, selectedForPip?.videoWidth, selectedForPip?.videoHeight) {
+    LaunchedEffect(activity, state.selectedId, state.screen, selectedForPip?.videoPlaying,
+        selectedForPip?.videoWidth, selectedForPip?.videoHeight, state.pictureInPictureSourceRect) {
         val host = activity ?: return@LaunchedEffect
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
-            host.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
-        ) {
-            val builder = android.app.PictureInPictureParams.Builder()
-            val width = selectedForPip?.videoWidth ?: 0
-            val height = selectedForPip?.videoHeight ?: 0
-            if (width > 0 && height > 0) {
-                val ratio = (width.toFloat() / height).coerceIn(.42f, 2.39f)
-                builder.setAspectRatio(android.util.Rational((ratio * 1000).toInt().coerceAtLeast(1), 1000))
-            } else builder.setAspectRatio(android.util.Rational(16, 9))
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                builder.setAutoEnterEnabled(state.selectedVideoIsPlaying && !state.isPictureInPicture)
-                builder.setSeamlessResizeEnabled(true)
-            }
-            host.setPictureInPictureParams(builder.build())
+        if (host.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            runCatching { host.setPictureInPictureParams(pictureInPictureParams(host, state)) }
         }
     }
     SideEffect {
@@ -199,13 +233,15 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
         CompositionLocalProvider(LocalGlassEnabled provides state.glass) {
             val snackbar = remember { SnackbarHostState() }
             LaunchedEffect(state.notice) { state.notice?.let { val text = it; state.notice = null; snackbar.showSnackbar(text) } }
-            BackHandler(enabled=state.screen != "browser" || state.selected?.canBack == true) {
-                if (state.screen == "chat") state.collapseChatOrReturn()
+            BackHandler(enabled=state.isStandalonePwa || state.screen != "browser" || state.selected?.canBack == true) {
+                if (state.isStandalonePwa && state.selected?.canBack != true) {
+                    state.isStandalonePwa = false
+                    state.home()
+                }
+                else if (state.screen == "chat") state.collapseChatOrReturn()
                 else if (state.screen != "browser") state.screen = "browser"
                 else state.selected?.session?.goBack()
             }
-            SharedTransitionLayout(Modifier.fillMaxSize()) {
-            val sharedTransitionScope = this
             Box(Modifier.fillMaxSize()) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val keyboardVisible = WindowInsets.ime.getBottom(density) > 0
@@ -215,7 +251,7 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
             var tabMorphTargetBounds by remember { mutableStateOf<Rect?>(null) }
             var webSurfaceBounds by remember { mutableStateOf<Rect?>(null) }
             var tabMorphActive by remember { mutableStateOf(false) }
-            var tabWallOpenPending by remember { mutableStateOf(false) }
+            var tabMorphSnapshot by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
             var previousScreen by remember { mutableStateOf(state.screen) }
             var previousTabId by remember { mutableStateOf(state.selectedId) }
             var tabSurfaceTransitionActive by remember { mutableStateOf(false) }
@@ -224,22 +260,17 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                 (state.screen == "tabs" && previousScreen == "browser") ||
                 (state.screen == "browser" && previousScreen == "tabs")
             val openTabWall = {
-                if (state.screen != "tabs" && !tabWallOpenPending) {
-                    tabWallOpenPending = true
+                if (state.screen != "tabs") {
                     val currentTab = state.selected
-                    val showWall = {
-                        selectedTabTileBounds = null
-                        tabMorphTargetBounds = null
-                        tabWallOpenPending = false
-                        state.screen = "tabs"
-                    }
-                    val capture = currentTab?.capture
-                    if (capture != null) runCatching { capture(showWall) }.onFailure { showWall() }
-                    else showWall()
+                    tabMorphSnapshot = currentTab?.thumbnail?.takeUnless { it.isRecycled }
+                    selectedTabTileBounds = null
+                    tabMorphTargetBounds = null
+                    state.screen = "tabs"
                 }
             }
             LaunchedEffect(state.screen, state.selectedId) {
                 val oldScreen = previousScreen
+                val transitionTabId = state.selectedId
                 val openingTabWall = state.screen == "tabs" && oldScreen == "browser"
                 val returnedFromTabs = state.screen == "browser" && previousScreen == "tabs"
                 val closingTabWall = returnedFromTabs
@@ -264,16 +295,23 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                         }
                         if (target != null) {
                             tabMorphTargetBounds = target
-                            tabMorphProgress.animateTo(1f, tween(340, easing = FastOutSlowInEasing))
+                            tabMorphProgress.animateTo(1f, tween(TabMorphDurationMillis, easing = FastOutSlowInEasing))
                         }
                         tabMorphActive = false
+                        tabMorphSnapshot = null
+                        delay(60)
+                        if (state.screen == "tabs" && state.selectedId == transitionTabId) {
+                            runCatching { state.selected?.capture?.invoke {} }
+                        }
                     }
                     closingTabWall -> {
                         tabMorphActive = true
+                        tabMorphSnapshot = state.selected?.thumbnail?.takeUnless { it.isRecycled }
                         tabMorphTargetBounds = selectedTabTileBounds
                         tabMorphProgress.snapTo(1f)
-                        tabMorphProgress.animateTo(0f, tween(340, easing = FastOutSlowInEasing))
+                        tabMorphProgress.animateTo(0f, tween(TabMorphDurationMillis, easing = FastOutSlowInEasing))
                         tabMorphActive = false
+                        tabMorphSnapshot = null
                         selectedTabTileBounds = null
                         tabMorphTargetBounds = null
                     }
@@ -315,10 +353,14 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                 (state.screen == "browser" || state.screen == "tabs" || state.screen == "chat" && state.chatReturnScreen == "browser") &&
                 !keyboardVisible
             val chromeTransition = updateTransition(pageChromeCollapsed, label = "Browser chrome collapse")
-            val collapseProgress by chromeTransition.animateFloat(
+            val collapseProgress = chromeTransition.animateFloat(
                 transitionSpec = { tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing) },
                 label = "Browser chrome collapse progress",
             ) { if (it) 1f else 0f }
+            val expandedChromeProgress = remember { mutableFloatStateOf(0f) }
+            val shelfCollapse: androidx.compose.runtime.State<Float> = if (
+                state.screen == "browser" && !state.isHomePage
+            ) collapseProgress else expandedChromeProgress
             Scaffold(
                 containerColor = if (state.isPictureInPicture) Color.Black else palette.background,
                 snackbarHost = { if (!state.isPictureInPicture) SnackbarHost(snackbar) },
@@ -332,59 +374,45 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                             val showingHome = state.isHomePage
                             val source = webSurfaceBounds
                             val target = tabMorphTargetBounds ?: selectedTabTileBounds
-                            val progress = if (morphingTabWall) tabMorphProgress.value.coerceIn(0f, 1f) else 0f
                             if (showingHome) {
                                 val morphHome = morphingTabWall && source != null && target != null
-                                val homeWidth = source?.width?.coerceAtLeast(1f) ?: 1f
-                                val homeHeight = source?.height?.coerceAtLeast(1f) ?: 1f
-                                val homeFrameWidth = if (morphHome) homeWidth + (target!!.width - homeWidth) * progress else homeWidth
-                                val homeFrameHeight = if (morphHome) homeHeight + (target!!.height - homeHeight) * progress else homeHeight
                                 val homeModifier = if (morphHome) {
-                                    Modifier.offset {
-                                        IntOffset(((target!!.left - source!!.left) * progress).toInt(), ((target.top - source.top) * progress).toInt())
-                                    }.size((homeFrameWidth / density.density).dp, (homeFrameHeight / density.density).dp)
-                                        .clip(RoundedCornerShape(11.dp * progress)).zIndex(2f)
+                                    Modifier.fillMaxSize().graphicsLayer {
+                                        val progress = tabMorphProgress.value.coerceIn(0f, 1f)
+                                        val sourceBounds = source!!
+                                        val targetBounds = target!!
+                                        translationX = (targetBounds.left - sourceBounds.left) * progress
+                                        translationY = (targetBounds.top - sourceBounds.top) * progress
+                                        scaleX = 1f + (targetBounds.width / sourceBounds.width.coerceAtLeast(1f) - 1f) * progress
+                                        scaleY = 1f + (targetBounds.height / sourceBounds.height.coerceAtLeast(1f) - 1f) * progress
+                                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                        shape = RoundedCornerShape(11.dp * progress)
+                                        clip = true
+                                    }.zIndex(2f)
                                 } else {
                                     Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
                                         if (!morphingTabWall) webSurfaceBounds = coordinates.boundsInRoot()
                                     }
                                 }
-                                Layout(
-                                    content = {
-                                        ReferenceHomeScreen(
-                                            state,
-                                            dark,
-                                            tabUiEntrance.value,
-                                            modifier = Modifier.fillMaxSize(),
-                                            preserveSurfaceViewport = morphingTabWall,
-                                        )
-                                    },
+                                ReferenceHomeScreen(
+                                    state,
+                                    dark,
+                                    tabUiEntrance = { tabUiEntrance.value },
                                     modifier = homeModifier,
-                                ) { measurables, constraints ->
-                                    val sourceWidthPx = if (source != null) homeWidth.toInt().coerceAtLeast(1) else constraints.maxWidth
-                                    val sourceHeightPx = if (source != null) homeHeight.toInt().coerceAtLeast(1) else constraints.maxHeight
-                                    val page = measurables.single().measure(Constraints.fixed(sourceWidthPx, sourceHeightPx))
-                                    layout(constraints.maxWidth, constraints.maxHeight) {
-                                        val scale = if (morphHome) maxOf(constraints.maxWidth.toFloat() / sourceWidthPx, constraints.maxHeight.toFloat() / sourceHeightPx) else 1f
-                                        val childLeft = ((constraints.maxWidth - sourceWidthPx * scale) / 2f).toInt()
-                                        val childTop = ((constraints.maxHeight - sourceHeightPx * scale) / 2f).toInt()
-                                        page.placeWithLayer(childLeft, childTop) {
-                                            scaleX = scale
-                                            scaleY = scale
-                                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                                        }
-                                    }
-                                }
+                                    preserveSurfaceViewport = morphingTabWall,
+                                )
                             } else {
                                 val pageMorph = if (morphingTabWall && source != null) {
-                                    BrowserPageMorph(source, target, progress)
+                                    BrowserPageMorph(source, target) { tabMorphProgress.value }
                                 } else null
                                 WebScreen(
                                     state,
                                     collapseProgress,
-                                    tabUiEntrance.value,
+                                    tabUiEntrance = { tabUiEntrance.value },
+                                    pageChromeCollapsed = pageChromeCollapsed,
                                     preserveSurfaceViewport = true,
                                     pageMorph = pageMorph,
+                                    transitionSnapshot = tabMorphSnapshot,
                                     onPageViewportBoundsChanged = { bounds ->
                                         if (!morphingTabWall) webSurfaceBounds = bounds
                                     },
@@ -399,7 +427,10 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                                 if (state.isPictureInPicture || targetState == "tabs") {
                                     EnterTransition.None togetherWith ExitTransition.None
                                 } else if (initialState == "tabs") {
-                                    EnterTransition.None togetherWith fadeOut(tween(340, easing = FastOutSlowInEasing))
+                                    EnterTransition.None togetherWith slideOutVertically(
+                                        targetOffsetY = { -1 },
+                                        animationSpec = tween(TabMorphDurationMillis, easing = FastOutSlowInEasing),
+                                    )
                                 } else {
                                     val enteringBrowser = targetState == "browser"
                                     val leavingBrowser = initialState == "browser"
@@ -415,7 +446,8 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                             },
                             label = "Browser surfaces",
                         ) { visibleScreen ->
-                            val animatedVisibilityScope = this
+                            val opaqueSecondary = visibleScreen in setOf("history", "library", "chats", "settings", "reminders", "passwords", "downloads")
+                            Box(Modifier.fillMaxSize().then(if (opaqueSecondary) Modifier.background(palette.background) else Modifier)) {
                             when (visibleScreen) {
                                 "blank" -> Box(Modifier.fillMaxSize().background(palette.background))
                                 "tabs" -> TabWallScreen(state, tabSurfaceTransition) { bounds -> selectedTabTileBounds = bounds }
@@ -427,6 +459,7 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                                 "passwords" -> PasswordVaultScreen()
                                 "downloads" -> DownloadsScreen(state)
                                 else -> Box(Modifier.fillMaxSize())
+                            }
                             }
                         }
                         AnimatedVisibility(
@@ -441,8 +474,7 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                     }
                 }
             }
-            if (!keyboardVisible && !state.isPictureInPicture) {
-                val shelfCollapse = if (state.screen == "browser" && !state.isHomePage) collapseProgress else 0f
+            if (!keyboardVisible && !state.isPictureInPicture && !state.isStandalonePwa) {
                 if (state.screen != "tabs") BottomShelf(state, shelfCollapse, Modifier.align(Alignment.BottomCenter))
                 AnimatedVisibility(
                     visible = state.screen != "tabs",
@@ -471,12 +503,11 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                 showOnboarding = false
             }
             }
-            }
         }
     }
 }
 
-@Composable private fun BottomShelf(state: BrowserState, collapseProgress: Float, modifier: Modifier = Modifier) {
+@Composable private fun BottomShelf(state: BrowserState, collapseProgress: androidx.compose.runtime.State<Float>, modifier: Modifier = Modifier) {
     val density = androidx.compose.ui.platform.LocalDensity.current
     val page = state.selected
     val dark = MaterialTheme.colorScheme.background.red < .3f
@@ -485,12 +516,15 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
     val expandedBodyHeight = BottomBarHeight + BottomBarVerticalPadding * 2
     val compactBodyHeight = CollapsedBottomBarHeight + CompactBottomBarVerticalPadding * 2
     val height = navInset + expandedBodyHeight
-    val travel = with(density) { (expandedBodyHeight - compactBodyHeight).toPx() * collapseProgress }
     Box(modifier.fillMaxWidth().height(height).clipToBounds()) {
         Box(
             Modifier.fillMaxSize()
                 .align(Alignment.BottomCenter)
-                .graphicsLayer { translationY = travel },
+                .graphicsLayer {
+                    translationY = with(density) {
+                        (expandedBodyHeight - compactBodyHeight).toPx() * collapseProgress.value
+                    }
+                },
         ) {
             Box(Modifier.fillMaxSize().shadow(5.dp, androidx.compose.ui.graphics.RectangleShape).background(if (dark) Color.Black else Color.White))
             Box(
@@ -521,10 +555,10 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable private fun BottomBar(state: BrowserState, collapseProgress: Float, modifier: Modifier = Modifier, onOpenTabs: () -> Unit) {
+@Composable private fun BottomBar(state: BrowserState, collapseProgress: androidx.compose.runtime.State<Float>, modifier: Modifier = Modifier, onOpenTabs: () -> Unit) {
     val page = state.selected
     val canCollapse = state.screen == "browser" || state.screen == "chat" && state.chatReturnScreen == "browser"
-    val progress = if (canCollapse) collapseProgress else 0f
+    val progress = if (canCollapse) collapseProgress.value else 0f
     val buttonSize = 48.dp
     val iconSize = 24.dp
     val navSize = 56.dp
@@ -533,8 +567,9 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
     val verticalPadding = BottomBarVerticalPadding * (1f - progress) + CompactBottomBarVerticalPadding * progress
     var recentTabsOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val view = LocalView.current
     Box(modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal=12.dp).padding(vertical=verticalPadding), contentAlignment=Alignment.Center) {
-        if (progress < .82f) Row(
+        if (progress < 1f) Row(
             Modifier.fillMaxWidth().height(bodyHeight).graphicsLayer {
                 val uniformScale = 1f - .20f * progress
                 scaleX = uniformScale
@@ -560,6 +595,10 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
             Spacer(Modifier.size(buttonSize))
             if (state.screen != "chat") {
                 if (state.screen == "browser" && !state.isHomePage) IconButton(onClick={state.share()?.let(context::startActivity) }, modifier=Modifier.size(buttonSize)) { Icon(BreezeIcons.Share,"Share page",Modifier.size(iconSize), tint=tint) }
+                else if (state.screen == "browser" && state.isHomePage) IconButton(onClick={
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                    state.screen = "settings"
+                }, modifier=Modifier.size(buttonSize)) { Icon(BreezeIcons.Settings,"Settings",Modifier.size(iconSize), tint=tint) }
                 else Spacer(Modifier.size(buttonSize))
                 Box {
                 Box(Modifier.size(buttonSize).semantics { contentDescription = "Tabs. Long press for recent tabs" }
@@ -599,9 +638,9 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                 }
             } else Spacer(Modifier.size(buttonSize))
         }
-        if (progress < .82f) {
+        if (progress < 1f) {
             Box(
-                Modifier.align(Alignment.Center).offset(y = (-5).dp).size(72.dp)
+                Modifier.align(Alignment.Center).offset(y = (-2).dp).size(72.dp)
                     .graphicsLayer {
                         val uniformScale = 1f - .20f * progress
                         scaleX = uniformScale
@@ -611,10 +650,6 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                 contentAlignment = Alignment.Center,
             ) {
                 when {
-                    state.screen == "browser" && state.isHomePage -> IconButton(
-                        onClick = { state.screen = "settings" },
-                        modifier = Modifier.size(56.dp),
-                    ) { Icon(BreezeIcons.Settings, "Settings", Modifier.size(25.dp), tint = tint) }
                     state.screen == "browser" -> Box(
                         Modifier.size(72.dp)
                             .shadow(7.dp, CircleShape, clip = false)
@@ -629,7 +664,10 @@ private fun pictureInPictureParams(tab: LiveTab?): android.app.PictureInPictureP
                             )
                             .border(1.dp, BreezeTeal.copy(alpha = .48f), CircleShape)
                             .semantics { contentDescription = "Open Nav" }
-                            .clickable { state.openNav() },
+                            .clickable {
+                                view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                                if (state.isHomePage) state.startStandaloneNavChat() else state.openNav()
+                            },
                         contentAlignment = Alignment.Center,
                     ) { NavMark(navSize, glowing = state.activeChat?.running == true) }
                 }
@@ -651,10 +689,15 @@ private val BottomBarHeight = 58.dp
 private val BottomBarVerticalPadding = 8.dp
 private val CollapsedBottomBarHeight = 27.dp
 private val CompactBottomBarVerticalPadding = 0.dp
+private data class AddressSuggestion(val title: String, val url: String)
 @Composable private fun AddressField(state: BrowserState, home: Boolean) {
     val context = LocalContext.current
-    var text by remember(state.selectedId) { mutableStateOf(if(home) "" else state.selected?.url.orEmpty()) }
+    var fieldValue by remember(state.selectedId) {
+        mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(if (home) "" else state.selected?.url.orEmpty()))
+    }
+    val text = fieldValue.text
     var editing by remember(state.selectedId) { mutableStateOf(false) }
+    var suggestionsOpen by remember(state.selectedId, home) { mutableStateOf(false) }
     var refreshAngle by remember(state.selectedId) { mutableFloatStateOf(0f) }
     var refreshPull by remember(state.selectedId) { mutableFloatStateOf(0f) }
     val refreshRotation by animateFloatAsState(refreshAngle, tween(440), label = "Refresh rotation")
@@ -668,7 +711,36 @@ private val CompactBottomBarVerticalPadding = 0.dp
         val host = runCatching { android.net.Uri.parse(currentUrl).host.orEmpty() }.getOrDefault("").removePrefix("www.")
         (host.ifBlank { currentUrl.substringAfter("://", currentUrl).substringBefore('/') }).let { if (it.isBlank()) "" else "$it…" }
     }
-    LaunchedEffect(currentUrl, editing) { if (!editing && !home) text = currentUrl }
+    LaunchedEffect(currentUrl, editing) {
+        if (!editing && !home) fieldValue = androidx.compose.ui.text.input.TextFieldValue(currentUrl)
+    }
+    LaunchedEffect(editing, currentUrl, home) {
+        if (editing && !home) {
+            // Let the tap place its caret first, then select the full address for fast replacement.
+            delay(80)
+            fieldValue = fieldValue.copy(selection = androidx.compose.ui.text.TextRange(0, fieldValue.text.length))
+        }
+    }
+    val suggestionCandidates = buildList {
+        state.history.forEach { add(AddressSuggestion(it.title, it.url)) }
+        state.bookmarks.forEach { add(AddressSuggestion(it.title, it.url)) }
+        state.tabs.filterNot { it.private }.forEach { add(AddressSuggestion(it.title, it.url)) }
+    }
+    val suggestionQuery = if (editing && fieldValue.selection.start == 0 && fieldValue.selection.end == text.length) "" else text
+    val suggestions = suggestionCandidates.asSequence()
+        .filter { it.url.startsWith("http://") || it.url.startsWith("https://") }
+        .filter { suggestion ->
+            if (suggestionQuery.isBlank()) true else {
+                val query = runCatching {
+                    val uri = android.net.Uri.parse(suggestion.url)
+                    uri.getQueryParameter("q") ?: uri.getQueryParameter("query").orEmpty()
+                }.getOrDefault("")
+                suggestion.title.contains(suggestionQuery, ignoreCase = true) || suggestion.url.contains(suggestionQuery, ignoreCase = true) || query.contains(suggestionQuery, ignoreCase = true)
+            }
+        }
+        .distinctBy { it.url }
+        .take(4)
+        .toList()
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (home) Arrangement.spacedBy(0.dp) else Arrangement.spacedBy(8.dp),
@@ -719,23 +791,76 @@ private val CompactBottomBarVerticalPadding = 0.dp
         Row(verticalAlignment=Alignment.CenterVertically) {
             if(home) Icon(if(state.homeMode==HomeInputMode.ASK) BreezeIcons.AutoAwesome else BreezeIcons.Search,null,tint=BreezeTeal)
             else {
-                Icon(if(text.startsWith("https://")) BreezeIcons.Lock else BreezeIcons.Info,"Connection",Modifier.size(16.dp))
                 AddressPageTools(state, Modifier.size(42.dp))
-            }
-            androidx.compose.foundation.text.BasicTextField(value=text,onValueChange={text=it},modifier=Modifier.weight(1f).padding(horizontal=10.dp).onFocusChanged { editing = it.isFocused },singleLine=true,
-                textStyle=MaterialTheme.typography.bodyMedium.copy(color=MaterialTheme.colorScheme.onSurface.copy(alpha=if (editing || home) 1f else 0f)),cursorBrush=androidx.compose.ui.graphics.SolidColor(BreezeTeal),keyboardOptions=KeyboardOptions(imeAction=ImeAction.Go),keyboardActions=KeyboardActions(onGo={keyboardController?.hide();state.submit(text)}),
-                decorationBox={inner ->
-                    Box(contentAlignment=Alignment.CenterStart) {
-                        inner()
-                        if (home && text.isEmpty()) Text("Ask Breeze, or type a URL",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=15.sp)
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = !home && !editing && compactAddress.isNotBlank(),
-                            enter = fadeIn(tween(150)), exit = fadeOut(tween(120)),
-                        ) {
-                            Text(compactAddress, maxLines=1, overflow=TextOverflow.Ellipsis, style=MaterialTheme.typography.bodyMedium, color=MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.width(6.dp))
+                IconButton(
+                    onClick = {
+                        if (currentUrl.isNotBlank()) {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            clipboard?.setPrimaryClip(ClipData.newPlainText("Page link", currentUrl))
+                            state.notice = "Link copied"
                         }
+                    },
+                    modifier = Modifier.size(34.dp),
+                    enabled = currentUrl.isNotBlank(),
+                ) {
+                    Icon(BreezeIcons.Paperclip, "Copy link", Modifier.size(18.dp))
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = fieldValue,
+                    onValueChange = { fieldValue = it; suggestionsOpen = true },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal=10.dp).onFocusChanged { focus ->
+                        editing = focus.isFocused
+                        suggestionsOpen = focus.isFocused
+                        if (focus.isFocused && !home) {
+                        }
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (editing || home) 1f else 0f)),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(BreezeTeal),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { suggestionsOpen = false; keyboardController?.hide(); state.submit(text) }),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            inner()
+                            if (home && text.isEmpty()) Text("Ask Breeze, or type a URL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp)
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = !home && !editing && compactAddress.isNotBlank(),
+                                enter = fadeIn(tween(150)), exit = fadeOut(tween(120)),
+                            ) {
+                                Text(compactAddress, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    },
+                )
+                DropdownMenu(
+                    expanded = suggestionsOpen && editing && suggestions.isNotEmpty(),
+                    onDismissRequest = { suggestionsOpen = false },
+                    properties = PopupProperties(focusable = false),
+                    modifier = Modifier.widthIn(min = 230.dp, max = 340.dp).heightIn(max = 228.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .97f),
+                ) {
+                    suggestions.forEach { suggestion ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(suggestion.title.ifBlank { suggestion.url }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(android.net.Uri.parse(suggestion.url).host.orEmpty().removePrefix("www."), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            leadingIcon = { Icon(BreezeIcons.History, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            onClick = {
+                                suggestionsOpen = false
+                                keyboardController?.hide()
+                                state.navigate(suggestion.url)
+                            },
+                        )
                     }
-                })
+                }
+            }
             if(home) IconButton(onClick={keyboardController?.hide();state.submit(text)},modifier=Modifier.size(32.dp)) {Icon(BreezeIcons.ArrowForward,"Ask Breeze or open URL")}
             else IconButton(onClick={refreshAngle += 360f; state.selected?.session?.reload()},modifier=Modifier.size(32.dp)) {Icon(BreezeIcons.Refresh,"Reload",Modifier.rotate(refreshRotation + 180f * refreshPull))}
         }
@@ -744,11 +869,13 @@ private val CompactBottomBarVerticalPadding = 0.dp
 }
 @Composable private fun WebScreen(
     state: BrowserState,
-    collapseProgress: Float,
-    tabUiEntrance: Float,
+    collapseProgress: androidx.compose.runtime.State<Float>,
+    tabUiEntrance: () -> Float,
+    pageChromeCollapsed: Boolean,
     modifier: Modifier = Modifier,
     preserveSurfaceViewport: Boolean = false,
     pageMorph: BrowserPageMorph? = null,
+    transitionSnapshot: android.graphics.Bitmap? = null,
     onPageViewportBoundsChanged: (Rect) -> Unit = {},
 ) {
     val tab = state.selected ?: return
@@ -760,31 +887,30 @@ private val CompactBottomBarVerticalPadding = 0.dp
     val navInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
     val expandedShelfBody = BottomBarHeight + BottomBarVerticalPadding * 2
     val collapsedShelfBody = CollapsedBottomBarHeight + CompactBottomBarVerticalPadding * 2
-    val shelfBody = expandedShelfBody * (1f - collapseProgress) + collapsedShelfBody * collapseProgress
-    val viewportBottom = if (keyboardVisible || state.isPictureInPicture || state.screen == "tabs" && !preserveSurfaceViewport) 0.dp
+    val shelfBody = if (pageChromeCollapsed) collapsedShelfBody else expandedShelfBody
+    val viewportBottom = if (keyboardVisible || state.isPictureInPicture || state.isStandalonePwa || state.screen == "tabs" && !preserveSurfaceViewport) 0.dp
         else (navInset + shelfBody - 5.dp).coerceAtLeast(0.dp)
     val viewportBottomPx = (viewportBottom.value * density.density).toInt().coerceAtLeast(0)
-    val chromeHeight = if (state.isPictureInPicture) 0.dp else 24.dp + 34.dp * (1f - collapseProgress)
-    val chromeAlpha = 1f - collapseProgress
+    val chromeHeight = if (state.isPictureInPicture || state.isStandalonePwa || pageChromeCollapsed) 0.dp else 58.dp
     var screenBounds by remember { mutableStateOf<Rect?>(null) }
     var viewportBounds by remember(tab.id) { mutableStateOf<Rect?>(null) }
-    val morphProgress = pageMorph?.progress?.coerceIn(0f, 1f) ?: 0f
     val morphSource = pageMorph?.source ?: viewportBounds
     val morphTarget = pageMorph?.target ?: morphSource
-    val pageFrame = if (pageMorph != null && morphSource != null && morphTarget != null) {
-        Rect(
-            left = morphSource.left + (morphTarget.left - morphSource.left) * morphProgress,
-            top = morphSource.top + (morphTarget.top - morphSource.top) * morphProgress,
-            right = morphSource.right + (morphTarget.right - morphSource.right) * morphProgress,
-            bottom = morphSource.bottom + (morphTarget.bottom - morphSource.bottom) * morphProgress,
-        )
-    } else morphSource
     val rootBounds = screenBounds
-    val movingPageFrameModifier = if (pageFrame != null && rootBounds != null) {
+    val movingPageFrameModifier = if (pageMorph != null && morphSource != null && morphTarget != null && rootBounds != null) {
         Modifier.offset {
-            IntOffset((pageFrame.left - rootBounds.left).toInt(), (pageFrame.top - rootBounds.top).toInt())
-        }.size((pageFrame.width / density.density).dp, (pageFrame.height / density.density).dp)
-            .clip(RoundedCornerShape(11.dp * morphProgress))
+            IntOffset((morphSource.left - rootBounds.left).toInt(), (morphSource.top - rootBounds.top).toInt())
+        }.size((morphSource.width / density.density).dp, (morphSource.height / density.density).dp)
+            .graphicsLayer {
+                val progress = pageMorph.progress().coerceIn(0f, 1f)
+                translationX = (morphTarget.left - morphSource.left) * progress
+                translationY = (morphTarget.top - morphSource.top) * progress
+                scaleX = 1f + (morphTarget.width / morphSource.width.coerceAtLeast(1f) - 1f) * progress
+                scaleY = 1f + (morphTarget.height / morphSource.height.coerceAtLeast(1f) - 1f) * progress
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                shape = RoundedCornerShape(11.dp * progress)
+                clip = true
+            }
     } else {
         Modifier.fillMaxSize().graphicsLayer { alpha = if (viewportBounds == null) 0f else 1f }
     }
@@ -797,61 +923,38 @@ private val CompactBottomBarVerticalPadding = 0.dp
     } else {
         Modifier.fillMaxSize().graphicsLayer { alpha = 0f }
     }
-    val pageSnapshot = tab.thumbnail?.takeUnless { it.isRecycled }
+    val pageSnapshot = (transitionSnapshot ?: tab.thumbnail)?.takeUnless { it.isRecycled }
     // Compose shared-element transitions do not support AndroidView. Animate the cached page
     // image instead of transforming GeckoView's TextureView surface on every frame.
-    val snapshotMorph = pageMorph != null && (pageSnapshot != null || tab.private)
-    val liveSurfaceMorph = pageMorph != null && !snapshotMorph
-    val pageSurfaceModifier = if (liveSurfaceMorph) movingPageFrameModifier else stablePageFrameModifier
+    val snapshotMorph = pageMorph != null
+    val pageSurfaceModifier = if (state.isPictureInPicture) Modifier.fillMaxSize() else stablePageFrameModifier
     Box(
         modifier.fillMaxSize()
             .onGloballyPositioned { screenBounds = it.boundsInRoot() }
             .background(if (pageMorph != null) Color.Transparent else if (darkChrome) Color.Black else Color.White),
     ) {
       Column(Modifier.fillMaxSize().graphicsLayer {
-          if (pageMorph != null) alpha = 1f - morphProgress
+          val progress = pageMorph?.progress?.invoke()?.coerceIn(0f, 1f) ?: 0f
+          alpha = 1f - progress
       }) {
-        if (!state.isPictureInPicture) {
-        Box(Modifier.fillMaxWidth().height(chromeHeight).clipToBounds().graphicsLayer {
-            if (pageMorph != null) translationY = -morphProgress * chromeHeight.toPx()
-        }) {
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-                if (darkChrome) listOf(Color(0xFF080A0B), Color(0xFF050607), Color.Black)
-                else listOf(Color.White, Color(0xFFF9FAFB), Color.White),
-            )))
-            Box(Modifier.fillMaxWidth().height(8.dp).align(Alignment.TopCenter)
-                .background(Brush.horizontalGradient(
-                    if (darkChrome) listOf(Color.Transparent, Color.White.copy(alpha = .045f), Color.Transparent)
-                    else listOf(Color.Transparent, Color.Black.copy(alpha = .035f), Color.Transparent),
-                )).blur(6.dp))
-            if (collapseProgress < .999f) {
-                Row(Modifier.fillMaxSize().graphicsLayer {
-                    val entrance = minOf(addressEntrance.value, tabUiEntrance.coerceIn(0f, 1f))
-                    alpha = chromeAlpha * entrance
-                    scaleX = .99f + .01f * chromeAlpha
-                    scaleY = .94f + .06f * chromeAlpha
-                    translationY = (1f - chromeAlpha) * (-5.dp.toPx()) - (1f - entrance) * 24.dp.toPx()
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f)
-                }.padding(horizontal=10.dp, vertical=4.dp), verticalAlignment=Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { AddressField(state, home=false) }
-                }
-            }
-            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(3.dp).align(Alignment.BottomCenter)) {
-                drawLine(
-                    if (darkChrome) Color.White.copy(alpha = .10f) else Color.Black.copy(alpha = .08f),
-                    androidx.compose.ui.geometry.Offset(0f, size.height - .7.dp.toPx()),
-                    androidx.compose.ui.geometry.Offset(size.width, size.height - .7.dp.toPx()),
-                    1.dp.toPx(),
-                )
-            }
-        }
+        if (!state.isPictureInPicture && !state.isStandalonePwa) {
+        BrowserAddressChrome(
+            state = state,
+            collapseProgress = collapseProgress,
+            expanded = !pageChromeCollapsed,
+            chromeHeight = chromeHeight,
+            entranceProgress = tabUiEntrance,
+            addressEntrance = { addressEntrance.value },
+            pageMorph = pageMorph,
+            darkChrome = darkChrome,
+            modifier = Modifier.fillMaxWidth(),
+        )
         if (state.showFind) {
             var query by remember { mutableStateOf("") }
             Row(Modifier.padding(horizontal=12.dp).graphicsLayer {
-                if (pageMorph != null) {
-                    alpha = 1f - morphProgress
-                    translationY = -morphProgress * 34.dp.toPx()
-                }
+                val progress = pageMorph?.progress?.invoke()?.coerceIn(0f, 1f) ?: 0f
+                alpha = 1f - progress
+                translationY = -progress * 34.dp.toPx()
             },verticalAlignment=Alignment.CenterVertically) {
                 OutlinedTextField(value=query,onValueChange={query=it;tab.session?.finder?.find(it,org.mozilla.geckoview.GeckoSession.FINDER_FIND_FORWARD)},label={Text("Find on page")},modifier=Modifier.weight(1f),singleLine=true)
                 IconButton(onClick={tab.session?.finder?.find(null,org.mozilla.geckoview.GeckoSession.FINDER_FIND_FORWARD)}) {Icon(BreezeIcons.ArrowDownward,"Next match")}
@@ -880,7 +983,6 @@ private val CompactBottomBarVerticalPadding = 0.dp
                 previousTab?.let {
                     it.capture = null
                     it.captureOverlay = null
-                    it.coverUntilFirstPaint = null
                 }
                 attachedTab.value = targetTab
                 session.selectionActionDelegate = com.froydinger.breeze.browser.NavTextSelectionActionDelegate(
@@ -903,9 +1005,6 @@ private val CompactBottomBarVerticalPadding = 0.dp
                 if (freshSession && targetTab.url.isNotBlank() && !targetTab.restoredSessionState) {
                     state.loadTab(targetTab, targetTab.url)
                 }
-            }
-            targetTab.coverUntilFirstPaint = {
-                view.coverUntilFirstPaint(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
             }
             targetTab.capture = { onCaptured ->
                 if (!targetTab.private && view.isAttachedToWindow) {
@@ -935,8 +1034,10 @@ private val CompactBottomBarVerticalPadding = 0.dp
         Layout(
           content = {
               Box(Modifier.fillMaxSize()) {
-            AndroidView(
+                AndroidView(
                 factory = { context -> GeckoView(context).apply {
+                    // Keep TextureView because Breeze uses in-window overlays and clipping.
+                    // The SurfaceView experiment rendered black inside this Compose layout.
                     setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
                     setBackgroundColor(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
                     installTab(this, tab)
@@ -946,12 +1047,25 @@ private val CompactBottomBarVerticalPadding = 0.dp
                     view.setBackgroundColor(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
                     view.setVerticalClipping(viewportBottomPx)
                     installTab(view, tab)
+                    if (!state.isPictureInPicture && !state.preparingPictureInPicture) {
+                        val visible = android.graphics.Rect()
+                        if (view.getGlobalVisibleRect(visible)) {
+                            val normalized = tab.videoBoundsNormalized
+                            val source = normalized?.let {
+                                android.graphics.Rect(
+                                    visible.left + (it.left.coerceIn(0f, 1f) * visible.width()).toInt(),
+                                    visible.top + (it.top.coerceIn(0f, 1f) * visible.height()).toInt(),
+                                    visible.left + (it.right.coerceIn(0f, 1f) * visible.width()).toInt(),
+                                    visible.top + (it.bottom.coerceIn(0f, 1f) * visible.height()).toInt())
+                            }?.takeUnless { it.isEmpty } ?: visible
+                            if (state.pictureInPictureSourceRect != source) state.pictureInPictureSourceRect = source
+                        }
+                    }
                 },
                 onRelease = { view ->
                     attachedTab.value?.let { current ->
                         current.capture = null
                         current.captureOverlay = null
-                        current.coverUntilFirstPaint = null
                         current.session?.setFocused(false)
                         current.session?.setActive(false)
                     }
@@ -960,13 +1074,13 @@ private val CompactBottomBarVerticalPadding = 0.dp
                 },
             )
             val overlaySnapshot = state.overlayBackdrop
-            val showBackdropSnapshot = state.overlayBackdropRequested && overlaySnapshot != null
+            val showBackdropSnapshot = !state.isPictureInPicture && state.overlayBackdropRequested && overlaySnapshot != null
             val overlaySnapshotAlpha by animateFloatAsState(
                 targetValue = if (showBackdropSnapshot) 1f else 0f,
                 animationSpec = tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing),
                 label = "Page backdrop snapshot",
             )
-            if (overlaySnapshot != null && overlaySnapshotAlpha > 0f) {
+            if (!state.isPictureInPicture && overlaySnapshot != null && overlaySnapshotAlpha > 0f) {
                 Image(
                     bitmap = overlaySnapshot.asImageBitmap(),
                     contentDescription = null,
@@ -974,27 +1088,16 @@ private val CompactBottomBarVerticalPadding = 0.dp
                     modifier = Modifier.fillMaxSize().blur(14.dp).graphicsLayer { alpha = overlaySnapshotAlpha },
                 )
             }
-            if (tab.loading) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color=BreezeTeal)
+            if (tab.loading && !state.isPictureInPicture) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color=BreezeTeal)
             tab.error?.let { Text(it, style=MaterialTheme.typography.bodySmall, modifier=Modifier.align(Alignment.TopCenter).padding(12.dp).breezeGlass(14.dp).padding(10.dp)) }              }
           },
-          modifier = pageSurfaceModifier.graphicsLayer { if (snapshotMorph) alpha = 0f },
+          modifier = pageSurfaceModifier.graphicsLayer { alpha = if (snapshotMorph) 0f else 1f },
       ) { measurables, constraints ->
-          val sourceWidthPx = (morphSource?.width?.toInt() ?: constraints.maxWidth).coerceAtLeast(1)
-          val sourceHeightPx = (morphSource?.height?.toInt() ?: constraints.maxHeight).coerceAtLeast(1)
+          val sourceWidthPx = (if (state.isPictureInPicture) constraints.maxWidth else morphSource?.width?.toInt() ?: constraints.maxWidth).coerceAtLeast(1)
+          val sourceHeightPx = (if (state.isPictureInPicture) constraints.maxHeight else morphSource?.height?.toInt() ?: constraints.maxHeight).coerceAtLeast(1)
           val page = measurables.single().measure(Constraints.fixed(sourceWidthPx, sourceHeightPx))
           layout(constraints.maxWidth, constraints.maxHeight) {
-              if (liveSurfaceMorph) {
-                  val scale = maxOf(constraints.maxWidth.toFloat() / sourceWidthPx, constraints.maxHeight.toFloat() / sourceHeightPx)
-                  val childWidth = sourceWidthPx * scale
-                  val childHeight = sourceHeightPx * scale
-                  page.placeWithLayer(((constraints.maxWidth - childWidth) / 2f).toInt(), ((constraints.maxHeight - childHeight) / 2f).toInt()) {
-                      scaleX = scale
-                      scaleY = scale
-                      transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                  }
-              } else {
-                  page.place(0, 0)
-              }
+              page.place(0, 0)
           }
       }
 
@@ -1005,32 +1108,109 @@ private val CompactBottomBarVerticalPadding = 0.dp
                       Icon(BreezeIcons.VisibilityOff, contentDescription = null,
                           tint = if (darkChrome) Color(0xFF9A9EA6) else Color(0xFF777C85), modifier = Modifier.size(34.dp))
                   }
-              } else {
+              } else if (pageSnapshot != null) {
                   Image(
-                      bitmap = pageSnapshot!!.asImageBitmap(),
+                      bitmap = pageSnapshot.asImageBitmap(),
                       contentDescription = null,
                       modifier = Modifier.fillMaxSize(),
-                      contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                      contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
                   )
+              } else {
+                  Box(
+                      Modifier.fillMaxSize().background(if (darkChrome) Color(0xFF11161A) else Color(0xFFE9EFF0)),
+                      contentAlignment = Alignment.Center,
+                  ) {
+                      Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                          Icon(BreezeIcons.Language, contentDescription = null,
+                              tint = if (darkChrome) Color(0xFF62CBD0) else Color(0xFF087C89), modifier = Modifier.size(34.dp))
+                          Text(android.net.Uri.parse(tab.url).host.orEmpty().removePrefix("www."),
+                              color = if (darkChrome) Color(0xFFB6BAC2) else Color(0xFF545A63),
+                              style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      }
+                  }
               }
           }
       }
 
-      if (collapseProgress > .001f) {
-          val host = remember(tab.url) { android.net.Uri.parse(tab.url).host.orEmpty().removePrefix("www.") }
-          Row(
-              Modifier.align(Alignment.TopCenter).offset(y = 8.dp).zIndex(2f)
-                  .graphicsLayer { alpha = collapseProgress }
-                  .breezeGlass(50.dp)
-                  .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .72f), RoundedCornerShape(50.dp))
-                  .clickable(enabled = collapseProgress > .82f) { tab.chromeCollapsed = false }
-                  .padding(horizontal = 14.dp, vertical = 6.dp),
-              verticalAlignment = Alignment.CenterVertically,
-          ) {
-              Icon(if (tab.url.startsWith("https://")) BreezeIcons.Lock else BreezeIcons.Info, contentDescription = null, tint = BreezeTeal, modifier = Modifier.size(16.dp))
-              Spacer(Modifier.width(8.dp))
-              Text(host.ifBlank { "New tab" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-          }
+      if (!state.isPictureInPicture) CollapsedUrlChip(state, collapseProgress, pageChromeCollapsed, Modifier.align(Alignment.TopCenter).offset(y = 8.dp).zIndex(2f))
+      if (!state.isPictureInPicture && !state.preparingPictureInPicture && state.screen == "browser") {
+          OpenInAppBanner(tab.url, Modifier.align(Alignment.TopCenter).padding(top = if (pageChromeCollapsed) 52.dp else 66.dp, start = 12.dp, end = 12.dp).zIndex(4f))
       }
+    }
+}
+
+@Composable
+private fun BrowserAddressChrome(
+    state: BrowserState,
+    collapseProgress: androidx.compose.runtime.State<Float>,
+    expanded: Boolean,
+    chromeHeight: androidx.compose.ui.unit.Dp,
+    entranceProgress: () -> Float,
+    addressEntrance: () -> Float,
+    pageMorph: BrowserPageMorph?,
+    darkChrome: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.height(chromeHeight).clipToBounds().graphicsLayer {
+        val morphProgress = pageMorph?.progress?.invoke()?.coerceIn(0f, 1f) ?: 0f
+        translationY = -morphProgress * chromeHeight.toPx()
+    }) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+            if (darkChrome) listOf(Color(0xFF080A0B), Color(0xFF050607), Color.Black)
+            else listOf(Color.White, Color(0xFFF9FAFB), Color.White),
+        )))
+        Box(Modifier.fillMaxWidth().height(8.dp).align(Alignment.TopCenter)
+            .background(Brush.horizontalGradient(
+                if (darkChrome) listOf(Color.Transparent, Color.White.copy(alpha = .045f), Color.Transparent)
+                else listOf(Color.Transparent, Color.Black.copy(alpha = .035f), Color.Transparent),
+            )).blur(6.dp))
+        if (expanded || collapseProgress.value < .999f) {
+            Row(Modifier.fillMaxSize().graphicsLayer {
+                val collapse = collapseProgress.value.coerceIn(0f, 1f)
+                val chromeAlpha = 1f - collapse
+                val entrance = minOf(addressEntrance(), entranceProgress().coerceIn(0f, 1f))
+                alpha = chromeAlpha * entrance
+                scaleX = .99f + .01f * chromeAlpha
+                scaleY = .94f + .06f * chromeAlpha
+                val morphProgress = pageMorph?.progress?.invoke()?.coerceIn(0f, 1f) ?: 0f
+                translationY = collapse * (-5.dp.toPx()) - (1f - entrance) * 24.dp.toPx() - morphProgress * chromeHeight.toPx()
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, 1f)
+            }.padding(horizontal=10.dp, vertical=4.dp), verticalAlignment=Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { AddressField(state, home=false) }
+            }
+        }
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(3.dp).align(Alignment.BottomCenter)) {
+            drawLine(
+                if (darkChrome) Color.White.copy(alpha = .10f) else Color.Black.copy(alpha = .08f),
+                androidx.compose.ui.geometry.Offset(0f, size.height - .7.dp.toPx()),
+                androidx.compose.ui.geometry.Offset(size.width, size.height - .7.dp.toPx()),
+                1.dp.toPx(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CollapsedUrlChip(
+    state: BrowserState,
+    collapseProgress: androidx.compose.runtime.State<Float>,
+    collapsed: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val progress = collapseProgress.value
+    val tab = state.selected ?: return
+    if (!collapsed && progress <= .001f) return
+    val host = remember(tab.url) { android.net.Uri.parse(tab.url).host.orEmpty().removePrefix("www.") }
+    Row(
+        modifier.graphicsLayer { alpha = progress.coerceIn(0f, 1f) }
+            .breezeGlass(50.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .72f), RoundedCornerShape(50.dp))
+            .clickable(enabled = progress > .82f) { tab.chromeCollapsed = false }
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(if (tab.url.startsWith("https://")) BreezeIcons.Lock else BreezeIcons.Info, contentDescription = null, tint = BreezeTeal, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(host.ifBlank { "New tab" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
     }
 }

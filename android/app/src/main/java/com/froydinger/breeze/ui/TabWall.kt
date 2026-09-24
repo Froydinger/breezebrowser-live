@@ -149,7 +149,7 @@ fun TabWallScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(key = "new-tab") {
-                NewTabTile(dark, ink, muted, stroke) { state.newTab(private = showingPrivate) }
+                NewTabTile(dark, ink, muted, stroke, enabled = !pageTransitionInProgress) { state.newTab(private = showingPrivate) }
             }
             items(tabs, key = { it.id }) { tab ->
                 var previewBounds by remember(tab.id) { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -165,6 +165,7 @@ fun TabWallScreen(
                         wallpaper = state.wallpaper,
                         closeControlEnabled = closeTargetsReady && !pageTransitionInProgress,
                         hideSelectedCloseControl = pageTransitionInProgress && tab.id == state.selectedId,
+                        hidePreview = pageTransitionInProgress && tab.id == state.selectedId,
                         onNeedThumbnail = { state.loadThumbnail(tab) },
                         onPreviewBoundsChanged = { bounds ->
                             previewBounds = bounds
@@ -176,7 +177,7 @@ fun TabWallScreen(
                 }
             }
             item(key = "private-tabs", span = { GridItemSpan(maxLineSpan) }) {
-                PrivateTabsTile(dark, ink, muted, stroke, card, showingPrivate) {
+                PrivateTabsTile(dark, ink, muted, stroke, card, showingPrivate, enabled = !pageTransitionInProgress) {
                     showingPrivate = !showingPrivate
                 }
             }
@@ -230,6 +231,7 @@ private fun TabPreviewCard(
     wallpaper: String,
     closeControlEnabled: Boolean = true,
     hideSelectedCloseControl: Boolean = false,
+    hidePreview: Boolean = false,
     onNeedThumbnail: () -> Unit,
     onPreviewBoundsChanged: (androidx.compose.ui.geometry.Rect?) -> Unit,
     onOpen: () -> Unit,
@@ -241,7 +243,7 @@ private fun TabPreviewCard(
     }
     val shape = RoundedCornerShape(16.dp)
     Surface(
-        modifier = Modifier.fillMaxWidth().aspectRatio(0.84f).clickable(onClick = onOpen),
+        modifier = Modifier.fillMaxWidth().aspectRatio(0.84f).clickable(enabled = !hidePreview, onClick = onOpen),
         shape = shape,
         color = card,
         border = BorderStroke(1.dp, stroke),
@@ -251,7 +253,9 @@ private fun TabPreviewCard(
                 onPreviewBoundsChanged(coordinates.boundsInRoot())
             }) {
                 val bitmap = tab.thumbnail
-                if (bitmap != null && !bitmap.isRecycled) {
+                if (hidePreview) {
+                    Box(Modifier.fillMaxSize().background(if (dark) Color(0xFF080A0B) else Color(0xFFF1F3F4)))
+                } else if (bitmap != null && !bitmap.isRecycled) {
                     Box(Modifier.fillMaxSize().clip(RoundedCornerShape(11.dp))) {
                         Image(bitmap.asImageBitmap(), contentDescription = "Preview of ${tab.title}",
                             modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -340,12 +344,12 @@ private fun NewTabPreviewArtwork(dark: Boolean, wallpaper: String) {
 }
 
 @Composable
-private fun NewTabTile(dark: Boolean, ink: Color, muted: Color, stroke: Color, onClick: () -> Unit) {
+private fun NewTabTile(dark: Boolean, ink: Color, muted: Color, stroke: Color, enabled: Boolean = true, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Column(
         Modifier.fillMaxWidth().aspectRatio(0.84f).clip(shape).drawBehind {
             drawRoundRect(color = stroke, style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))), cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()))
-        }.clickable(onClick = onClick),
+        }.clickable(enabled = enabled, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -363,12 +367,13 @@ private fun PrivateTabsTile(
     stroke: Color,
     card: Color,
     showingPrivate: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val title = if (showingPrivate) "Regular tabs" else "Private tabs"
     val subtitle = if (showingPrivate) "Return to your regular browsing tabs" else "Tabs won’t be saved to your history"
     Surface(
-        modifier = Modifier.fillMaxWidth().height(94.dp).clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().height(94.dp).clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(16.dp), color = card, border = BorderStroke(1.dp, stroke),
     ) {
         Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {

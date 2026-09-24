@@ -58,6 +58,7 @@ object BreezeIcons {
     val CheckCircle: ImageVector by lazy { icon("circle-check", "M2.0,12.0 a10.0,10.0 0 1,0 20.0,0 a10.0,10.0 0 1,0 -20.0,0", "m16 9-5.5 5.5L8 12") }
     val CheckCircleOutline: ImageVector by lazy { icon("circle-check", "M2.0,12.0 a10.0,10.0 0 1,0 20.0,0 a10.0,10.0 0 1,0 -20.0,0", "m16 9-5.5 5.5L8 12") }
     val ContentCopy: ImageVector by lazy { icon("copy", "M10.0,8.0 H20.0 Q22.0,8.0 22.0,10.0 V20.0 Q22.0,22.0 20.0,22.0 H10.0 Q8.0,22.0 8.0,20.0 V10.0 Q8.0,8.0 10.0,8.0 Z", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2") }
+    val Paperclip: ImageVector by lazy { icon("paperclip", "m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.9-9.9a4 4 0 0 1 5.66 5.66l-9.9 9.9a2 2 0 0 1-2.83-2.83l9.19-9.19") }
     val Share: ImageVector by lazy { icon("share-2", "M15.0,5.0 a3.0,3.0 0 1,0 6.0,0 a3.0,3.0 0 1,0 -6.0,0", "M3.0,12.0 a3.0,3.0 0 1,0 6.0,0 a3.0,3.0 0 1,0 -6.0,0", "M15.0,19.0 a3.0,3.0 0 1,0 6.0,0 a3.0,3.0 0 1,0 -6.0,0", "M8.59,13.51 L15.42,17.49", "M15.41,6.51 L8.59,10.49") }
     val Menu: ImageVector by lazy { icon("menu", "M4 5h16", "M4 12h16", "M4 19h16") }
     val Logout: ImageVector by lazy { icon("log-out", "m16 17 5-5-5-5", "M21 12H9", "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4") }

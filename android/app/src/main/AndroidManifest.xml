@@ -20,7 +20,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <application android:name=".BreezeApplication" android:theme="@style/Theme.Breeze" android:label="Breeze Dev" android:icon="@mipmap/ic_launcher_classic_dark" android:roundIcon="@mipmap/ic_launcher_classic_dark" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+    <application android:name=".BreezeApplication" android:theme="@style/Theme.Breeze" android:label="Breeze Dev" android:icon="@mipmap/ic_launcher_classic_dark" android:roundIcon="@mipmap/ic_launcher_classic_dark" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true" android:hardwareAccelerated="true">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:supportsPictureInPicture="true" android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

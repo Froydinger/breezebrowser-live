@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -60,16 +61,29 @@ val BreezeTypography = Typography(
 @Composable fun GlassCard(modifier:Modifier=Modifier,content:@Composable ColumnScope.()->Unit) {
     Column(modifier.breezeGlass().padding(16.dp),content=content)
 }
+private object LogoBitmaps {
+    private val bitmaps = mutableMapOf<Int, ImageBitmap>()
+
+    @Synchronized
+    fun get(context: android.content.Context, resourceId: Int): ImageBitmap =
+        bitmaps.getOrPut(resourceId) {
+            BitmapFactory.decodeResource(
+                context.applicationContext.resources,
+                resourceId,
+                BitmapFactory.Options().apply { inSampleSize = 4 },
+            ).asImageBitmap()
+        }
+}
 @Composable fun NavMark(size:Dp=32.dp, glowing:Boolean=false) {
     val context = LocalContext.current
-    val logo = remember(context) { BitmapFactory.decodeResource(context.resources, R.drawable.nav_logo).asImageBitmap() }
+    val logo = remember(context.applicationContext) { LogoBitmaps.get(context, R.drawable.nav_logo) }
     Image(bitmap=logo, contentDescription="Nav", modifier=Modifier.size(size).drawBehind {
         if(glowing) drawCircle(Brush.radialGradient(listOf(BreezeTeal.copy(alpha=.42f), Color.Transparent), radius=this.size.maxDimension*.8f), radius=this.size.maxDimension*.8f)
     }, filterQuality=FilterQuality.High)
 }
 @Composable fun BreezeLogo(size:Dp=36.dp) {
     val context=LocalContext.current
-    val logo=remember(context) { BitmapFactory.decodeResource(context.resources,R.drawable.breeze_logo_flat).asImageBitmap() }
+    val logo=remember(context.applicationContext) { LogoBitmaps.get(context,R.drawable.breeze_logo_flat) }
     Image(bitmap=logo,contentDescription="Breeze",modifier=Modifier.size(size),filterQuality=FilterQuality.High)
 }
 @Composable fun SectionTitle(title:String,action:String?=null,onAction:()->Unit={}) {

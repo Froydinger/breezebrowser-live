@@ -1,4 +1,5 @@
 <resources>
+    <color name="icon_bg_user">#28768A</color>
     <color name="icon_bg_classic">#071014</color>
     <color name="icon_bg_aurora">#101021</color>
     <color name="icon_bg_tide">#071624</color>

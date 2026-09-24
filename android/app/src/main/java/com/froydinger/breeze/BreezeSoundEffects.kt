@@ -5,7 +5,7 @@ import android.media.MediaPlayer
 
 /** Short local interface sounds, mixed quietly so they stay in the background. */
 object BreezeSoundEffects {
-    private const val VOLUME = 0.1f
+    private const val VOLUME = 0.03f
 
     fun play(context: Context, resourceId: Int) {
         val player = runCatching { MediaPlayer.create(context.applicationContext, resourceId) }.getOrNull() ?: return

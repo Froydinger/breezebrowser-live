@@ -50,6 +50,8 @@ class BreezeApplication : Application() {
 class LiveTab(val id: String = UUID.randomUUID().toString(), val private: Boolean = false) {
     var url by mutableStateOf("")
     var title by mutableStateOf("New tab")
+    /** Parsed by GeckoView only when the active document exposes a valid Web App Manifest. */
+    var webAppManifest by mutableStateOf<JSONObject?>(null)
     var loading by mutableStateOf(false)
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
@@ -62,14 +64,17 @@ class LiveTab(val id: String = UUID.randomUUID().toString(), val private: Boolea
     var lastAccessedAt by mutableLongStateOf(System.currentTimeMillis())
     var thumbnail by mutableStateOf<android.graphics.Bitmap?>(null)
     var captureOverlay: (() -> Unit)? = null
-    var coverUntilFirstPaint: (() -> Unit)? = null
-    var scrollY by mutableIntStateOf(0)
+    // Only the scroll delegate needs this value to detect toolbar direction changes.
+    // It is not UI state, so publishing every scroll frame through Compose adds needless work.
+    var scrollY: Int = 0
     var chromeCollapsed by mutableStateOf(false)
+    var lastChromeTransitionAt: Long = 0L
     var zoomPercent by mutableIntStateOf(100)
     var videoPlaying by mutableStateOf(false)
     var videoWidth by mutableIntStateOf(0)
     var videoHeight by mutableIntStateOf(0)
     var videoFrameUrl by mutableStateOf("")
+    var videoBoundsNormalized by mutableStateOf<android.graphics.RectF?>(null)
     var scrollDownDistance = 0
     var scrollUpDistance = 0
     var capture: ((onCaptured: () -> Unit) -> Unit)? = null
@@ -124,6 +129,10 @@ class BrowserState(private val app: Application) {
     var selectedId by mutableStateOf("")
     var screen by mutableStateOf("browser")
     var isPictureInPicture by mutableStateOf(false)
+    var preparingPictureInPicture by mutableStateOf(false)
+        private set
+    var pictureInPictureSourceRect by mutableStateOf<android.graphics.Rect?>(null)
+    var isStandalonePwa by mutableStateOf(false)
     var pageToolsOpen by mutableStateOf(false)
     var overlayBackdrop by mutableStateOf<Bitmap?>(null)
     /** Initial filter used when the shared history page is opened from a specific shortcut. */
@@ -178,6 +187,18 @@ class BrowserState(private val app: Application) {
                         val frameUrl = json.optString("frameUrl").takeIf {
                             it.length in 1..2048 && Uri.parse(it).scheme in listOf("http", "https")
                         } ?: activePort.sender.url
+                        if (activePort.sender.isTopLevel && !isPictureInPicture && !preparingPictureInPicture) {
+                            val viewportWidth = json.optDouble("viewportWidth", 0.0).toFloat()
+                            val viewportHeight = json.optDouble("viewportHeight", 0.0).toFloat()
+                            val left = json.optDouble("left", 0.0).toFloat()
+                            val top = json.optDouble("top", 0.0).toFloat()
+                            val width = json.optDouble("width", 0.0).toFloat()
+                            val height = json.optDouble("height", 0.0).toFloat()
+                            tab.videoBoundsNormalized = if (viewportWidth > 0 && viewportHeight > 0 && width > 0 && height > 0) {
+                                android.graphics.RectF(left / viewportWidth, top / viewportHeight,
+                                    (left + width) / viewportWidth, (top + height) / viewportHeight)
+                            } else null
+                        }
                         val states = videoPortStates.getOrPut(session) { linkedMapOf() }
                         states[activePort] = VideoFrameState(
                             playing = json.optBoolean("playing") && !tab.private,
@@ -186,7 +207,8 @@ class BrowserState(private val app: Application) {
                             url = frameUrl,
                         )
                         val activeVideo = states.values.lastOrNull { it.playing }
-                        tab.videoPlaying = activeVideo != null
+                            ?: states.values.lastOrNull { it.width > 0 && it.height > 0 }
+                        tab.videoPlaying = activeVideo?.playing == true
                         tab.videoWidth = activeVideo?.width ?: 0
                         tab.videoHeight = activeVideo?.height ?: 0
                         tab.videoFrameUrl = activeVideo?.url.orEmpty()
@@ -229,7 +251,8 @@ class BrowserState(private val app: Application) {
                     videoPortStates[session]?.let { states ->
                         states.remove(disconnectedPort)
                         val activeVideo = states.values.lastOrNull { it.playing }
-                        tab.videoPlaying = activeVideo != null && !tab.private
+                            ?: states.values.lastOrNull { it.width > 0 && it.height > 0 }
+                        tab.videoPlaying = activeVideo?.playing == true && !tab.private
                         tab.videoWidth = activeVideo?.width ?: 0
                         tab.videoHeight = activeVideo?.height ?: 0
                         tab.videoFrameUrl = activeVideo?.url.orEmpty()
@@ -288,6 +311,7 @@ class BrowserState(private val app: Application) {
         val behavior = cookieBehavior()
         GeckoRuntime.create(app, GeckoRuntimeSettings.Builder()
             .loginAutofillEnabled(true)
+            .webManifest(true)
             .allowInsecureConnections(if (httpsOnly) GeckoRuntimeSettings.HTTPS_ONLY else GeckoRuntimeSettings.ALLOW_ALL)
             .contentBlocking(ContentBlocking.Settings.Builder()
                 .antiTracking(ContentBlocking.AntiTracking.DEFAULT)
@@ -414,8 +438,8 @@ class BrowserState(private val app: Application) {
         persist()
     }
     private fun shouldKeepActive(tab: LiveTab): Boolean =
-        (appInForeground && screen in setOf("browser", "tabs") && selectedId == tab.id) ||
-            (isPictureInPicture && selectedVideoIsPlaying && selectedId == tab.id)
+        (appInForeground && (screen in setOf("browser", "tabs") || screen == "chat" && chatReturnScreen == "browser") && selectedId == tab.id) ||
+            ((isPictureInPicture || preparingPictureInPicture) && selectedId == tab.id && !tab.private)
 
     private fun deactivateSession(tab: LiveTab) {
         tab.session?.let { session ->
@@ -442,16 +466,43 @@ class BrowserState(private val app: Application) {
         updateSessionPriorities()
     }
 
+    fun preparePictureInPicture() {
+        if (!selectedVideoIsPlaying || screen != "browser") return
+        preparingPictureInPicture = true
+        sendPictureInPictureMessage(true)
+        updateSessionPriorities()
+    }
+
     fun setPictureInPictureMode(enabled: Boolean) {
-        isPictureInPicture = enabled && selectedVideoIsPlaying
+        // A paused video still belongs to the system PiP window and must retain its surface.
+        isPictureInPicture = enabled
+        preparingPictureInPicture = false
+        sendPictureInPictureMessage(enabled)
+        updateSessionPriorities()
+    }
+
+    private fun sendPictureInPictureMessage(enabled: Boolean) {
         selected?.session?.let { session ->
-            val message = JSONObject()
-                .put("type", "pipVideo")
-                .put("enabled", isPictureInPicture)
+            session.settings.suspendMediaWhenInactive = !enabled
+            val message = JSONObject().put("type", "pipVideo").put("enabled", enabled)
                 .put("frameUrl", selected?.videoFrameUrl.orEmpty())
             pageControlPorts[session]?.toList()?.forEach { port -> runCatching { port.postMessage(message) } }
         }
-        updateSessionPriorities()
+    }
+
+    fun stopPictureInPicturePlayback() = sendVideoPlaybackCommand(false)
+
+    fun controlPictureInPicturePlayback(play: Boolean) {
+        if (!isPictureInPicture && !preparingPictureInPicture) return
+        sendVideoPlaybackCommand(play)
+    }
+
+    private fun sendVideoPlaybackCommand(play: Boolean) {
+        selected?.session?.let { session ->
+            val message = JSONObject().put("type", "pipPlayback").put("play", play)
+                .put("frameUrl", selected?.videoFrameUrl.orEmpty())
+            pageControlPorts[session]?.toList()?.forEach { port -> runCatching { port.postMessage(message) } }
+        }
     }
 
     /** Let Gecko keep sessions for a short background window, then serialize and release them. */
@@ -478,7 +529,11 @@ class BrowserState(private val app: Application) {
 
     /** Android memory hints let Gecko sleep hidden tabs, with full state retained for restoration. */
     fun onMemoryPressure(level: Int) {
-        val severe = level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        // UI_HIDDEN is numerically above RUNNING_CRITICAL. It is a normal app
+        // background event, not permission to close every live Gecko session.
+        val severe = level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL &&
+                level < android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN)
         tabs.filterNot(::shouldKeepActive).forEach { tab ->
             val session = tab.session ?: return@forEach
             session.setActive(false)
@@ -571,7 +626,13 @@ class BrowserState(private val app: Application) {
             null -> Unit
         }
     }
-    fun openExternalUrl(url: String) { scope.launch { snapshotFlow { ready }.first { it }; navigate(url, new=true) } }
+    fun openExternalUrl(url: String, standalonePwa: Boolean = false) {
+        scope.launch {
+            snapshotFlow { ready }.first { it }
+            isStandalonePwa = standalonePwa
+            navigate(url, new = true)
+        }
+    }
     fun navigate(url: String, new: Boolean = false, privateMode: Boolean? = null) {
         val uri = Uri.parse(url)
         if (uri.scheme !in listOf("http", "https") || uri.host.isNullOrBlank()) { notice = "Only valid HTTP and HTTPS pages can open here."; return }
@@ -587,15 +648,23 @@ class BrowserState(private val app: Application) {
     }
     fun loadTab(tab: LiveTab, url: String = tab.url) {
         scope.launch {
-            val extension = pageControlsReady.await()
             if (tabs.none { it === tab } || tab.url != url || url.isBlank()) return@launch
             val activeSession = session(tab)
-            if (extension != null) attachPageControls(activeSession, extension)
+            // Page controls are cosmetic/tooling only. Do not hold the page's first network
+            // request while Gecko installs that extension; attach it when it becomes ready.
+            pageControlsExtension?.let { attachPageControls(activeSession, it) }
             activeSession.loadUri(url)
         }
     }
-    fun session(tab: LiveTab): GeckoSession {
-        tab.session?.let { return it }
+    fun session(tab: LiveTab): GeckoSession = createSession(tab, openImmediately = true)
+
+    private fun newWindowSession(tab: LiveTab): GeckoSession = createSession(tab, openImmediately = false)
+
+    private fun createSession(tab: LiveTab, openImmediately: Boolean): GeckoSession {
+        tab.session?.let { existing ->
+            pageControlsExtension?.let { attachPageControls(existing, it) }
+            return existing
+        }
         val settings = GeckoSessionSettings.Builder()
             .usePrivateMode(tab.private)
             .useTrackingProtection(isSiteProtectionEnabled(tab.url))
@@ -606,14 +675,24 @@ class BrowserState(private val app: Application) {
         session.scrollDelegate = object : GeckoSession.ScrollDelegate {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
                 val delta = scrollY - tab.scrollY
+                val now = android.os.SystemClock.uptimeMillis()
+                val chromeSettled = now - tab.lastChromeTransitionAt >= 300L
                 if (delta > 0) {
                     tab.scrollDownDistance = (tab.scrollDownDistance + delta).coerceAtMost(500)
                     tab.scrollUpDistance = 0
-                    if (scrollY > 52 && tab.scrollDownDistance >= 42) tab.chromeCollapsed = true
+                    if (!tab.chromeCollapsed && chromeSettled && scrollY > 64 && tab.scrollDownDistance >= 72) {
+                        tab.chromeCollapsed = true
+                        tab.lastChromeTransitionAt = now
+                        tab.scrollDownDistance = 0
+                    }
                 } else if (delta < 0) {
                     tab.scrollUpDistance = (tab.scrollUpDistance - delta).coerceAtMost(500)
                     tab.scrollDownDistance = 0
-                    if (tab.scrollUpDistance >= 22) tab.chromeCollapsed = false
+                    if (tab.chromeCollapsed && chromeSettled && tab.scrollUpDistance >= 48) {
+                        tab.chromeCollapsed = false
+                        tab.lastChromeTransitionAt = now
+                        tab.scrollUpDistance = 0
+                    }
                 }
                 if (scrollY <= 4) {
                     tab.scrollDownDistance = 0
@@ -629,6 +708,7 @@ class BrowserState(private val app: Application) {
             override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 if (url != null) {
                     if (tab.url != url) {
+                        tab.webAppManifest = null
                         clearRenderedText(tab)
                         tab.videoPlaying = false
                         tab.videoWidth = 0
@@ -654,11 +734,16 @@ class BrowserState(private val app: Application) {
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
                 if (screen != "browser" || selectedId != tab.id) return null
                 val newTab = newTab(tab.private, focusHomeInput = false); newTab.url = uri
-                return GeckoResult.fromValue(session(newTab))
+                // GeckoView opens the session returned here; using the normal helper
+                // pre-opens it and crashes when Gecko handles the new window request.
+                return GeckoResult.fromValue(newWindowSession(newTab))
             }
         }
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) { tab.title = title ?: tab.url; persist() }
+            override fun onWebAppManifest(session: GeckoSession, manifest: JSONObject) {
+                if (tab.session === session && !tab.private) tab.webAppManifest = manifest
+            }
             override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
                 downloadHandler?.invoke(response, tab.private) ?: run { response.body?.close(); notice = "Download is unavailable while the browser is closed." }
             }
@@ -670,7 +755,7 @@ class BrowserState(private val app: Application) {
                 tab.savedSessionState = serialized?.takeIf { it.isNotBlank() && it.length <= SESSION_STATE_MAX_CHARS }
                 persist()
             }
-            override fun onPageStart(session: GeckoSession, url: String) { tab.loading = true; tab.error = null; tab.coverUntilFirstPaint?.invoke(); clearRenderedText(tab) }
+            override fun onPageStart(session: GeckoSession, url: String) { tab.loading = true; tab.error = null; clearRenderedText(tab) }
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 tab.loading = false
                 if (!success) tab.error = "This page could not finish loading. Try reloading."
@@ -685,23 +770,25 @@ class BrowserState(private val app: Application) {
                 }
             }
         }
-        session.open(runtime)
         tab.session = session
-        session.setPriorityHint(if (shouldKeepActive(tab)) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
-        session.setActive(shouldKeepActive(tab))
-        val serializedState = tab.savedSessionState
-        if (!tab.private && !serializedState.isNullOrBlank()) {
-            tab.restoredSessionState = runCatching {
-                val restored = GeckoSession.SessionState.fromString(serializedState)
-                    ?: throw IllegalArgumentException("Invalid Gecko session state")
-                session.restoreState(restored)
-                true
-            }.getOrElse {
-                tab.savedSessionState = null
-                false
+        if (openImmediately) {
+            session.open(runtime)
+            session.setPriorityHint(if (shouldKeepActive(tab)) GeckoSession.PRIORITY_HIGH else GeckoSession.PRIORITY_DEFAULT)
+            session.setActive(shouldKeepActive(tab))
+            val serializedState = tab.savedSessionState
+            if (!tab.private && !serializedState.isNullOrBlank()) {
+                tab.restoredSessionState = runCatching {
+                    val restored = GeckoSession.SessionState.fromString(serializedState)
+                        ?: throw IllegalArgumentException("Invalid Gecko session state")
+                    session.restoreState(restored)
+                    true
+                }.getOrElse {
+                    tab.savedSessionState = null
+                    false
+                }
             }
+            pageControlsExtension?.let { attachPageControls(session, it) }
         }
-        pageControlsExtension?.let { attachPageControls(session, it) }
         return session
     }
     fun toggleDesktop() {
@@ -793,6 +880,7 @@ class BrowserState(private val app: Application) {
             ?.let { chat -> tabs.firstOrNull { !it.private && it.id == chat.preopenedNavTabId && samePage(it.url, safeUrl) } }
         val target = preopened ?: tabs.firstOrNull { !it.private && samePage(it.url, safeUrl) } ?: run {
             val tab = LiveTab(private = false).apply {
+                this.url = safeUrl
                 title = Uri.parse(safeUrl).host.orEmpty().removePrefix("www.").ifBlank { "New tab" }
                 lastAccessedAt = System.currentTimeMillis()
             }
@@ -849,6 +937,12 @@ class BrowserState(private val app: Application) {
 
         chat.preopenedNavUrl = url
         chat.preopenedNavTabId = tab.id
+        selected?.takeIf { it !== tab }?.let(::deactivateSession)
+        selectedId = tab.id
+        tab.session?.let { session ->
+            session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
+            session.setActive(true)
+        }
         chatReturnScreen = "browser"
         chatReturnTabId = tab.id
         chatExpanded = false

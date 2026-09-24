@@ -15,6 +15,18 @@
   const PIP_FRAME_CLASS = "__breeze_pip_frame";
   let pipVideo = null;
   let pipFrame = null;
+  let lastVideo = null;
+  let pipAncestors = [];
+  let pipScroll = null;
+  let lastVideoState = "";
+  let lastVideoScanAt = 0;
+
+  function postVideoState(state) {
+    const encoded = JSON.stringify(state);
+    if (encoded === lastVideoState) return;
+    lastVideoState = encoded;
+    try { port.postMessage(state); } catch (_) { /* The page/session has disconnected. */ }
+  }
 
   function activeVideo() {
     return [...document.querySelectorAll("video")]
@@ -35,14 +47,15 @@
   }
 
   function sendVideoPlaybackState() {
-    const video = activeVideo();
+    const video = activeVideo() || (pipVideo?.isConnected ? pipVideo : null) || (lastVideo?.isConnected ? lastVideo : null);
     if (!video) {
-      port.postMessage({ type: "videoPlayback", playing: false });
+      postVideoState({ type: "videoPlayback", playing: false });
       return;
     }
+    lastVideo = video;
     const rect = video.getBoundingClientRect();
-    port.postMessage({
-      type: "videoPlayback", playing: true,
+    postVideoState({
+      type: "videoPlayback", playing: !video.paused && !video.ended,
       videoWidth: video.videoWidth || Math.round(rect.width),
       videoHeight: video.videoHeight || Math.round(rect.height),
       frameUrl: location.href,
@@ -53,45 +66,50 @@
   }
 
   function setPipVideoMode(enabled, targetFrameUrl) {
-    const existingStyle = document.getElementById(PIP_STYLE_ID);
     if (!enabled) {
-      if (existingStyle) existingStyle.remove();
-      if (pipVideo?.isConnected && pipVideo.dataset.breezePipFocus === "1") {
-        pipVideo.classList.remove("__breeze_pip_focus");
-        delete pipVideo.dataset.breezePipFocus;
-      }
+      document.getElementById(PIP_STYLE_ID)?.remove();
+      pipVideo?.classList.remove("__breeze_pip_focus");
+      pipFrame?.classList.remove(PIP_FRAME_CLASS);
+      pipAncestors.forEach((element) => element.classList.remove("__breeze_pip_ancestor"));
+      pipAncestors = [];
       pipVideo = null;
-      if (pipFrame?.isConnected) {
-        pipFrame.classList.remove(PIP_FRAME_CLASS);
-        delete pipFrame.dataset.breezePipFocus;
-      }
       pipFrame = null;
+      if (pipScroll) window.scrollTo(pipScroll.x, pipScroll.y);
+      pipScroll = null;
+      sendVideoPlaybackState();
       return;
     }
-    if (existingStyle) existingStyle.remove();
+    // Preserve the same media element and source. Moving/recreating YouTube's video interrupts playback.
     const targetUrl = targetFrameUrl || location.href;
-    const isTargetFrame = sameDocument(location.href, targetUrl);
-    pipVideo = isTargetFrame ? activeVideo() : null;
-    if (pipVideo) {
-      pipVideo.classList.add("__breeze_pip_focus");
-      pipVideo.dataset.breezePipFocus = "1";
-    } else if (window.top === window) {
+    if (sameDocument(location.href, targetUrl)) {
+      pipVideo = activeVideo() || (lastVideo?.isConnected ? lastVideo : null);
+      pipVideo?.classList.add("__breeze_pip_focus");
+    } else {
       pipFrame = [...document.querySelectorAll("iframe")].find((frame) => sameDocument(frame.src, targetUrl)) ?? null;
-      if (pipFrame) {
-        pipFrame.classList.add(PIP_FRAME_CLASS);
-        pipFrame.dataset.breezePipFocus = "1";
-      }
+      pipFrame?.classList.add(PIP_FRAME_CLASS);
     }
-    if (!pipVideo && !pipFrame) return;
-    const style = document.createElement("style");
-    style.id = PIP_STYLE_ID;
+    const target = pipVideo || pipFrame;
+    if (!target) return;
+    if (!pipScroll) pipScroll = { x: window.scrollX, y: window.scrollY };
+    // Fixed descendants can otherwise be trapped by transformed/clipped player ancestors.
+    for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+      if (!pipAncestors.includes(parent)) pipAncestors.push(parent);
+      parent.classList.add("__breeze_pip_ancestor");
+    }
+    let style = document.getElementById(PIP_STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = PIP_STYLE_ID;
+      (document.head || document.documentElement).appendChild(style);
+    }
     style.textContent = `
-      html, body { background:#000 !important; width:100% !important; height:100% !important; overflow:hidden !important; }
+      html, body { background:#000 !important; margin:0 !important; padding:0 !important; width:100% !important; height:100% !important; overflow:hidden !important; zoom:1 !important; }
       * { visibility:hidden !important; }
-      video.__breeze_pip_focus { visibility:visible !important; display:block !important; position:fixed !important; inset:0 !important; margin:0 !important; width:100vw !important; height:100vh !important; max-width:none !important; max-height:none !important; object-fit:contain !important; background:#000 !important; z-index:2147483647 !important; }
-      iframe.__breeze_pip_frame { visibility:visible !important; display:block !important; position:fixed !important; inset:0 !important; margin:0 !important; width:100vw !important; height:100vh !important; max-width:none !important; max-height:none !important; border:0 !important; background:#000 !important; z-index:2147483647 !important; }
+      .__breeze_pip_ancestor { display:block !important; position:static !important; transform:none !important; translate:none !important; rotate:none !important; scale:none !important; perspective:none !important; filter:none !important; backdrop-filter:none !important; contain:none !important; content-visibility:visible !important; clip:auto !important; clip-path:none !important; overflow:visible !important; opacity:1 !important; mask:none !important; will-change:auto !important; }
+      video.__breeze_pip_focus, iframe.__breeze_pip_frame { visibility:visible !important; display:block !important; position:fixed !important; inset:0 !important; margin:0 !important; padding:0 !important; width:100vw !important; height:100vh !important; min-width:0 !important; min-height:0 !important; max-width:none !important; max-height:none !important; transform:none !important; translate:none !important; rotate:none !important; scale:none !important; clip:auto !important; clip-path:none !important; border:0 !important; border-radius:0 !important; opacity:1 !important; object-fit:contain !important; background:#000 !important; z-index:2147483647 !important; }
     `;
-    (document.head || document.documentElement).appendChild(style);
+    window.scrollTo(0, 0);
+    sendVideoPlaybackState();
   }
 
   document.addEventListener("playing", (event) => {
@@ -116,7 +134,13 @@
     if (event.target instanceof HTMLVideoElement && !event.target.paused) sendVideoPlaybackState();
   }, true);
   document.addEventListener("timeupdate", (event) => {
-    if (event.target instanceof HTMLVideoElement && !event.target.paused) sendVideoPlaybackState();
+    if (event.target instanceof HTMLVideoElement && !event.target.paused) {
+      const now = performance.now();
+      if (now - lastVideoScanAt >= 1000) {
+        lastVideoScanAt = now;
+        sendVideoPlaybackState();
+      }
+    }
   }, true);
 
   function validSelector(value) {
@@ -296,9 +320,14 @@
       stopPicker();
     } else if (message.type === "pipVideo") {
       setPipVideoMode(message.enabled === true, String(message.frameUrl || ""));
+    } else if (message.type === "pipPlayback" && sameDocument(location.href, String(message.frameUrl || ""))) {
+      const video = pipVideo || activeVideo() || (lastVideo?.isConnected ? lastVideo : null);
+      if (!video) return;
+      if (message.play === true) video.play().then(sendVideoPlaybackState).catch(() => sendVideoPlaybackState());
+      else { video.pause(); sendVideoPlaybackState(); }
     }
   });
-  port.onDisconnect.addListener(() => stopPicker());
+  port.onDisconnect.addListener(() => { stopPicker(); setPipVideoMode(false, ""); });
   port.postMessage({ type: "ready", host: location.hostname.toLowerCase(), topLevel: window.top === window });
   setTimeout(sendVideoPlaybackState, 0);
 })();

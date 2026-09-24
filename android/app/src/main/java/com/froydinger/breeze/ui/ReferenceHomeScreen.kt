@@ -2,6 +2,9 @@ package com.froydinger.breeze.ui
 
 import android.net.Uri
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -33,6 +36,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -48,17 +52,19 @@ import com.froydinger.breeze.core.HomeInputMode
 @Composable fun ReferenceHomeScreen(
     state: BrowserState,
     dark: Boolean,
-    tabUiEntrance: Float = 1f,
+    tabUiEntrance: () -> Float = { 1f },
     modifier: Modifier = Modifier,
     preserveSurfaceViewport: Boolean = false,
 ) {
     val context=LocalContext.current
+    val view=LocalView.current
     val image=remember(state.wallpaper,dark) {context.resources.getIdentifier(state.wallpaper+if(dark) "_dark" else "_light","drawable",context.packageName)}
     val focus=LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val inputFocusRequester = remember(state.selectedId) { FocusRequester() }
     var input by remember(state.selectedId) {mutableStateOf("")}
     var addShortcut by remember {mutableStateOf(false)}
+    var bookmarksExpanded by remember(state.selectedId) { mutableStateOf(false) }
     var shortcutName by remember {mutableStateOf("")}
     var shortcutUrl by remember {mutableStateOf("")}
     val density = LocalDensity.current
@@ -101,13 +107,16 @@ import com.froydinger.breeze.core.HomeInputMode
                 translationY = (1f - progress) * 11.dp.toPx()
             },verticalAlignment=Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(52.dp).clip(CircleShape).clickable(onClick = state::startStandaloneNavChat),
+                    Modifier.size(52.dp).clip(CircleShape).clickable {
+                        view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                        state.startStandaloneNavChat()
+                    },
                     contentAlignment = Alignment.Center,
                 ) { BreezeLogo(46.dp) }
             }
             Spacer(Modifier.height(29.dp))
             Row(Modifier.fillMaxWidth().height(55.dp).graphicsLayer {
-                val progress = tabUiEntrance.coerceIn(0f, 1f)
+                val progress = tabUiEntrance().coerceIn(0f, 1f)
                 alpha = progress
                 translationY = -(1f - progress) * 20.dp.toPx()
             }.breezeGlass(32.dp).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -159,8 +168,46 @@ import com.froydinger.breeze.core.HomeInputMode
                     Shortcut("Add",null,3) {addShortcut=true}
                 }
             }
-            if(state.bookmarks.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()).padding(top=10.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                state.bookmarks.take(5).forEach { page -> TextButton(onClick={state.navigate(page.url)}) {Text(page.title.take(16),style=MaterialTheme.typography.labelMedium)} }
+            if (state.bookmarks.isNotEmpty()) {
+                Spacer(Modifier.height(18.dp))
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { bookmarksExpanded = !bookmarksExpanded }
+                        .padding(horizontal = 2.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(BreezeIcons.Bookmark, contentDescription = null, modifier = Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Bookmarks", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.weight(1f))
+                    Icon(if (bookmarksExpanded) BreezeIcons.ChevronUp else BreezeIcons.ExpandMore, contentDescription = if (bookmarksExpanded) "Hide bookmarks" else "Show bookmarks", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                AnimatedVisibility(visible = bookmarksExpanded, enter = fadeIn(), exit = fadeOut()) {
+                    Column {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            state.bookmarks.forEach { page ->
+                                Row(
+                                    Modifier.widthIn(max = 180.dp).clip(RoundedCornerShape(16.dp)).breezeGlass(16.dp)
+                                        .clickable { state.navigate(page.url) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(BreezeIcons.BookmarkFilled, contentDescription = null, modifier = Modifier.size(15.dp), tint = BreezeTeal)
+                                    Spacer(Modifier.width(7.dp))
+                                    Text(page.title.ifBlank { Uri.parse(page.url).host.orEmpty() }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                        Row(Modifier.align(Alignment.End).clickable {
+                            state.historyInitialFilter = "Bookmarks"
+                            state.screen = "library"
+                        }.padding(horizontal = 4.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("See all", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(BreezeIcons.ChevronRight, contentDescription = "See all bookmarks", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
             }
             Spacer(Modifier.height(32.dp))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
