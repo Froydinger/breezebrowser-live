@@ -1,4 +1,0 @@
-Lucide Icons
-https://github.com/lucide-icons/lucide
-Commit: f06ac67e33d645c40b8ce19a0419c85c5d7dd751
-ISC License
