@@ -9,6 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.util.Log
+import android.webkit.WebView
+import androidx.webkit.WebViewFeature
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.froydinger.breeze.core.*
@@ -35,6 +37,7 @@ private const val MAX_HIDDEN_SELECTOR_LENGTH = 512
 private const val MAX_HIDDEN_ELEMENTS_PER_SITE = 30
 private const val SESSION_STATE_MAX_CHARS = 1_500_000
 private const val BACKGROUND_SESSION_RETENTION_MS = 20 * 60 * 1000L
+private const val PRIVATE_WEB_PROFILE = "breeze-private"
 private val HIDDEN_SELECTOR_PATTERN = Regex(
     "^[a-z][a-z0-9-]{0,63}(:nth-of-type\\([1-9][0-9]{0,4}\\))?(>[a-z][a-z0-9-]{0,63}(:nth-of-type\\([1-9][0-9]{0,4}\\))?){0,32}$",
 )
@@ -57,6 +60,14 @@ class LiveTab(val id: String = UUID.randomUUID().toString(), val private: Boolea
     var canForward by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var session: GeckoSession? = null
+    /** Live Chromium view retained while this tab is in the background. */
+    var chromiumView: WebView? = null
+    var chromiumPrivateProfileIsolated: Boolean = false
+    var desktopSite: Boolean = false
+    var chromiumLoadIssuedUrl: String = ""
+    var chromiumPageLoadFailed: Boolean = false
+    var chromiumRestoreScrollAfterLoad: Boolean = false
+    var lastHistoryUrl: String = ""
     /** Encrypted at rest with the rest of the local browser snapshot; never persisted for private tabs. */
     var savedSessionState: String? = null
     /** True when the current GeckoSession was restored and the initial URL load must be skipped. */
@@ -71,6 +82,7 @@ class LiveTab(val id: String = UUID.randomUUID().toString(), val private: Boolea
     var chromeCollapsed by mutableStateOf(false)
     var lastChromeTransitionAt: Long = 0L
     var zoomPercent by mutableIntStateOf(100)
+    var findQuery: String = ""
     var videoPlaying by mutableStateOf(false)
     var videoWidth by mutableIntStateOf(0)
     var videoHeight by mutableIntStateOf(0)
@@ -115,6 +127,11 @@ class LocalChat(val id: String = UUID.randomUUID().toString(), title: String, va
 class BrowserState(private val app: Application) {
     private val privacyPreferences = app.getSharedPreferences("breeze_privacy", Application.MODE_PRIVATE)
     val tabs = mutableStateListOf<LiveTab>()
+    private var chromiumViewFactory: ((LiveTab) -> WebView)? = null
+    private var privateProfileCleaner: (() -> Unit)? = null
+    fun setChromiumViewFactory(factory: ((LiveTab) -> WebView)?) { chromiumViewFactory = factory }
+    fun setPrivateProfileCleaner(cleaner: (() -> Unit)?) { privateProfileCleaner = cleaner }
+    fun privateProfileSupported(): Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
     val history = mutableStateListOf<SavedPage>()
     val bookmarks = mutableStateListOf<SavedPage>()
     val pinnedSites = mutableStateListOf<PinnedSite>()
@@ -349,7 +366,6 @@ class BrowserState(private val app: Application) {
     }
 
     init {
-        initializePageControls()
         scope.launch {
             try {
                 restore(withContext(Dispatchers.IO) { store.load() })
@@ -435,6 +451,7 @@ class BrowserState(private val app: Application) {
         tab.chromeCollapsed = false
         tab.lastAccessedAt = System.currentTimeMillis()
         selectedId = tab.id
+        tab.chromiumView?.onResume()
         homeInputFocusTabId = null
         screen = "browser"
         updateSessionPriorities()
@@ -445,6 +462,7 @@ class BrowserState(private val app: Application) {
             ((isPictureInPicture || preparingPictureInPicture) && selectedId == tab.id && !tab.private)
 
     private fun deactivateSession(tab: LiveTab) {
+        tab.chromiumView?.onPause()
         tab.session?.let { session ->
             session.setActive(false)
             session.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
@@ -464,6 +482,7 @@ class BrowserState(private val app: Application) {
     fun onAppForegrounded() {
         if (!appInForeground) foregroundGeneration++
         appInForeground = true
+        selected?.chromiumView?.onResume()
         backgroundedAt = 0L
         backgroundExpiryJob?.cancel()
         backgroundExpiryJob = null
@@ -514,6 +533,7 @@ class BrowserState(private val app: Application) {
         appInForeground = false
         backgroundedAt = System.currentTimeMillis()
         tabs.forEach { tab ->
+            tab.chromiumView?.onPause()
             tab.session?.let { session ->
                 val keepForPip = shouldKeepActive(tab)
                 session.setActive(keepForPip)
@@ -576,6 +596,10 @@ class BrowserState(private val app: Application) {
             videoPortStates.remove(session)
             pendingElementPicks.remove(session)
         }
+        tab.chromiumView?.let { view ->
+            tab.chromiumView = null
+            runCatching { view.stopLoading(); view.loadUrl("about:blank"); view.clearHistory(); view.removeAllViews(); view.destroy() }
+        }
         tab.session?.close(); tab.session = null; tab.savedSessionState = null; tabs.remove(tab); deleteThumbnail(tab)
         if (wasSelected) {
             homeInputFocusTabId = null
@@ -586,6 +610,7 @@ class BrowserState(private val app: Application) {
                 newTab(private = privacy, focusHomeInput = false)
             }
         }
+        if (privacy && tabs.none { it.private && it.chromiumView != null }) runCatching { privateProfileCleaner?.invoke() }
         updateSessionPriorities()
         persist()
     }
@@ -638,28 +663,219 @@ class BrowserState(private val app: Application) {
         }
     }
     fun navigate(url: String, new: Boolean = false, privateMode: Boolean? = null) {
-        val uri = Uri.parse(url)
-        if (uri.scheme !in listOf("http", "https") || uri.host.isNullOrBlank()) { notice = "Only valid HTTP and HTTPS pages can open here."; return }
+        val requestedUri = Uri.parse(url)
+        if (requestedUri.scheme !in listOf("http", "https") || requestedUri.host.isNullOrBlank()) { notice = "Only valid HTTP and HTTPS pages can open here."; return }
+        val targetUrl = if (httpsOnly && requestedUri.scheme == "http") {
+            notice = "Breeze upgraded this link to HTTPS."
+            requestedUri.buildUpon().scheme("https").build().toString()
+        } else url
         val tab = if (new) newTab(privateMode ?: (selected?.private == true), focusHomeInput = false) else selected ?: newTab(privateMode ?: false, focusHomeInput = false)
         homeInputFocusTabId = null
         tab.lastAccessedAt = System.currentTimeMillis()
         tab.savedSessionState = null
         tab.restoredSessionState = false
-        tab.url = url; tab.error = null; tab.scrollY = 0; tab.chromeCollapsed = false; screen = "browser"
-        session(tab)
-        loadTab(tab, url)
+        tab.url = targetUrl; tab.error = null; tab.scrollY = 0; tab.chromeCollapsed = false; screen = "browser"
+        tab.chromiumLoadIssuedUrl = ""
+        loadTab(tab, targetUrl)
         persist()
     }
     fun loadTab(tab: LiveTab, url: String = tab.url) {
-        scope.launch {
-            if (tabs.none { it === tab } || tab.url != url || url.isBlank()) return@launch
-            val activeSession = session(tab)
-            // Page controls are cosmetic/tooling only. Do not hold the page's first network
-            // request while Gecko installs that extension; attach it when it becomes ready.
-            pageControlsExtension?.let { attachPageControls(activeSession, it) }
-            activeSession.loadUri(url)
+        if (tabs.none { it === tab } || tab.url != url || url.isBlank()) return
+        // The WebView is created by AndroidView. Keep the requested URL on the logical tab
+        // until that retained Chromium view is attached; do not create a parallel Gecko page.
+        tab.loading = true
+        val view = tab.chromiumView
+        if (view != null) {
+            if (view.url != url && tab.chromiumLoadIssuedUrl != url) {
+                tab.chromiumLoadIssuedUrl = url
+                view.loadUrl(url)
+            }
+        }
+        // With no attached surface, retain only the logical destination. AndroidView creates
+        // the single view when this tab becomes visible, then its update path loads the URL.
+    }
+
+    /** Attach the visible Android Chromium surface to its durable logical tab. */
+    fun attachChromiumView(tab: LiveTab, view: WebView) {
+        if (tabs.none { it === tab }) return
+        tab.chromiumView = view
+        view.setOnScrollChangeListener(android.view.View.OnScrollChangeListener { _, _, y, _, _ ->
+            onChromiumScrollChanged(tab, y)
+        })
+        view.onResume()
+        if (tab.private && !tab.chromiumPrivateProfileIsolated) {
+            tab.loading = false
+            tab.error = "Private tabs need an updated Android System WebView. Update Android System WebView in Play Store and try again."
+            notice = "Private browsing could not be isolated on this device, so this page was not opened."
+            return
+        }
+        // loadTab owns navigation requests so it can deduplicate the first request while
+        // Compose attaches a newly-created AndroidView.
+        if (BuildConfig.DEBUG) Log.d("BreezeEngine", "engine=android-webview-chromium tab=${tab.id.take(8)} url=${tab.url}")
+        syncChromiumNavigation(tab)
+    }
+
+    /** AndroidView release detaches a surface, but retains its tab history and renderer state. */
+    fun detachChromiumView(tab: LiveTab, view: WebView) {
+        if (tab.chromiumView === view) view.onPause()
+    }
+
+    /**
+     * WebViews keep their Activity context. Release them when the Activity is destroyed so
+     * configuration changes and process recreation cannot retain a dead Activity. Logical
+     * tabs, URLs, scroll offsets, and history remain in BrowserState and reattach lazily.
+     */
+    fun releaseChromiumViewsForActivityDestroy() {
+        tabs.forEach { tab ->
+            val view = tab.chromiumView ?: return@forEach
+            tab.url = view.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: tab.url
+            tab.scrollY = view.scrollY.coerceAtLeast(0)
+            tab.canBack = view.canGoBack()
+            tab.canForward = view.canGoForward()
+            tab.chromiumView = null
+            tab.chromiumLoadIssuedUrl = ""
+            tab.chromiumRestoreScrollAfterLoad = tab.scrollY > 0
+            runCatching {
+                view.stopLoading()
+                view.removeAllViews()
+                view.destroy()
+            }
         }
     }
+
+    fun chromiumPageStarted(tab: LiveTab, view: WebView, url: String) {
+        if (!isCurrentChromiumView(tab, view)) return
+        tab.chromiumPageLoadFailed = false
+        if (tab.url != url) {
+            tab.webAppManifest = null
+            clearRenderedText(tab)
+            tab.videoPlaying = false
+            tab.videoWidth = 0
+            tab.videoHeight = 0
+            tab.videoFrameUrl = ""
+        }
+        tab.url = url
+        tab.chromiumLoadIssuedUrl = url
+        tab.loading = true
+        tab.error = null
+        tab.scrollY = 0
+        tab.chromeCollapsed = false
+        syncChromiumNavigation(tab)
+        if (selectedId == tab.id) updateCredentialContext()
+        persist()
+    }
+
+    fun chromiumPageFinished(tab: LiveTab, view: WebView, url: String) {
+        if (!isCurrentChromiumView(tab, view) || tab.url != url) return
+        tab.loading = false
+        val loaded = !tab.chromiumPageLoadFailed
+        tab.error = if (loaded) null else tab.error ?: "This page could not finish loading. Try reloading."
+        syncChromiumNavigation(tab)
+        if (loaded && isHttpPage(url)) {
+            if (tab.chromiumRestoreScrollAfterLoad) {
+                val restoreY = tab.scrollY
+                tab.chromiumRestoreScrollAfterLoad = false
+                view.post { if (isCurrentChromiumView(tab, view)) view.scrollTo(view.scrollX, restoreY) }
+            }
+            tab.paintGeneration++
+            tab.capture?.invoke {}
+            if (!tab.private) {
+                beginPageTextExtraction(tab, null, url)
+                if (tab.lastHistoryUrl != url) {
+                    history.add(0, SavedPage(UUID.randomUUID().toString(), tab.title, url))
+                    tab.lastHistoryUrl = url
+                }
+            }
+            persist()
+        }
+    }
+
+    fun chromiumTitleChanged(tab: LiveTab, view: WebView, title: String?) {
+        if (!isCurrentChromiumView(tab, view)) return
+        tab.title = title?.takeIf { it.isNotBlank() } ?: tab.url.ifBlank { "New tab" }
+        persist()
+    }
+
+    fun chromiumProgressChanged(tab: LiveTab, view: WebView, progress: Int) {
+        if (!isCurrentChromiumView(tab, view)) return
+        tab.loading = progress < 100
+        syncChromiumNavigation(tab)
+    }
+
+    fun chromiumMainFrameError(tab: LiveTab, view: WebView, description: String) {
+        if (!isCurrentChromiumView(tab, view)) return
+        tab.loading = false
+        tab.chromiumPageLoadFailed = true
+        tab.error = description.take(160).ifBlank { "This page could not be loaded. Try again." }
+    }
+
+    private fun isCurrentChromiumView(tab: LiveTab, view: WebView): Boolean =
+        tabs.any { it === tab } && tab.chromiumView === view
+
+    private fun syncChromiumNavigation(tab: LiveTab) {
+        tab.chromiumView?.let { view ->
+            tab.canBack = view.canGoBack()
+            tab.canForward = view.canGoForward()
+        }
+    }
+
+    fun chromiumGoBack(tab: LiveTab? = selected) {
+        tab?.chromiumView?.takeIf { it.canGoBack() }?.goBack()
+    }
+
+    fun chromiumGoForward(tab: LiveTab? = selected) {
+        tab?.chromiumView?.takeIf { it.canGoForward() }?.goForward()
+    }
+
+    fun chromiumReload(tab: LiveTab? = selected) {
+        tab ?: return
+        val view = tab.chromiumView ?: return
+        tab.error = null
+        tab.loading = true
+        view.reload()
+    }
+
+    fun chromiumFind(tab: LiveTab, query: String) {
+        val view = tab.chromiumView ?: return
+        if (query != tab.findQuery) {
+            tab.findQuery = query
+            view.findAllAsync(query)
+        }
+    }
+
+    fun chromiumFindNext(tab: LiveTab, forward: Boolean = true) { tab.chromiumView?.findNext(forward) }
+    fun chromiumClearFind(tab: LiveTab) { tab.findQuery = ""; tab.chromiumView?.clearMatches() }
+
+    private fun onChromiumScrollChanged(tab: LiveTab, scrollY: Int) {
+        val delta = scrollY - tab.scrollY
+        val now = android.os.SystemClock.uptimeMillis()
+        val chromeSettled = now - tab.lastChromeTransitionAt >= 500L
+        if (scrollY <= 4) {
+            tab.scrollDownDistance = 0
+            tab.scrollUpDistance = 0
+            tab.chromeCollapsed = false
+        } else if (delta > 2) {
+            if (tab.chromeCollapsed) tab.scrollUpDistance = (tab.scrollUpDistance - delta * 2).coerceAtLeast(0)
+            else tab.scrollDownDistance = (tab.scrollDownDistance + delta).coerceAtMost(500)
+            if (!tab.chromeCollapsed && chromeSettled && scrollY > 96 && tab.scrollDownDistance >= 128) {
+                tab.chromeCollapsed = true
+                tab.lastChromeTransitionAt = now
+                tab.scrollDownDistance = 0
+                tab.scrollUpDistance = 0
+            }
+        } else if (delta < -2) {
+            if (tab.chromeCollapsed) tab.scrollUpDistance = (tab.scrollUpDistance - delta).coerceAtMost(500)
+            else tab.scrollDownDistance = (tab.scrollDownDistance + delta * 2).coerceAtLeast(0)
+            if (tab.chromeCollapsed && chromeSettled && tab.scrollUpDistance >= 96) {
+                tab.chromeCollapsed = false
+                tab.lastChromeTransitionAt = now
+                tab.scrollUpDistance = 0
+                tab.scrollDownDistance = 0
+            }
+        }
+        tab.scrollY = scrollY
+    }
+
     fun session(tab: LiveTab): GeckoSession = createSession(tab, openImmediately = true)
 
     private fun newWindowSession(tab: LiveTab): GeckoSession = createSession(tab, openImmediately = false)
@@ -808,11 +1024,16 @@ class BrowserState(private val app: Application) {
     }
     fun toggleDesktop() {
         val current = selected ?: return
-        val settings = session(current).settings
-        val desktop = settings.userAgentMode != GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
-        settings.userAgentMode = if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
-        settings.viewportMode = if (desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
-        current.session?.reload()
+        val view = current.chromiumView ?: run { notice = "Open a web page before changing its layout."; return }
+        current.desktopSite = !current.desktopSite
+        val mobileAgent = android.webkit.WebSettings.getDefaultUserAgent(app)
+        view.settings.userAgentString = if (current.desktopSite) {
+            mobileAgent.replace(Regex("\\s\\(Linux; Android[^)]*\\)"), " (X11; Linux x86_64)")
+                .replace(" Mobile Safari/", " Safari/").replace("; wv)", ")")
+        } else null
+        view.settings.useWideViewPort = current.desktopSite
+        view.settings.loadWithOverviewMode = current.desktopSite
+        view.reload()
     }
     fun bookmark() {
         val tab = selected ?: return
@@ -900,7 +1121,6 @@ class BrowserState(private val app: Application) {
                 lastAccessedAt = System.currentTimeMillis()
             }
             tabs.add(tab)
-            session(tab)
             loadTab(tab, safeUrl)
             tab
         }
@@ -913,6 +1133,7 @@ class BrowserState(private val app: Application) {
         selected?.takeIf { it !== target }?.let(::deactivateSession)
         target.lastAccessedAt = System.currentTimeMillis()
         selectedId = target.id
+        target.chromiumView?.onResume()
         target.session?.let { session ->
             session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
             session.setActive(true)
@@ -943,9 +1164,6 @@ class BrowserState(private val app: Application) {
                 lastAccessedAt = System.currentTimeMillis()
             }
             tabs.add(backgroundTab)
-            val backgroundSession = session(backgroundTab)
-            backgroundSession.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
-            backgroundSession.setActive(false)
             loadTab(backgroundTab, url)
             backgroundTab
         }
@@ -954,6 +1172,7 @@ class BrowserState(private val app: Application) {
         chat.preopenedNavTabId = tab.id
         selected?.takeIf { it !== tab }?.let(::deactivateSession)
         selectedId = tab.id
+        tab.chromiumView?.onPause()
         tab.session?.let { session ->
             session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
             session.setActive(true)
@@ -1208,11 +1427,27 @@ class BrowserState(private val app: Application) {
 
     /** Request rendered DOM text, never network-fetched page content. */
     private fun beginPageTextExtraction(tab: LiveTab, session: GeckoSession?, url: String, force: Boolean = false) {
-        if (tab.private || session == null || !isHttpPage(url) || tab.url != url) return
+        if (tab.private || !isHttpPage(url) || tab.url != url) return
         if (!force && tab.renderedTextUrl == url && tab.renderedText.isNotBlank()) return
         if (!force && tab.extractionUrl == url && tab.extraction != null) return
 
         tab.extractionUrl = url
+        val chromium = tab.chromiumView
+        if (chromium != null) {
+            tab.extraction = null
+            chromium.evaluateJavascript("(document.body?.innerText || '').slice(0, 60000)") { encoded ->
+                scope.launch(Dispatchers.Main.immediate) {
+                    if (!tab.private && tab.url == url && tab.extractionUrl == url) {
+                        tab.renderedTextUrl = url
+                        tab.renderedText = runCatching {
+                            org.json.JSONTokener(encoded ?: "null").nextValue() as? String ?: ""
+                        }.getOrDefault("")
+                    }
+                }
+            }
+            return
+        }
+        if (session == null) return
         val result = try {
             session.sessionPageExtractor.getPageContent(PageExtractionController.ContentParams(false, true))
         } catch (error: Exception) {
@@ -1254,6 +1489,29 @@ class BrowserState(private val app: Application) {
     private suspend fun readRenderedPageText(tab: LiveTab, url: String): String {
         if (tab.private || !isHttpPage(url) || tab.url != url || !tabs.contains(tab)) return ""
         if (tab.renderedTextUrl == url && tab.renderedText.isNotBlank()) return tab.renderedText
+
+        val chromiumView = tab.chromiumView
+        if (chromiumView != null) {
+            val text = withTimeoutOrNull(5000) {
+                suspendCancellableCoroutine { continuation ->
+                    chromiumView.post {
+                        runCatching {
+                            chromiumView.evaluateJavascript("(document.body?.innerText || '').slice(0, 60000)") { encoded ->
+                                val value = runCatching {
+                                    org.json.JSONTokener(encoded ?: "null").nextValue() as? String ?: ""
+                                }.getOrDefault("")
+                                if (continuation.isActive) continuation.resume(value, onCancellation = null)
+                            }
+                        }.onFailure { if (continuation.isActive) continuation.resume("", onCancellation = null) }
+                    }
+                }
+            }.orEmpty()
+            if (text.isNotBlank() && !tab.private && tab.url == url && tabs.contains(tab)) {
+                tab.renderedTextUrl = url
+                tab.renderedText = text
+            }
+            return text
+        }
 
         val pending = tab.extraction.takeIf { tab.extractionUrl == url }
         val pendingText = awaitPageText(pending, 2500)
@@ -1388,7 +1646,6 @@ class BrowserState(private val app: Application) {
     }
     fun updateHttpsOnly(enabled: Boolean) {
         httpsOnly = enabled
-        runtime.settings.allowInsecureConnections = if (enabled) GeckoRuntimeSettings.HTTPS_ONLY else GeckoRuntimeSettings.ALLOW_ALL
         persist()
     }
     fun clearBrowsingData(history: Boolean = true, cache: Boolean = true, cookiesAndSiteData: Boolean = true) {
@@ -1455,14 +1712,14 @@ class BrowserState(private val app: Application) {
         val tab = selected ?: return
         if (delta != -10 && delta != 10) return
         tab.zoomPercent = (tab.zoomPercent + delta).coerceIn(50, 200)
-        sendElementRules(tab)
+        tab.chromiumView?.settings?.textZoom = tab.zoomPercent
     }
 
     fun resetPageZoom() {
         val tab = selected ?: return
         if (tab.zoomPercent == 100) return
         tab.zoomPercent = 100
-        sendElementRules(tab)
+        tab.chromiumView?.settings?.textZoom = 100
     }
 
     private fun initializePageControls() {
@@ -1514,6 +1771,10 @@ class BrowserState(private val app: Application) {
         if (closing.isEmpty()) return
         val selectedWasClosed = closing.any { it.id == selectedId }
         closing.forEach { tab ->
+            tab.chromiumView?.let { view ->
+                tab.chromiumView = null
+                runCatching { view.stopLoading(); view.loadUrl("about:blank"); view.clearHistory(); view.removeAllViews(); view.destroy() }
+            }
             tab.session?.let { session ->
                 elementPickerPorts.remove(session)
                 pageControlPorts.remove(session)?.toList()?.forEach { it.disconnect() }
@@ -1525,6 +1786,7 @@ class BrowserState(private val app: Application) {
             deleteThumbnail(tab)
         }
         tabs.removeAll { it.private == private }
+        if (private) runCatching { privateProfileCleaner?.invoke() }
         if (selectedWasClosed) {
             selectedId = ""
             homeInputFocusTabId = null

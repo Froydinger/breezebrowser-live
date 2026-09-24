@@ -3,6 +3,7 @@ package com.froydinger.breeze
 import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -76,7 +77,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import com.froydinger.breeze.core.*
 import com.froydinger.breeze.ui.*
-import org.mozilla.geckoview.GeckoView
+import android.webkit.*
+import android.graphics.Canvas
+import android.graphics.Bitmap
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
 
 private const val ACTION_PIP_PLAYBACK = "com.froydinger.breeze.PIP_PLAYBACK"
 
@@ -106,6 +111,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val credentials = com.froydinger.breeze.browser.BrowserCredentials(this) { browser.notice = it }
         browserCredentials = credentials
         browser.attachCredentials(credentials)
+        browser.setChromiumViewFactory { tab -> createChromiumWebView(this, browser, tab) }
+        browser.setPrivateProfileCleaner {
+            if (browser.privateProfileSupported()) runCatching { ProfileStore.getInstance().deleteProfile("breeze-private") }
+        }
         val permissions = com.froydinger.breeze.browser.BrowserPermissions(
             this,
             onNotice = { browser.notice = it },
@@ -136,6 +145,105 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let(browser::openSharedText)
         }
     }
+
+    /** One Android System WebView (Chromium) instance per logical tab. */
+    internal fun createChromiumWebView(context: android.content.Context, state: BrowserState, tab: LiveTab): WebView {
+        tab.chromiumView?.let { return it }
+        val webView = WebView(context)
+        if (tab.private) {
+            tab.chromiumPrivateProfileIsolated = state.privateProfileSupported() && runCatching {
+                WebViewCompat.setProfile(webView, "breeze-private")
+            }.isSuccess
+            if (!tab.chromiumPrivateProfileIsolated) {
+                state.notice = "Private browsing needs an updated Android System WebView. The page was not opened."
+            }
+        } else tab.chromiumPrivateProfileIsolated = true
+        webView.setBackgroundColor(if (browser.theme == ThemeMode.DARK || browser.theme == ThemeMode.SYSTEM &&
+                (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES)
+            android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            useWideViewPort = true
+            loadWithOverviewMode = false
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            javaScriptCanOpenWindowsAutomatically = false
+            setSupportMultipleWindows(true)
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            safeBrowsingEnabled = true
+            allowFileAccess = false
+            allowContentAccess = true
+            cacheMode = WebSettings.LOAD_DEFAULT
+        }
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val uri = request.url
+                if (uri.scheme in listOf("http", "https")) {
+                    if (state.httpsOnly && uri.scheme == "http") {
+                        val secure = uri.buildUpon().scheme("https").build()
+                        state.notice = "Breeze upgraded this link to HTTPS."
+                        view.loadUrl(secure.toString())
+                        return true
+                    }
+                    return false
+                }
+                val opened = runCatching { com.froydinger.breeze.ui.openExternalLinkInApp(this@MainActivity, uri) }.getOrDefault(false)
+                if (!opened) runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                return true
+            }
+
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                state.chromiumPageStarted(tab, view, url)
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                state.chromiumPageFinished(tab, view, url)
+            }
+
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) state.chromiumMainFrameError(tab, view, error.description?.toString().orEmpty())
+            }
+        }
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onReceivedTitle(view: WebView, title: String?) = state.chromiumTitleChanged(tab, view, title)
+            override fun onProgressChanged(view: WebView, newProgress: Int) = state.chromiumProgressChanged(tab, view, newProgress)
+            override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+                if (!isUserGesture || state.screen != "browser" || state.selectedId != tab.id) return false
+                val newTab = state.newTab(private = tab.private, focusHomeInput = false)
+                val child = createChromiumWebView(view.context, state, newTab)
+                val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+                transport.webView = child
+                resultMsg.sendToTarget()
+                return true
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                // Permission prompts must pass through Breeze's site-scoped permission UI.
+                // Until the Chromium permission adapter is connected, deny rather than grant silently.
+                request.deny()
+            }
+        }
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            runCatching {
+                val request = android.app.DownloadManager.Request(Uri.parse(url))
+                    .setMimeType(mimeType)
+                    .addRequestHeader("User-Agent", userAgent.orEmpty())
+                    .setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType))
+                    .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS,
+                        android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType))
+                getSystemService(android.content.Context.DOWNLOAD_SERVICE).let { it as android.app.DownloadManager }.enqueue(request)
+                state.notice = "Download started"
+            }.onFailure { state.notice = "Could not start this download" }
+        }
+        webView.settings.textZoom = tab.zoomPercent
+        state.attachChromiumView(tab, webView)
+        return webView
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (browser.selectedVideoIsPlaying && browser.screen == "browser" &&
@@ -176,7 +284,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
         devFpsTracker?.stop(); browser.onAppBackgrounded(); browser.persist(); super.onStop()
     }
-    override fun onDestroy() { unregisterReceiver(pipPlaybackReceiver); browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
+    override fun onDestroy() { browser.releaseChromiumViewsForActivityDestroy(); browser.setChromiumViewFactory(null); browser.setPrivateProfileCleaner(null); unregisterReceiver(pipPlaybackReceiver); browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
 }
 
 private data class BrowserPageMorph(
@@ -249,7 +357,7 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
                 }
                 else if (state.screen == "chat") state.collapseChatOrReturn()
                 else if (state.screen != "browser") state.screen = "browser"
-                else state.selected?.session?.goBack()
+                else state.chromiumGoBack()
             }
             Box(Modifier.fillMaxSize()) {
             val density = androidx.compose.ui.platform.LocalDensity.current
@@ -600,13 +708,13 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
         ) {
             val backEnabled = state.screen != "browser" || page?.canBack == true
             IconButton(
-                onClick={ if(state.screen == "chat") state.collapseChatOrReturn() else if(state.screen != "browser") state.screen="browser" else page?.session?.goBack() },
+                onClick={ if(state.screen == "chat") state.collapseChatOrReturn() else if(state.screen != "browser") state.screen="browser" else state.chromiumGoBack(page) },
                 enabled=backEnabled,
                 modifier=Modifier.size(buttonSize),
             ) { Icon(BreezeIcons.ArrowBack,"Back",Modifier.size(iconSize), tint=if (backEnabled) tint else tint.copy(alpha = .32f)) }
             if (state.screen != "chat") {
                 val forwardEnabled = state.screen == "browser" && page?.canForward == true
-                IconButton(onClick={page?.session?.goForward()}, enabled=forwardEnabled, modifier=Modifier.size(buttonSize)) {
+                IconButton(onClick={state.chromiumGoForward(page)}, enabled=forwardEnabled, modifier=Modifier.size(buttonSize)) {
                     Icon(BreezeIcons.ArrowForward,"Forward",Modifier.size(iconSize), tint=if (forwardEnabled) tint else tint.copy(alpha = .32f))
                 }
             } else Spacer(Modifier.size(buttonSize))
@@ -814,7 +922,7 @@ private data class AddressSuggestion(val title: String, val url: String)
                     if (pullGesture && refreshPull >= 1f && !currentEditing && !currentHome && currentPage?.chromeCollapsed != true) {
                         refreshAngle += 360f
                         BreezeSoundEffects.play(context, R.raw.pull_to_refresh)
-                        currentPage?.session?.reload()
+                        state.chromiumReload(currentPage)
                     }
                     refreshPull = 0f
                 }
@@ -895,7 +1003,7 @@ private data class AddressSuggestion(val title: String, val url: String)
                 }
             }
             if(home) IconButton(onClick={keyboardController?.hide();state.submit(text)},modifier=Modifier.size(32.dp)) {Icon(BreezeIcons.ArrowForward,"Ask Breeze or open URL")}
-            else IconButton(onClick={refreshAngle += 360f; state.selected?.session?.reload()},modifier=Modifier.size(32.dp)) {Icon(BreezeIcons.Refresh,"Reload",Modifier.rotate(refreshRotation + 180f * refreshPull))}
+            else IconButton(onClick={refreshAngle += 360f; state.chromiumReload()},modifier=Modifier.size(32.dp)) {Icon(BreezeIcons.Refresh,"Reload",Modifier.rotate(refreshRotation + 180f * refreshPull))}
         }
     }
 }
@@ -1002,9 +1110,9 @@ private data class AddressSuggestion(val title: String, val url: String)
                 alpha = 1f - progress
                 translationY = -progress * 34.dp.toPx()
             },verticalAlignment=Alignment.CenterVertically) {
-                OutlinedTextField(value=query,onValueChange={query=it;tab.session?.finder?.find(it,org.mozilla.geckoview.GeckoSession.FINDER_FIND_FORWARD)},label={Text("Find on page")},modifier=Modifier.weight(1f),singleLine=true)
-                IconButton(onClick={tab.session?.finder?.find(null,org.mozilla.geckoview.GeckoSession.FINDER_FIND_FORWARD)}) {Icon(BreezeIcons.ArrowDownward,"Next match")}
-                IconButton(onClick={state.showFind=false;tab.session?.finder?.clear()}) {Icon(BreezeIcons.Close,"Close find")}
+                OutlinedTextField(value=query,onValueChange={query=it;state.chromiumFind(tab,it)},label={Text("Find on page")},modifier=Modifier.weight(1f),singleLine=true)
+                IconButton(onClick={state.chromiumFindNext(tab)}) {Icon(BreezeIcons.ArrowDownward,"Next match")}
+                IconButton(onClick={state.showFind=false;state.chromiumClearFind(tab)}) {Icon(BreezeIcons.Close,"Close find")}
             }
         }
         }
@@ -1015,59 +1123,32 @@ private data class AddressSuggestion(val title: String, val url: String)
         })
       }
         val attachedTab = remember { mutableStateOf<LiveTab?>(null) }
-        var lastViewForeground by remember { mutableIntStateOf(foregroundGeneration) }
-        val activity = LocalContext.current as? android.app.Activity
-        fun installTab(view: GeckoView, targetTab: LiveTab) {
+        val activity = LocalContext.current as? MainActivity
+        fun installTab(view: WebView, targetTab: LiveTab) {
             val previousTab = attachedTab.value
-            val freshSession = targetTab.session == null
-            val session = state.session(targetTab)
-            if (BuildConfig.DEBUG) (activity as? MainActivity)?.watchDevPage(session)
-            if (view.session !== session) {
-                previousTab?.session?.setFocused(false)
-                view.releaseSession()
-                view.setSession(session)
-            }
-            if (previousTab !== targetTab || freshSession) {
+            if (previousTab !== targetTab) {
                 previousTab?.let {
                     it.capture = null
                     it.captureOverlay = null
+                    it.chromiumView?.onPause()
                 }
                 attachedTab.value = targetTab
-                session.selectionActionDelegate = com.froydinger.breeze.browser.NavTextSelectionActionDelegate(
-                    activity ?: return,
-                    onShareText = { selectedText ->
-                        val share = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, selectedText)
-                        activity.startActivity(Intent.createChooser(share, "Share selected text"))
-                    },
-                    onAskNav = { selectedText ->
-                        val prompt = "Explain this selected text from ${targetTab.title}:\n\n$selectedText"
-                        if (state.screen == "chat" && state.activeChat != null) {
-                            state.contextTabId = targetTab.id
-                            state.includePageContext = true
-                            state.sendChat(prompt)
-                        } else state.startChat(prompt)
-                    },
-                )
-                session.setFocused(true)
-                session.setActive(true)
-                if (freshSession && targetTab.url.isNotBlank() && !targetTab.restoredSessionState) {
-                    state.loadTab(targetTab, targetTab.url)
-                }
             }
+            state.attachChromiumView(targetTab, view)
             targetTab.capture = { onCaptured ->
-                if (!targetTab.private && view.isAttachedToWindow) {
+                if (!targetTab.private && view.isAttachedToWindow && view.width > 0 && view.height > 0) {
                     val completed = java.util.concurrent.atomic.AtomicBoolean(false)
                     val finish = { if (completed.compareAndSet(false, true)) onCaptured() }
-                    view.postDelayed({ finish() }, 220)
-                    view.capturePixels().accept({ bitmap ->
-                        if (bitmap != null) {
+                    view.post {
+                        runCatching {
+                            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                            view.draw(Canvas(bitmap))
                             captureScope.launch {
                                 try {
                                     val thumbnail = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                                        android.graphics.Bitmap.createScaledBitmap(bitmap, 360, (bitmap.height * 360f / bitmap.width).toInt().coerceAtLeast(1), true)
+                                        Bitmap.createScaledBitmap(bitmap, 360, (bitmap.height * 360f / bitmap.width).toInt().coerceAtLeast(1), true)
                                     }
-                                    // A capture may finish after a fast tab switch or close.
-                                    if (view.session === session && state.tabs.any { it === targetTab }) {
+                                    if (targetTab.chromiumView === view && state.tabs.any { it === targetTab }) {
                                         state.saveThumbnail(targetTab, thumbnail)
                                         state.tabs.filter { it.id != targetTab.id && it.thumbnail != null }.dropLast(5).forEach { it.thumbnail = null }
                                     } else if (thumbnail !== bitmap && !thumbnail.isRecycled) thumbnail.recycle()
@@ -1076,49 +1157,37 @@ private data class AddressSuggestion(val title: String, val url: String)
                                     finish()
                                 }
                             }
-                        } else finish()
-                    }, { _ -> finish() })
+                        }.onFailure { finish() }
+                    }
+                    view.postDelayed({ finish() }, 500)
                 } else onCaptured()
             }
             targetTab.captureOverlay = {
-                if (!targetTab.private && view.isAttachedToWindow) view.capturePixels().accept({ bitmap ->
-                    if (bitmap != null) {
-                        if (view.session === session && state.overlayBackdropRequested && state.selectedId == targetTab.id) state.updateOverlayBackdrop(bitmap)
-                        else if (!bitmap.isRecycled) bitmap.recycle()
+                if (!targetTab.private && view.isAttachedToWindow && view.width > 0 && view.height > 0) view.post {
+                    runCatching {
+                        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                        view.draw(Canvas(bitmap))
+                        if (targetTab.chromiumView === view && state.overlayBackdropRequested && state.selectedId == targetTab.id) state.updateOverlayBackdrop(bitmap)
+                        else bitmap.recycle()
                     }
-                }, { _ -> })
+                }
             }
         }
         Layout(
           content = {
               Box(Modifier.fillMaxSize()) {
-                AndroidView(
-                factory = { context -> GeckoView(context).apply {
-                    // SurfaceView renders black inside this Compose hierarchy.
-                    setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
-                    setBackgroundColor(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
-                    installTab(this, tab)
-                } },
+                key(tab.id) { AndroidView(
+                factory = { context ->
+                    (tab.chromiumView ?: activity?.createChromiumWebView(context, state, tab) ?: WebView(context)).also { view ->
+                        (view.parent as? android.view.ViewGroup)?.removeView(view)
+                        installTab(view, tab)
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
                 update = { view ->
-                    if (lastViewForeground != foregroundGeneration) {
-                        lastViewForeground = foregroundGeneration
-                        val attachedSession = view.session
-                        view.post {
-                            // A retained TextureView can return with a stale gray buffer after
-                            // Android backgrounds the Activity. Rebind Gecko's live session to
-                            // this surface without reloading the page or losing its scroll state.
-                            if (view.isAttachedToWindow && attachedSession != null && view.session === attachedSession) {
-                                view.releaseSession()
-                                view.setSession(attachedSession)
-                            }
-                            view.requestLayout()
-                            view.postInvalidateOnAnimation()
-                        }
-                    }
                     view.setBackgroundColor(if (darkChrome) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
-                    view.setVerticalClipping(viewportBottomPx)
                     installTab(view, tab)
+                    if (tab.url.isNotBlank() && tab.chromiumLoadIssuedUrl != tab.url) state.loadTab(tab, tab.url)
                     if (!state.isPictureInPicture && !state.preparingPictureInPicture) {
                         val visible = android.graphics.Rect()
                         if (view.getGlobalVisibleRect(visible)) {
@@ -1138,13 +1207,11 @@ private data class AddressSuggestion(val title: String, val url: String)
                     attachedTab.value?.let { current ->
                         current.capture = null
                         current.captureOverlay = null
-                        current.session?.setFocused(false)
-                        current.session?.setActive(false)
+                        state.detachChromiumView(current, view)
                     }
                     attachedTab.value = null
-                    view.releaseSession()
                 },
-            )
+            ) }
             val overlaySnapshot = state.overlayBackdrop
             val showBackdropSnapshot = !state.isPictureInPicture && state.overlayBackdropRequested && overlaySnapshot != null
             val overlaySnapshotAlpha by animateFloatAsState(
