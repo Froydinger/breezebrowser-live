@@ -120,7 +120,11 @@ fun FirstRunOnboarding(onFinish: () -> Unit) {
                         color = accent.copy(alpha = if (dark) .16f else .10f),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(item.icon, contentDescription = null, tint = accent, modifier = Modifier.size(46.dp))
+                            if (item.title == "Ask Nav") {
+                                NavMark(62.dp)
+                            } else {
+                                Icon(item.icon, contentDescription = null, tint = accent, modifier = Modifier.size(46.dp))
+                            }
                         }
                     }
                     Spacer(Modifier.height(32.dp))
