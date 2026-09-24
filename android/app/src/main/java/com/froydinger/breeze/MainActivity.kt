@@ -94,6 +94,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private var browserCredentials: com.froydinger.breeze.browser.BrowserCredentials? = null
     private var browserPrompts: com.froydinger.breeze.browser.BrowserPrompts? = null
     private var browserPermissions: com.froydinger.breeze.browser.BrowserPermissions? = null
+    private var chromiumPrompts: com.froydinger.breeze.browser.ChromiumWebPrompts? = null
+    private var chromiumDownloads: com.froydinger.breeze.browser.ChromiumDownloads? = null
     private val browser get() = (application as BreezeApplication).browser
     private var pipPlaybackPendingStop = false
     private val pipPlaybackReceiver = object : android.content.BroadcastReceiver() {
@@ -111,6 +113,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val credentials = com.froydinger.breeze.browser.BrowserCredentials(this) { browser.notice = it }
         browserCredentials = credentials
         browser.attachCredentials(credentials)
+        chromiumPrompts = com.froydinger.breeze.browser.ChromiumWebPrompts(this,
+            resolveCurrentPage = {
+                browser.selected?.takeIf { browser.screen == "browser" }?.let {
+                    com.froydinger.breeze.browser.ChromiumWebPrompts.PageContext(it.url, it.private)
+                }
+            }, onNotice = { browser.notice = it })
+        chromiumDownloads = com.froydinger.breeze.browser.ChromiumDownloads(this,
+            onNotice = { browser.notice = it },
+            onDownloadSaved = { uri, name -> browser.saveDownload(uri, name) })
         browser.setChromiumViewFactory { tab -> createChromiumWebView(this, browser, tab) }
         browser.setPrivateProfileCleaner {
             if (browser.privateProfileSupported()) runCatching { ProfileStore.getInstance().deleteProfile("breeze-private") }
@@ -149,7 +160,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     /** One Android System WebView (Chromium) instance per logical tab. */
     internal fun createChromiumWebView(context: android.content.Context, state: BrowserState, tab: LiveTab): WebView {
         tab.chromiumView?.let { return it }
+        if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
         val webView = WebView(context)
+        webView.layoutParams = android.view.ViewGroup.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+        )
         if (tab.private) {
             tab.chromiumPrivateProfileIsolated = state.privateProfileSupported() && runCatching {
                 WebViewCompat.setProfile(webView, "breeze-private")
@@ -178,7 +194,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
         }
+        val pageProtection = com.froydinger.breeze.browser.ChromiumPageProtection(webView,
+            isProtectionEnabled = { url -> !tab.private && state.isSiteProtectionEnabled(url) },
+            hiddenSelectorsForOrigin = { url -> if (tab.private) emptyList() else state.hiddenPageElements(url) })
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                pageProtection.interceptRequest(request)
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val uri = request.url
                 if (uri.scheme in listOf("http", "https")) {
@@ -196,11 +217,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                pageProtection.apply(url)
                 state.chromiumPageStarted(tab, view, url)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 state.chromiumPageFinished(tab, view, url)
+                pageProtection.onPageFinished(url)
+                tab.chromiumMedia?.install()
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -221,31 +245,46 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-                // Permission prompts must pass through Breeze's site-scoped permission UI.
-                // Until the Chromium permission adapter is connected, deny rather than grant silently.
-                request.deny()
+                chromiumPrompts?.client?.onPermissionRequest(request) ?: request.deny()
             }
+            override fun onPermissionRequestCanceled(request: PermissionRequest) =
+                chromiumPrompts?.client?.onPermissionRequestCanceled(request) ?: Unit
+            override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+                chromiumPrompts?.client?.onGeolocationPermissionsShowPrompt(origin, callback)
+                    ?: callback.invoke(origin, false, false)
+            }
+            override fun onShowFileChooser(view: WebView, callback: android.webkit.ValueCallback<Array<Uri>>,
+                params: WebChromeClient.FileChooserParams): Boolean =
+                chromiumPrompts?.client?.onShowFileChooser(view, callback, params)
+                    ?: run { callback.onReceiveValue(null); true }
         }
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-            runCatching {
-                val request = android.app.DownloadManager.Request(Uri.parse(url))
-                    .setMimeType(mimeType)
-                    .addRequestHeader("User-Agent", userAgent.orEmpty())
-                    .setTitle(android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType))
-                    .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS,
-                        android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType))
-                getSystemService(android.content.Context.DOWNLOAD_SERVICE).let { it as android.app.DownloadManager }.enqueue(request)
-                state.notice = "Download started"
-            }.onFailure { state.notice = "Could not start this download" }
+            chromiumDownloads?.handleDownload(url, userAgent, contentDisposition, mimeType,
+                webView.url.orEmpty(), tab.private, WebViewCompat.getProfile(webView).cookieManager)
         }
         webView.settings.textZoom = tab.zoomPercent
+        tab.chromiumMedia = com.froydinger.breeze.browser.ChromiumMedia(webView) { media ->
+            if (tab.chromiumView === webView) {
+                if (BuildConfig.DEBUG) android.util.Log.d("BreezeMedia", "playing=${media.playing} video=${media.video} size=${media.width}x${media.height}")
+                tab.chromiumMediaPlaying = media.playing
+                tab.videoPlaying = media.playing && media.video
+                tab.videoWidth = if (media.video) media.width else 0
+                tab.videoHeight = if (media.video) media.height else 0
+            }
+        }
+        webView.addOnLayoutChangeListener { view, left, top, right, bottom, _, _, _, _ ->
+            if (right > left && bottom > top && view.isAttachedToWindow &&
+                tab.url.isNotBlank() && tab.chromiumLoadIssuedUrl != tab.url) {
+                state.loadTab(tab, tab.url)
+            }
+        }
         state.attachChromiumView(tab, webView)
         return webView
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        if (BuildConfig.DEBUG) android.util.Log.d("BreezePiP", "leave playing=${browser.selectedVideoIsPlaying} screen=${browser.screen} sdk=${android.os.Build.VERSION.SDK_INT}")
         if (browser.selectedVideoIsPlaying && browser.screen == "browser" &&
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
         ) {
@@ -277,14 +316,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
     override fun onStop() {
-        if (pipPlaybackPendingStop || browser.isPictureInPicture || browser.preparingPictureInPicture) {
-            browser.stopPictureInPicturePlayback()
-            pipPlaybackPendingStop = false
-            browser.setPictureInPictureMode(false)
-        }
         devFpsTracker?.stop(); browser.onAppBackgrounded(); browser.persist(); super.onStop()
     }
-    override fun onDestroy() { browser.releaseChromiumViewsForActivityDestroy(); browser.setChromiumViewFactory(null); browser.setPrivateProfileCleaner(null); unregisterReceiver(pipPlaybackReceiver); browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
+    override fun onDestroy() { browser.releaseChromiumViewsForActivityDestroy(); browser.setChromiumViewFactory(null); browser.setPrivateProfileCleaner(null); unregisterReceiver(pipPlaybackReceiver); chromiumPrompts?.close(); chromiumDownloads?.close(); browserPrompts?.close(); browserCredentials?.close(); browserPermissions?.close(); browser.attachCredentials(null); browser.promptDelegate = null; browser.permissionDelegate = null; browser.downloadHandler = null; super.onDestroy() }
 }
 
 private data class BrowserPageMorph(
@@ -332,6 +366,7 @@ private fun pictureInPictureParams(context: android.content.Context, state: Brow
         selectedForPip?.videoWidth, selectedForPip?.videoHeight, state.pictureInPictureSourceRect) {
         val host = activity ?: return@LaunchedEffect
         if (host.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+            if (BuildConfig.DEBUG) android.util.Log.d("BreezePiP", "params playing=${state.selectedVideoIsPlaying} screen=${state.screen}")
             runCatching { host.setPictureInPictureParams(pictureInPictureParams(host, state)) }
         }
     }
@@ -1130,7 +1165,7 @@ private data class AddressSuggestion(val title: String, val url: String)
                 previousTab?.let {
                     it.capture = null
                     it.captureOverlay = null
-                    it.chromiumView?.onPause()
+                    if (!it.chromiumMediaPlaying) it.chromiumView?.onPause()
                 }
                 attachedTab.value = targetTab
             }
@@ -1173,8 +1208,9 @@ private data class AddressSuggestion(val title: String, val url: String)
                 }
             }
         }
-        Layout(
-          content = {
+        Box(
+          modifier = pageSurfaceModifier.then(if (snapshotMorph) Modifier.graphicsLayer { alpha = 0f } else Modifier),
+        ) {
               Box(Modifier.fillMaxSize()) {
                 key(tab.id) { AndroidView(
                 factory = { context ->
@@ -1229,16 +1265,7 @@ private data class AddressSuggestion(val title: String, val url: String)
             }
             if (tab.loading && !state.isPictureInPicture) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter), color=BreezeTeal)
             tab.error?.let { Text(it, style=MaterialTheme.typography.bodySmall, modifier=Modifier.align(Alignment.TopCenter).padding(12.dp).breezeGlass(14.dp).padding(10.dp)) }              }
-          },
-          modifier = pageSurfaceModifier.then(if (snapshotMorph) Modifier.graphicsLayer { alpha = 0f } else Modifier),
-      ) { measurables, constraints ->
-          val sourceWidthPx = (if (state.isPictureInPicture) constraints.maxWidth else morphSource?.width?.toInt() ?: constraints.maxWidth).coerceAtLeast(1)
-          val sourceHeightPx = (if (state.isPictureInPicture) constraints.maxHeight else morphSource?.height?.toInt() ?: constraints.maxHeight).coerceAtLeast(1)
-          val page = measurables.single().measure(Constraints.fixed(sourceWidthPx, sourceHeightPx))
-          layout(constraints.maxWidth, constraints.maxHeight) {
-              page.place(0, 0)
-          }
-      }
+        }
 
       if (!snapshotMorph && holdPagePreview && pageSnapshot != null && !state.isPictureInPicture) {
           Image(

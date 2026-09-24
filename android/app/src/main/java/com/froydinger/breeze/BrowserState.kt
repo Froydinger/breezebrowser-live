@@ -62,6 +62,8 @@ class LiveTab(val id: String = UUID.randomUUID().toString(), val private: Boolea
     var session: GeckoSession? = null
     /** Live Chromium view retained while this tab is in the background. */
     var chromiumView: WebView? = null
+    var chromiumMedia: com.froydinger.breeze.browser.ChromiumMedia? = null
+    var chromiumMediaPlaying: Boolean = false
     var chromiumPrivateProfileIsolated: Boolean = false
     var desktopSite: Boolean = false
     var chromiumLoadIssuedUrl: String = ""
@@ -462,7 +464,7 @@ class BrowserState(private val app: Application) {
             ((isPictureInPicture || preparingPictureInPicture) && selectedId == tab.id && !tab.private)
 
     private fun deactivateSession(tab: LiveTab) {
-        tab.chromiumView?.onPause()
+        if (!tab.chromiumMediaPlaying) tab.chromiumView?.onPause()
         tab.session?.let { session ->
             session.setActive(false)
             session.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
@@ -505,6 +507,7 @@ class BrowserState(private val app: Application) {
     }
 
     private fun sendPictureInPictureMessage(enabled: Boolean) {
+        selected?.chromiumMedia?.setPictureInPicture(enabled)
         selected?.session?.let { session ->
             session.settings.suspendMediaWhenInactive = !enabled
             val message = JSONObject().put("type", "pipVideo").put("enabled", enabled)
@@ -521,6 +524,7 @@ class BrowserState(private val app: Application) {
     }
 
     private fun sendVideoPlaybackCommand(play: Boolean) {
+        selected?.chromiumMedia?.setPlaying(play)
         selected?.session?.let { session ->
             val message = JSONObject().put("type", "pipPlayback").put("play", play)
                 .put("frameUrl", selected?.videoFrameUrl.orEmpty())
@@ -533,7 +537,7 @@ class BrowserState(private val app: Application) {
         appInForeground = false
         backgroundedAt = System.currentTimeMillis()
         tabs.forEach { tab ->
-            tab.chromiumView?.onPause()
+            if (!(tab === selected && tab.chromiumMediaPlaying && !tab.private)) tab.chromiumView?.onPause()
             tab.session?.let { session ->
                 val keepForPip = shouldKeepActive(tab)
                 session.setActive(keepForPip)
@@ -686,7 +690,10 @@ class BrowserState(private val app: Application) {
         tab.loading = true
         val view = tab.chromiumView
         if (view != null) {
-            if (view.url != url && tab.chromiumLoadIssuedUrl != url) {
+            // Loading while AndroidView is detached or zero-height can leave Chromium's
+            // CSS viewport units at 0 even after the surface gets its final bounds.
+            if (view.isAttachedToWindow && view.width > 0 && view.height > 0 &&
+                view.url != url && tab.chromiumLoadIssuedUrl != url) {
                 tab.chromiumLoadIssuedUrl = url
                 view.loadUrl(url)
             }
@@ -728,6 +735,8 @@ class BrowserState(private val app: Application) {
     fun releaseChromiumViewsForActivityDestroy() {
         tabs.forEach { tab ->
             val view = tab.chromiumView ?: return@forEach
+            tab.chromiumMedia?.close()
+            tab.chromiumMedia = null
             tab.url = view.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: tab.url
             tab.scrollY = view.scrollY.coerceAtLeast(0)
             tab.canBack = view.canGoBack()
@@ -750,6 +759,7 @@ class BrowserState(private val app: Application) {
             tab.webAppManifest = null
             clearRenderedText(tab)
             tab.videoPlaying = false
+            tab.chromiumMediaPlaying = false
             tab.videoWidth = 0
             tab.videoHeight = 0
             tab.videoFrameUrl = ""
