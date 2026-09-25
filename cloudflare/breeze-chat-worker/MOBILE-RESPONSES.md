@@ -32,17 +32,21 @@ The request body is:
 
 Tasks: `chat`, `research`, `summarize`, `factcheck`, `youtube`. IDs accept
 letters, digits, `_`, and `-`, up to 128 characters. Input is capped at 12,000
-characters, selected context at 20,000, and the request body at 48 KiB.
+characters, selected context at 20,000, and the request body at 5.5 MiB (to
+allow a user-selected image attachment).
 The Worker selects the server-configured `AI_CHAT_MODEL` (set to `gpt-6-luna` in
 the existing Wrangler config), uses the configured OpenAI provider secret and
 Responses API, sets `store: false`, caps output at 8,192 tokens and hosted tool
-calls at eight, and aborts after two minutes. The official GPT-6 Luna model page
+calls at twelve, and aborts after two minutes. The official GPT-6 Luna model page
 lists Responses and web search support.
 
 Task behavior is server selected:
 
-- `chat`: search is available and optional; the model can answer directly or
-  search for current information.
+- `chat`: substantive requests require web search and responses are instructed
+  to include clickable links to the sources used. Concrete recommendations
+  should link each pick; video requests should link actual videos where search
+  results provide them. Plain greetings and brief social replies do not search,
+  so “hey” stays a conversation.
 - `research`: web search is required and the prompt asks for at least three
   distinct credible sources when available, comparison, synthesis, and actual
   citations.
@@ -51,19 +55,22 @@ Task behavior is server selected:
   contradicted, and uncertain claims.
 - `summarize`: web search is disabled. The model summarizes only the user's
   request and explicitly selected page/attachment context.
-- `youtube`: web search is required for public metadata and context. The model
-  can analyze a user-supplied transcript or selected page text, but cannot fetch
-  or watch video frames or access private analytics. Without supplied
-  transcript/captions, it must state the scope limit and ask for a transcript.
+- `youtube`: the Worker attempts to fetch publicly available captions for the
+  supplied YouTube URL, then uses web search for public metadata and context.
+  The model can analyze retrieved captions or selected page text, but cannot
+  see video frames or access private analytics. If captions are unavailable, it
+  must state the scope limit and avoid claims about spoken content.
 
 When web search is enabled, the request asks Responses to include
 `web_search_call.action.sources`. The Worker emits actual collected URLs as
 `source` events and inline `url_citation` annotations as `citation` events,
 including URL, title, and citation character range where present. The Android
 client should render citation links visibly and make them tappable. OpenAI
-documents that citations should be clearly visible and clickable. Search is
-optional under `tool_choice: "auto"`; research, factcheck and YouTube metadata
-tasks use `tool_choice: "required"` so those tasks cannot silently skip it.
+documents that citations should be clearly visible and clickable. The Android
+client renders Worker sources as tappable cards and extracts Markdown links from
+completed answers so recommendations stay easy to open. Search is required for
+substantive chat, research, factcheck, and YouTube requests; simple social replies
+and summarize use `tool_choice: "none"`.
 
 Each SSE `data:` JSON event has `v: 1`, `runId`, request-local monotonic
 `eventId`, and `type`: `accepted`, `status`, `tool_started`, `source`,
@@ -73,7 +80,7 @@ or premature EOF emit `failed`. Status events include a short message; web
 search emits a `tool_started` event and a `Searching the web` status. Sources
 and citation annotations come from actual upstream output, not inferred page
 navigation. The only hosted tool currently wired is OpenAI `web_search`; there
-are no native browser actions or YouTube transcript-fetch tool on this route.
+are no native browser actions or video-frame analysis on this route.
 
 The quota uses the existing Durable Object with a server-selected fixed
 development identity, so callers cannot choose a quota identity via
