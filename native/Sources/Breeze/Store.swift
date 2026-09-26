@@ -26,6 +26,8 @@ final class Store {
     var bookmarks: [[String: Any]]    // { url, title, ts }
     var openTabs: [String]            // array of tab URLs
     var supportDirectory: URL { dir }
+    var suppressCloudSync = false
+    private var lastSavedReminderFingerprint: String?
 
     static let defaults: [String: Any] = [
         "theme": "system",
@@ -136,6 +138,7 @@ final class Store {
             try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] } ?? []
         openTabs = (try? Data(contentsOf: openTabsURL)).flatMap {
             try? JSONSerialization.jsonObject(with: $0) as? [String] } ?? []
+        lastSavedReminderFingerprint = reminderFingerprint()
 
         // Remove any very old plaintext AI provider key setting. Breeze Cloud no longer
         // uses provider key setup, so this should not be retained in settings JSON.
@@ -148,18 +151,25 @@ final class Store {
 
     func saveOpenTabs() {
         if let data = try? JSONSerialization.data(withJSONObject: openTabs) { try? data.write(to: openTabsURL) }
+        scheduleCloudSync("tabs")
     }
 
     // MARK: - Chat history
 
     func saveChats() {
         if let data = try? JSONSerialization.data(withJSONObject: chats) { try? data.write(to: chatsURL) }
+        scheduleCloudSync("chats")
     }
     /// Insert or update a chat (newest first). Empty chats are ignored.
     func upsertChat(id: Double, title: String, messages: [[String: String]]) {
         guard !messages.isEmpty else { return }
+        let prior = chats.first { ($0["id"] as? Double) == id }
         chats.removeAll { ($0["id"] as? Double) == id }
-        chats.insert(["id": id, "title": title, "messages": messages], at: 0)
+        var next: [String: Any] = ["id": id, "title": title, "messages": messages, "time": prior?["time"] ?? Date().timeIntervalSince1970 * 1000]
+        for key in ["sources", "finishedReplies", "pendingReminderPrompt"] where next[key] == nil {
+            if let value = prior?[key] { next[key] = value }
+        }
+        chats.insert(next, at: 0)
         if chats.count > 200 { chats = Array(chats.prefix(200)) }
         saveChats()
     }
@@ -213,16 +223,18 @@ final class Store {
 
     func saveHistory() {
         if let data = try? JSONSerialization.data(withJSONObject: history) { try? data.write(to: historyURL) }
+        scheduleCloudSync("history")
     }
     func saveBookmarks() {
         if let data = try? JSONSerialization.data(withJSONObject: bookmarks) { try? data.write(to: bookmarksURL) }
+        scheduleCloudSync("bookmarks")
     }
 
     /// Record a visit: de-dupe consecutive same-URL, newest first, capped.
     func addHistory(url: String, title: String) {
         guard !url.isEmpty, url.hasPrefix("http") else { return }
         if let first = history.first, first["url"] as? String == url { return }
-        history.insert(["url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0)
+        history.insert(["id": UUID().uuidString, "url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0)
         if history.count > 5000 { history = Array(history.prefix(5000)) }
         saveHistory()
     }
@@ -269,7 +281,7 @@ final class Store {
     func toggleBookmark(url: String, title: String) {
         guard !url.isEmpty, url.hasPrefix("http") else { return }
         if isBookmarked(url) { bookmarks.removeAll { $0["url"] as? String == url } }
-        else { bookmarks.insert(["url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0) }
+        else { bookmarks.insert(["id": UUID().uuidString, "url": url, "title": title, "ts": Date().timeIntervalSince1970 * 1000], at: 0) }
         saveBookmarks()
     }
 
@@ -277,6 +289,24 @@ final class Store {
         if let data = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted]) {
             try? data.write(to: settingsURL)
         }
+        let fingerprint = reminderFingerprint()
+        if let previous = lastSavedReminderFingerprint, previous != fingerprint {
+            lastSavedReminderFingerprint = fingerprint
+            scheduleCloudSync("reminders")
+        } else if lastSavedReminderFingerprint == nil {
+            lastSavedReminderFingerprint = fingerprint
+        }
+    }
+
+    private func reminderFingerprint() -> String {
+        let reminders = settings["reminders"] ?? []
+        guard let data = try? JSONSerialization.data(withJSONObject: reminders, options: [.sortedKeys, .fragmentsAllowed]) else { return "" }
+        return data.base64EncodedString()
+    }
+
+    private func scheduleCloudSync(_ collection: String) {
+        guard !suppressCloudSync else { return }
+        Task { @MainActor in BreezeCloud.shared.scheduleSync(collection: collection) }
     }
 
     func savePins() {

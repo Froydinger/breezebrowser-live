@@ -226,6 +226,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.1', icon: 'key-round', title: 'Breeze Cloud, Right in Breeze', hotfix: false, major: false, items: [
+        '<b>Google sign-in stays in Breeze</b> — When macOS hands the authorize page back as if it were the final callback, Breeze now continues the request in a normal browser tab and completes sign-in there.',
+        '<b>Choose what syncs</b> — Sign in with Google or email, then opt in separately to sync bookmarks, open tabs, history, Nav chats, and reminders. Sync stays off until you enable a category.',
+        '<b>Clear account controls</b> — Export or delete your account from Settings. Signing out asks first, clears the selected synced copies from this Mac, and leaves your cloud account data in place.' ] },
       { v: '6.3.0', icon: 'search-check', title: 'Nav Actually Does the Work', hotfix: false, major: true, items: [
         '<b>Research really reads now</b> — /research used to glance at one page and give up. It now runs real searches, opens and reads several of the best results in its own tab (you can watch), follows a link deeper when a page points somewhere better, and writes up a sourced answer. It reads the article itself, not the site’s menus, so long lists and tables come through complete.',
         '<b>Nav can see the page</b> — Ask about a comic, a chart, an image or “what’s on my screen” and Nav takes a look. It reads the screen on your Mac and only sends the text, so it costs no more than reading a page.',

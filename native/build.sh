@@ -14,6 +14,8 @@ cd "$(dirname "$0")"
 # with its own data dir:  open -n dist-test/BreezeTest.app --args --profile BreezeTest
 APP_NAME="${BREEZE_APP_NAME:-Breeze}"
 BUNDLE_ID="${BREEZE_BUNDLE_ID:-com.jakefreudinger.breeze.native}"
+AUTH_REDIRECT_URI="${BREEZE_CLOUD_REDIRECT_URI:-com.froydinger.breeze://auth-callback}"
+AUTH_REDIRECT_SCHEME="${BREEZE_CLOUD_REDIRECT_SCHEME:-${AUTH_REDIRECT_URI%%:*}}"
 OUT_DIR="${BREEZE_DIST:-dist}"
 APP="$OUT_DIR/${APP_NAME}.app"
 SDK="${BREEZE_SDK:-$(xcrun --show-sdk-path)}"
@@ -24,13 +26,36 @@ xml_escape() {
   printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'
 }
 
-CLOUD_PLIST_KEYS=""
+CLOUD_PLIST_KEYS="  <key>BreezeCloudRedirectURI</key><string>$(xml_escape "$AUTH_REDIRECT_URI")</string>
+"
 if [[ -n "${BREEZE_CLOUD_AI_BASE_URL:-}" ]]; then
   CLOUD_PLIST_KEYS+="  <key>BreezeCloudAIBaseURL</key><string>$(xml_escape "$BREEZE_CLOUD_AI_BASE_URL")</string>
 "
 fi
 if [[ -n "${BREEZE_CLOUD_CLIENT_TOKEN:-}" ]]; then
   CLOUD_PLIST_KEYS+="  <key>BreezeCloudClientToken</key><string>$(xml_escape "$BREEZE_CLOUD_CLIENT_TOKEN")</string>
+"
+fi
+
+# Supabase anon/publishable keys are intended for client apps. Never use a
+# service-role key here; the server enforces user access with RLS.
+SUPABASE_ANON_KEY="${BREEZE_CLOUD_SUPABASE_ANON_KEY:-}"
+if [[ -z "$SUPABASE_ANON_KEY" ]]; then
+  for KEY_FILE in ".supabase-anon-key" "../.supabase-anon-key" "../../../BreezeMobile/.supabase-anon-key"; do
+    if [[ -f "$KEY_FILE" ]]; then
+      SUPABASE_ANON_KEY="$(<"$KEY_FILE")"
+      SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY//$'\n'/}"
+      SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY//$'\r'/}"
+      break
+    fi
+  done
+fi
+if [[ -n "$SUPABASE_ANON_KEY" ]]; then
+  if [[ ! "$SUPABASE_ANON_KEY" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+    echo "Invalid Breeze Cloud public key format" >&2
+    exit 1
+  fi
+  CLOUD_PLIST_KEYS+="  <key>BreezeCloudSupabaseAnonKey</key><string>$(xml_escape "$SUPABASE_ANON_KEY")</string>
 "
 fi
 
@@ -41,7 +66,7 @@ echo "Compiling… ($APP_NAME / $BUNDLE_ID)"
 swiftc -O -whole-module-optimization Sources/Breeze/*.swift \
   -o "$APP/Contents/MacOS/$APP_NAME" \
   -target arm64-apple-macosx14.0 -sdk "$SDK" -module-cache-path "$MODULE_CACHE" \
-  -framework Cocoa -framework WebKit -framework UserNotifications
+  -framework Cocoa -framework WebKit -framework UserNotifications -framework AuthenticationServices -framework Security
 
 # Bundle the app icon so breezeLogo() finds it via Bundle.main.image(forResource:"icon").
 cp ../icon.png "$APP/Contents/Resources/icon.png" 2>/dev/null || true
@@ -65,14 +90,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>6.3.0</string>
-  <key>CFBundleShortVersionString</key><string>6.3.0</string>
+  <key>CFBundleVersion</key><string>6.3.1</string>
+  <key>CFBundleShortVersionString</key><string>6.3.1</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>ASWebAuthenticationSessionWebBrowserSupportCapabilities</key>
+  <dict>
+    <key>IsSupported</key><true/>
+    <key>EphemeralBrowserSessionIsSupported</key><true/>
+    <key>CallbackURLMatchingIsSupported</key><true/>
+  </dict>
   <!-- A browser has to be able to load the http sites its user asks for. Breeze
        still upgrades http to https on its own (see httpsUpgraded); this key only
        stops App Transport Security from hard-failing the pages that genuinely
@@ -112,6 +143,18 @@ ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
       <key>CFBundleURLSchemes</key>
       <array>
         <string>breeze</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Breeze Cloud Sign-in</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>$(xml_escape "$AUTH_REDIRECT_SCHEME")</string>
       </array>
     </dict>
   </array>

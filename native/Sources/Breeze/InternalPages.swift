@@ -116,7 +116,17 @@ let breezeBridgeJS = """
     vaultDelete: function (id) { send('vaultDelete', { id: id }); },
     vaultImportCSV: function (csv) { send('vaultImportCSV', { csv: csv }); },
     onVault: function (cb) { window.__bzOnVault = cb; },
-    onVaultImported: function () {}
+    onVaultImported: function () {},
+    getCloudState: function () { return call('cloudState'); },
+    cloudSignUp: function (email, password) { return call('cloudSignUp', { email: email, password: password }); },
+    cloudSignIn: function (email, password) { return call('cloudSignIn', { email: email, password: password }); },
+    cloudGoogleSignIn: function () { return call('cloudGoogleSignIn'); },
+    cloudSetSyncPreference: function (collection, enabled) { return call('cloudSetSyncPreference', { collection: collection, enabled: enabled }); },
+    cloudSyncNow: function () { return call('cloudSyncNow'); },
+    cloudSignOut: function () { return call('cloudSignOut'); },
+    cloudDeleteAccount: function () { return call('cloudDeleteAccount'); },
+    cloudExport: function () { return call('cloudExport'); },
+    onCloudState: function (cb) { window.__bzOnCloudState = cb; }
   };
 })();
 """

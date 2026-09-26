@@ -2199,6 +2199,27 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return t
     }
 
+    /// Opens an AuthenticationServices login request as a first-class tab. The
+    /// registration closure runs before WebKit starts the request so its exact
+    /// callback can be intercepted without ever handing a sign-in code to a
+    /// normal external-scheme handler.
+    @discardableResult
+    func openWebAuthenticationTab(url: URL, isPrivate: Bool,
+                                  register: (Tab) -> Void) -> Tab {
+        let tab = Tab(isPrivate: isPrivate || isPrivateWindow)
+        tab.isNewTab = false
+        wire(tab)
+        tabs.append(tab)
+        active = tabs.count - 1
+        register(tab)
+        showActive()
+        refreshSidebar()
+        tab.webView.load(URLRequest(url: url))
+        enforceLiveTabBudget()
+        NotificationCenter.default.post(name: BrowserController.didUpdateState, object: nil)
+        return tab
+    }
+
     @discardableResult
     func openTab(url: URL, from source: Tab? = nil, autoGroupSameSite: Bool = false) -> Tab {
         let t = openTab(url: url.absoluteString, isPrivate: source?.isPrivate ?? false)
@@ -5772,6 +5793,22 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         alert.beginSheetModal(for: window, completionHandler: completion)
     }
 
+    /// JavaScript dialogs are not presented automatically by WKWebView. Handle
+    /// `window.confirm()` as a sheet so internal pages can get an explicit,
+    /// accessible confirmation instead of silently receiving `false`.
+    func webView(_ webView: WKWebView,
+                 runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "Continue")
+        alert.addButton(withTitle: "Cancel")
+        presentPermissionAlert(alert) { response in
+            completionHandler(response == .alertFirstButtonReturn)
+        }
+    }
+
     @available(macOS 27.0, *)
     func webView(_ webView: WKWebView,
                  requestGeolocationPermissionFor origin: WKSecurityOrigin,
@@ -6150,7 +6187,33 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
         let scheme = url.scheme?.lowercased() ?? ""
-        print("Breeze decidePolicyFor: \(url.absoluteString) (scheme: \(scheme))")
+        let authHandler = BreezeWebAuthenticationHandler.shared
+        if authHandler.isHandling(w) {
+            print("Breeze authentication navigation: \(url.host ?? "unknown")\(url.path)")
+            if authHandler.completeIfCallback(url, from: w) {
+                decisionHandler(.cancel)
+                return
+            }
+        } else {
+            // Do not print query strings or fragments: OAuth authorize URLs
+            // carry PKCE state, and callback URLs can carry one-time codes.
+            let safeLocation = "\(url.host ?? url.scheme ?? "unknown")\(url.path)"
+            print("Breeze decidePolicyFor: \(safeLocation) (scheme: \(scheme))")
+        }
+        if isBreezeAuthCallbackURL(url) {
+            decisionHandler(.cancel)
+            Task { @MainActor in
+                do { try await BreezeCloud.shared.finishAuthCallback(url) }
+                catch {
+                    let alert = NSAlert()
+                    alert.messageText = "Breeze Cloud sign-in didn’t finish"
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+            return
+        }
         // The insecure-site interstitial's "Load anyway" button. It is a private
         // scheme rather than a plain http link so the click cannot be confused
         // with an ordinary navigation: reaching here means the user explicitly
@@ -7059,6 +7122,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         for t in tabs where isInternal(t.webView) { t.webView.evaluateJavaScript(js) }
     }
 
+    func broadcastCloudState() {
+        let json = Store.json(BreezeCloud.shared.state())
+        let js = "if(window.__bzOnCloudState)window.__bzOnCloudState(\(json));"
+        for t in tabs where isInternal(t.webView) { t.webView.evaluateJavaScript(js) }
+    }
+
     // MARK: - Bridge message handler ---------------------------------------
 
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -7098,6 +7167,65 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
 
         switch method {
+        case "cloudState":
+            Task { @MainActor [weak wv] in
+                let state = await BreezeCloud.shared.refreshState()
+                guard let id, let wv else { return }
+                _ = try? await wv.evaluateJavaScript("window.__bzResolve(\(id), \(Store.json(state).debugDescription))")
+            }
+        case "cloudSignUp", "cloudSignIn", "cloudGoogleSignIn", "cloudSetSyncPreference",
+             "cloudSyncNow", "cloudSignOut", "cloudDeleteAccount", "cloudExport":
+            Task { @MainActor [weak self, weak wv] in
+                do {
+                    let account = BreezeCloud.shared
+                    var messageText = ""
+                    var export: [String: Any]?
+                    switch method {
+                    case "cloudSignUp":
+                        messageText = try await account.signUp(email: args["email"] as? String ?? "",
+                                                               password: args["password"] as? String ?? "")
+                    case "cloudSignIn":
+                        try await account.signIn(email: args["email"] as? String ?? "",
+                                                 password: args["password"] as? String ?? "")
+                        messageText = "Signed in. Only the categories you enable will sync."
+                    case "cloudGoogleSignIn":
+                        guard let browser = self else {
+                            throw NSError(domain: "BreezeCloud", code: 2,
+                                          userInfo: [NSLocalizedDescriptionKey: "The Breeze window closed before sign-in started."])
+                        }
+                        let completed = try await account.signInWithGoogle(in: browser)
+                        messageText = completed
+                            ? "Signed in with Google. Your selected sync categories are ready."
+                            : "Google sign-in opened in a Breeze tab. Finish there and Breeze will return to your account settings."
+                    case "cloudSetSyncPreference":
+                        try await account.setSyncPreference(args["collection"] as? String ?? "",
+                                                            enabled: args["enabled"] as? Bool ?? false)
+                        messageText = "Sync choice saved."
+                    case "cloudSyncNow":
+                        try await account.syncNow()
+                        messageText = "Sync complete."
+                    case "cloudSignOut":
+                        await account.signOut()
+                        messageText = "Signed out. This Mac’s copies of selected cloud categories were cleared."
+                    case "cloudDeleteAccount":
+                        try await account.deleteAccount()
+                        messageText = "Your Breeze account was deleted."
+                    case "cloudExport":
+                        export = try await account.exportCloudData()
+                    default: break
+                    }
+                    var result: [String: Any] = ["ok": true, "state": account.state()]
+                    if !messageText.isEmpty { result["message"] = messageText }
+                    if let export { result["data"] = export }
+                    if let wv { _ = try? await wv.evaluateJavaScript("window.__bzResolve(\(id ?? 0), \(Store.json(result).debugDescription))") }
+                    self?.broadcastCloudState()
+                } catch {
+                    let result: [String: Any] = ["ok": false, "error": error.localizedDescription,
+                                                 "state": BreezeCloud.shared.state()]
+                    if let wv { _ = try? await wv.evaluateJavaScript("window.__bzResolve(\(id ?? 0), \(Store.json(result).debugDescription))") }
+                    self?.broadcastCloudState()
+                }
+            }
         case "setSetting":
             if let key = args["key"] as? String {
                 if key == "accent" {
@@ -7942,4 +8070,3 @@ extension BrowserController: AddressSuggestionsDelegate {
         submitQuery(text, isCmdEnter: isCmd)
     }
 }
-

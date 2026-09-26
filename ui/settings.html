@@ -335,6 +335,24 @@
     .dz-btn.danger { background: #e5484d; color: #fff; }
     .dz-btn.danger:hover { background: #c93b40; }
     .dz-done { font-size: 12.5px; color: #30a46c; font-weight: 600; }
+    .cloud-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; width: 100%; }
+    .cloud-field {
+      width: 100%; min-width: 0; border: 1px solid var(--border); background: var(--surface-active);
+      color: var(--text); padding: 10px 13px; font: inherit; font-size: 13px; outline: none;
+    }
+    .cloud-field:focus { border-color: var(--accent); }
+    .cloud-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+    .cloud-actions .dz-btn { border-radius: 999px; }
+    .cloud-actions .primary { background: var(--accent); color: #fff; }
+    .cloud-status { min-height: 18px; font-size: 12px; color: var(--text-soft); }
+    .cloud-status.error { color: #e5484d; }
+    .cloud-legal-line { color: var(--text-soft); font-size: 11.5px; line-height: 1.5; }
+    .cloud-legal { padding: 0 18px 15px; }
+    .cloud-legal details { padding: 11px 0; border-top: 1px solid var(--border); }
+    .cloud-legal summary { cursor: pointer; color: var(--text); font-size: 12.5px; font-weight: 600; }
+    .cloud-legal p { margin-top: 8px; color: var(--text-soft); font-size: 12px; line-height: 1.55; }
+    .cloud-category .row-hint { max-width: 460px; }
+    .cloud-actions button:disabled { opacity: .5; cursor: default; }
     /* Live resource readout. Static numbers only — no meters, bars, or
        transitions: a perpetually animating gauge is exactly the idle GPU drain
        this card exists to help you avoid. */
@@ -360,6 +378,7 @@
       <button data-jump="search">Search</button>
       <button data-jump="tabs">Tabs</button>
       <button data-jump="nav">Nav</button>
+      <button data-jump="cloud">Breeze Cloud</button>
       <button data-jump="privacy">Privacy</button>
       <button data-jump="sounds">Sounds</button>
       <button data-jump="help">Help</button>
@@ -699,6 +718,83 @@
         </div>
       </div>
     </section>
+    <div class="sec-eyebrow">Breeze Cloud</div>
+    <section data-sec="cloud" id="cloud-account-section">
+      <h2>Account &amp; Sync</h2>
+      <p class="section-intro">Your account is optional. Signing in alone does not upload browser data; each sync category starts off and only syncs after you turn it on.</p>
+      <div class="card" id="cloud-signed-out">
+        <div class="row" style="display:block">
+          <div class="row-label">Sign in or create your Breeze account</div>
+          <div class="row-hint" style="margin-bottom:12px">Use email and password, or continue with Google.</div>
+          <div class="cloud-fields">
+            <input class="cloud-field" id="cloud-email" type="email" autocomplete="email" placeholder="Email address" />
+            <input class="cloud-field" id="cloud-password" type="password" autocomplete="current-password" placeholder="Password · 8+ characters" />
+          </div>
+        </div>
+        <div class="row" style="display:block">
+          <div class="cloud-actions">
+            <button class="dz-btn primary" id="cloud-sign-in">Sign in</button>
+            <button class="dz-btn" id="cloud-sign-up">Create account</button>
+            <button class="dz-btn" id="cloud-google">Continue with Google</button>
+          </div>
+          <div class="cloud-status" id="cloud-auth-status" aria-live="polite" style="margin-top:10px"></div>
+          <div class="cloud-legal-line">By submitting the email form or continuing with Google, you agree to Breeze’s Terms of Service and Privacy Policy below.</div>
+        </div>
+      </div>
+      <div class="card" id="cloud-signed-in" hidden>
+        <div class="row">
+          <div>
+            <div class="row-label" id="cloud-account-email">Signed in</div>
+            <div class="row-hint" id="cloud-account-status">Ready</div>
+          </div>
+          <button class="dz-btn" id="cloud-sync-now">Sync now</button>
+        </div>
+        <div class="row cloud-category">
+          <div><div class="row-label">Bookmarks</div><div class="row-hint">Saved site addresses and titles</div></div>
+          <label class="toggle"><input type="checkbox" data-cloud-category="bookmarks" /><span class="knob"></span></label>
+        </div>
+        <div class="row cloud-category">
+          <div><div class="row-label">Open tabs</div><div class="row-hint">Page URLs and titles, including your restored tab list</div></div>
+          <label class="toggle"><input type="checkbox" data-cloud-category="tabs" /><span class="knob"></span></label>
+        </div>
+        <div class="row cloud-category">
+          <div><div class="row-label">History</div><div class="row-hint">Visited page URLs, titles, and visit times</div></div>
+          <label class="toggle"><input type="checkbox" data-cloud-category="history" /><span class="knob"></span></label>
+        </div>
+        <div class="row cloud-category">
+          <div><div class="row-label">Nav chats</div><div class="row-hint">Conversation text, titles, and source links</div></div>
+          <label class="toggle"><input type="checkbox" data-cloud-category="chats" /><span class="knob"></span></label>
+        </div>
+        <div class="row cloud-category">
+          <div><div class="row-label">Reminders</div><div class="row-hint">Reminder text, time, and repeat setting</div></div>
+          <label class="toggle"><input type="checkbox" data-cloud-category="reminders" /><span class="knob"></span></label>
+        </div>
+        <div class="row" style="display:block">
+          <div class="row-hint" style="line-height:1.55">Passwords, private tabs, cookies, and website storage stay on this Mac. Sync is protected in transit, but cloud copies are not end-to-end encrypted. Turning a category off pauses syncing; its cloud copy remains until you delete the account. Signing out clears selected synced copies from this Mac only.</div>
+          <div class="cloud-actions" style="margin-top:12px">
+            <button class="dz-btn" id="cloud-export">Export cloud data</button>
+            <button class="dz-btn" id="cloud-sign-out">Sign out</button>
+            <button class="dz-btn danger" id="cloud-delete">Delete account</button>
+          </div>
+          <div class="cloud-status" id="cloud-action-status" aria-live="polite" style="margin-top:9px"></div>
+        </div>
+      </div>
+      <div class="card cloud-legal">
+        <details>
+          <summary>Privacy Policy</summary>
+          <p><b>Account.</b> Supabase processes your email or Google account identity to sign you in. Breeze does not receive your Google password.</p>
+          <p><b>Optional sync.</b> Bookmarks, open tab URLs and titles, browsing history, Nav conversation text and source links, and reminders sync only when you enable each category. Sync starts off. The password vault, private tabs, cookies, and website storage are never synced. Turning a category off stops future syncing but keeps its existing cloud copy. Signing out clears selected synced copies from this Mac; deleting the account removes cloud data.</p>
+          <p><b>Nav.</b> When you send a Nav request, its prompt and relevant chat or page context are sent through Breeze Cloud on Cloudflare and may be processed by OpenAI to produce a response. Breeze does not sell personal data or use it for advertising. Websites you visit receive normal connection data directly from your browser.</p>
+          <p><b>Control.</b> You can leave sync off, export cloud data, sign out, or delete your account in Settings. Contact <a class="key-link" href="mailto:jake@winthenight.info">jake@winthenight.info</a> for privacy requests.</p>
+        </details>
+        <details>
+          <summary>Terms of Service</summary>
+          <p>Breeze Cloud accounts are optional. You are responsible for securing your account and device. Enable only the data categories you want stored with your account. You can export or delete account data in Settings; turning off sync does not remove an existing cloud copy.</p>
+          <p>Nav uses AI services and can return incomplete or inaccurate information. Verify important claims yourself. Breeze and connected services may change or be unavailable. Do not rely on Nav or reminders for emergencies or safety-critical needs.</p>
+          <p>Effective September 25, 2026. Questions: <a class="key-link" href="mailto:jake@winthenight.info">jake@winthenight.info</a>.</p>
+        </details>
+      </div>
+    </section>
     <div class="sec-eyebrow">Privacy &amp; Security</div>
     <section data-sec="privacy">
       <h2>Privacy</h2>
@@ -981,7 +1077,7 @@
     // anything meant remembering which tab it lived in. Everything is on one page
     // now: the rail jumps, the rail follows your scroll, and the search box
     // filters every row at once.
-    const SEC_ORDER = ['general', 'search', 'tabs', 'nav', 'privacy', 'sounds', 'help', 'danger'];
+    const SEC_ORDER = ['general', 'search', 'tabs', 'nav', 'cloud', 'privacy', 'sounds', 'help', 'danger'];
 
     function sectionsFor(name) {
       return Array.from(document.querySelectorAll('[data-sec="' + name + '"]'));
@@ -1233,6 +1329,117 @@
       breezeInternal.setSetting(key, value);
       render();
     }
+
+    // Reset any WebKit-restored text from an old OAuth attempt. The native
+    // cloud state immediately below supplies the current account/status.
+    const initialCloudAuthStatus = document.getElementById('cloud-auth-status');
+    if (initialCloudAuthStatus) {
+      initialCloudAuthStatus.textContent = '';
+      initialCloudAuthStatus.classList.remove('error');
+    }
+    let cloudState = { configured: false, signedIn: false, email: '', status: '', preferences: {} };
+    function renderCloudState(next) {
+      if (!next) return;
+      cloudState = next;
+      const signedIn = !!next.signedIn;
+      document.getElementById('cloud-signed-out').hidden = signedIn;
+      document.getElementById('cloud-signed-in').hidden = !signedIn;
+      const authStatus = document.getElementById('cloud-auth-status');
+      const statusText = next.status || (next.configured ? 'Not signed in' : 'Breeze Cloud is not configured in this build.');
+      if (authStatus && !authStatus.textContent) authStatus.textContent = statusText;
+      document.getElementById('cloud-account-email').textContent = next.email || 'Signed in';
+      document.getElementById('cloud-account-status').textContent = statusText;
+      document.querySelectorAll('[data-cloud-category]').forEach((input) => {
+        const name = input.dataset.cloudCategory;
+        input.checked = !!(next.preferences && next.preferences[name]);
+        input.disabled = !signedIn;
+      });
+      ['cloud-sign-in', 'cloud-sign-up', 'cloud-google'].forEach((id) => {
+        document.getElementById(id).disabled = !next.configured;
+      });
+      document.getElementById('cloud-sync-now').disabled = !signedIn;
+      ['cloud-export', 'cloud-sign-out', 'cloud-delete'].forEach((id) => {
+        document.getElementById(id).disabled = !signedIn;
+      });
+    }
+    function showCloudMessage(targetID, message, error) {
+      const el = document.getElementById(targetID);
+      if (!el) return;
+      el.textContent = message || '';
+      el.classList.toggle('error', !!error);
+    }
+    async function finishCloudCall(targetID, promise) {
+      try {
+        const result = await promise;
+        if (result && result.state) renderCloudState(result.state);
+        if (!result || !result.ok) throw new Error((result && result.error) || 'Breeze Cloud could not complete that request.');
+        // The signed-in card is hidden as soon as sign-out succeeds, so show
+        // its result in the now-visible signed-out card instead of hiding it.
+        const visibleTargetID = targetID === 'cloud-action-status' && result.state && !result.state.signedIn
+          ? 'cloud-auth-status'
+          : targetID;
+        showCloudMessage(visibleTargetID, result.message || (result.state && result.state.status) || 'Done.');
+        return result;
+      } catch (error) {
+        showCloudMessage(targetID, error.message || 'Breeze Cloud could not complete that request.', true);
+        return null;
+      }
+    }
+    document.getElementById('cloud-sign-in').addEventListener('click', async () => {
+      const email = document.getElementById('cloud-email').value.trim();
+      const password = document.getElementById('cloud-password').value;
+      showCloudMessage('cloud-auth-status', 'Signing in…');
+      await finishCloudCall('cloud-auth-status', breezeInternal.cloudSignIn(email, password));
+    });
+    document.getElementById('cloud-sign-up').addEventListener('click', async () => {
+      const email = document.getElementById('cloud-email').value.trim();
+      const password = document.getElementById('cloud-password').value;
+      showCloudMessage('cloud-auth-status', 'Creating account…');
+      await finishCloudCall('cloud-auth-status', breezeInternal.cloudSignUp(email, password));
+    });
+    document.getElementById('cloud-google').addEventListener('click', async () => {
+      showCloudMessage('cloud-auth-status', 'Opening Google sign-in…');
+      await finishCloudCall('cloud-auth-status', breezeInternal.cloudGoogleSignIn());
+    });
+    document.querySelectorAll('[data-cloud-category]').forEach((input) => {
+      input.addEventListener('change', async () => {
+        const name = input.dataset.cloudCategory;
+        input.disabled = true;
+        showCloudMessage('cloud-action-status', 'Saving sync choice…');
+        const result = await finishCloudCall('cloud-action-status', breezeInternal.cloudSetSyncPreference(name, input.checked));
+        if (!result) input.checked = !!(cloudState.preferences && cloudState.preferences[name]);
+        input.disabled = !cloudState.signedIn;
+      });
+    });
+    document.getElementById('cloud-sync-now').addEventListener('click', async () => {
+      const button = document.getElementById('cloud-sync-now');
+      button.disabled = true;
+      showCloudMessage('cloud-action-status', 'Syncing selected categories…');
+      await finishCloudCall('cloud-action-status', breezeInternal.cloudSyncNow());
+      button.disabled = !cloudState.signedIn;
+    });
+    document.getElementById('cloud-export').addEventListener('click', async () => {
+      showCloudMessage('cloud-action-status', 'Preparing your export…');
+      const result = await finishCloudCall('cloud-action-status', breezeInternal.cloudExport());
+      if (!result || !result.data) return;
+      const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = 'breeze-cloud-export.json';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showCloudMessage('cloud-action-status', 'Export downloaded. Passwords and private browsing data are not included.');
+    });
+    document.getElementById('cloud-sign-out').addEventListener('click', async () => {
+      if (!window.confirm('Sign out? Breeze will clear the selected synced copies from this Mac. Your cloud data will remain in your account.')) return;
+      await finishCloudCall('cloud-action-status', breezeInternal.cloudSignOut());
+    });
+    document.getElementById('cloud-delete').addEventListener('click', async () => {
+      if (!window.confirm('Permanently delete your Breeze account and its cloud data? This cannot be undone.')) return;
+      await finishCloudCall('cloud-action-status', breezeInternal.cloudDeleteAccount());
+    });
+    breezeInternal.onCloudState(renderCloudState);
+    breezeInternal.getCloudState().then((result) => renderCloudState(result && result.state ? result.state : result));
 
     breezeInternal.getSettings().then((s) => { settings = s; effective = s.theme === 'dark' ? 'dark' : (s.theme === 'system' ? effective : 'light'); render(); });
     breezeInternal.onSettings((s) => { settings = s; render(); });

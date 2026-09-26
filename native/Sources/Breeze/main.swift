@@ -1,6 +1,7 @@
 // Breeze Native — app entry, menus, lifecycle.
 
 import Cocoa
+import AuthenticationServices
 import Carbon
 import CoreServices
 
@@ -29,8 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+        ASWebAuthenticationSessionWebBrowserSessionManager.shared.sessionHandler = BreezeWebAuthenticationHandler.shared
+        NSLog("BreezeAuth: registered browser session handler")
         NSApp.setActivationPolicy(.regular)
         AdBlocker.shared.compileIfNeeded {}
+        Task { @MainActor in await BreezeCloud.shared.resumeAndSync() }
         let b = BrowserController()
         browsers.append(b)
         NSApp.activate(ignoringOtherApps: true)
@@ -100,12 +104,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             browsers.append(fresh)
             return fresh
         }()
-        for url in urls where !openBreezeURL(url, in: b) {
-            b.openTab(url: url.absoluteString)
+        for url in urls {
+            // Route every URL using Breeze's reserved auth scheme through the
+            // callback validator. Some macOS auth callbacks arrive as
+            // `scheme:/auth-callback`, which has no URL host.
+            if url.scheme?.lowercased() == breezeCloudRedirectScheme {
+                Task { @MainActor in
+                    do { try await BreezeCloud.shared.finishAuthCallback(url) }
+                    catch {
+                        let alert = NSAlert()
+                        alert.messageText = "Breeze Cloud sign-in didn’t finish"
+                        alert.informativeText = error.localizedDescription
+                        alert.alertStyle = .warning
+                        alert.runModal()
+                    }
+                }
+                continue
+            }
+            if !openBreezeURL(url, in: b) { b.openTab(url: url.absoluteString) }
         }
         if b.window.isMiniaturized { b.window.deminiaturize(nil) }
         b.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func broadcastCloudState() {
+        for browser in browsers { browser.broadcastCloudState() }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task { @MainActor in await BreezeCloud.shared.resumeAndSync() }
     }
 
     private func linkTargetBrowser() -> BrowserController? {
@@ -114,6 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return onScreen.first { $0.window.isOnActiveSpace }
             ?? onScreen.first
             ?? open.first { $0.window.isMiniaturized }
+    }
+
+    func authenticationTargetBrowser() -> BrowserController? {
+        linkTargetBrowser()
     }
     @objc func windowClosed(_ notification: Notification) {
         guard let win = notification.object as? NSWindow else { return }
