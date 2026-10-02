@@ -58,6 +58,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Session restore runs once per launch. A later window (a link arriving
     /// while every window is minimised or closed) must not restore it again.
     static var didRestoreSession = false
+    private var restoringSession = false
     private var windowTabs: [Tab] = []
     private var privatePins: [Pin] = []
     private lazy var locationManager: CLLocationManager = {
@@ -494,18 +495,21 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             openNewTab(playSound: false)
         } else if !BrowserController.didRestoreSession {
             BrowserController.didRestoreSession = true
-            let restoreMode = Store.shared.settings["restoreTabs"] as? String ?? "ask"
-            if restoreMode == "always" && !Store.shared.openTabs.isEmpty {
-                for url in Store.shared.openTabs { openTab(url: url, playSound: false) }
-            } else if restoreMode == "ask" && !Store.shared.openTabs.isEmpty {
+            let savedSession = Store.shared.openTabs
+            restoringSession = true
+            defer { restoringSession = false; persistOpenTabsSnapshot() }
+            let restoreMode = "ask"
+            if restoreMode == "always" && !savedSession.isEmpty {
+                for url in savedSession { openTab(url: url, playSound: false) }
+            } else if restoreMode == "ask" && !savedSession.isEmpty {
                 openNewTab(playSound: false)
                 let alert = NSAlert()
                 alert.messageText = "Restore Previous Session?"
-                alert.informativeText = "You had \(Store.shared.openTabs.count) tabs open. Would you like to restore them?"
+                alert.informativeText = "You had \(savedSession.count) tabs open. Would you like to restore them?"
                 alert.addButton(withTitle: "Restore")
                 alert.addButton(withTitle: "Start Fresh")
                 if alert.runModal() == .alertFirstButtonReturn {
-                    for url in Store.shared.openTabs { openTab(url: url, playSound: false) }
+                    for url in savedSession { openTab(url: url, playSound: false) }
                     closeTab(tabs[0]) // close the initial new tab
                 } else {
                     Store.shared.openTabs = []; Store.shared.saveOpenTabs()
@@ -1731,6 +1735,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === window else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Close This Window?"
+        alert.informativeText = "This will close its tabs. The last normal window’s tabs will be saved for reopening."
+        alert.addButton(withTitle: "Close Window")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     func windowWillClose(_ notification: Notification) {
         if let win = notification.object as? NSWindow {
             if win === window {
@@ -2509,10 +2523,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// The session covers every open normal window, not just this one. Private
     /// windows never write it: their tabs must not survive a relaunch.
     private func persistOpenTabsSnapshot() {
-        guard !isPrivateWindow else { return }
+        guard !isPrivateWindow, !restoringSession else { return }
         var windows = (NSApp.delegate as? AppDelegate)?.restorableBrowsers() ?? []
         // Still inside init (session restore) this window isn't registered yet.
         if !isClosing && !windows.contains(where: { $0 === self }) { windows.append(self) }
+        guard !windows.isEmpty else { return }
         Store.shared.openTabs = windows.flatMap { $0.restorableTabURLs() }
         Store.shared.saveOpenTabs()
     }
@@ -2520,7 +2535,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func restorableTabURLs() -> [String] {
         tabs.compactMap { tab in
             guard !tab.isNewTab, !tab.isChatTab, !tab.isPrivate else { return nil }
-            return tab.webView.url?.absoluteString
+            return tab.sleeping ? tab.sleptURL : tab.webView.url?.absoluteString
         }
     }
 

@@ -559,12 +559,10 @@
         <div class="row">
           <div>
             <div class="row-label">Reopen tabs on launch</div>
-            <div class="row-hint">Restore the pages you had open when you quit</div>
+            <div class="row-hint">Ask before restoring saved tabs, including after updates</div>
           </div>
-          <select id="restoreTabs">
+          <select id="restoreTabs" disabled>
             <option value="ask">Ask each time</option>
-            <option value="always">Always</option>
-            <option value="never">Never</option>
           </select>
         </div>
       </div>
@@ -1240,7 +1238,7 @@
       renderAdblockExceptions();
       document.getElementById('autoPip').checked = settings.autoPip !== false;
       document.getElementById('keepPinnedAppsAwake').checked = settings.keepPinnedAppsAwake !== false;
-      document.getElementById('restoreTabs').value = settings.restoreTabs || 'ask';
+      document.getElementById('restoreTabs').value = 'ask';
       // AI fields: don't clobber while the user is actively typing in them
       const ae = document.activeElement;
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };

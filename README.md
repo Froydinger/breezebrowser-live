@@ -1,7 +1,7 @@
 # Breeze Browser
 
 Breeze is a native macOS browser built with Swift, AppKit, and WKWebView. The
-current source version is **6.3.2** for Apple Silicon Macs.
+current source version is **6.3.3** for Apple Silicon Macs.
 
 ## Aero
 

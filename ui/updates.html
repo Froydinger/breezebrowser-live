@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.3', icon: 'history', title: 'Keep Your Session', hotfix: true, major: false, items: [
+        '<b>Restore asks every time</b> — Reopening Breeze, including after an update, asks whether to restore saved tabs. The restore prompt no longer overwrites its saved list with a blank tab.',
+        '<b>Close windows deliberately</b> — Closing a browser window asks first. The last normal window’s tabs stay saved for reopening, including sleeping tabs.' ] },
       { v: '6.3.2', icon: 'pin', title: 'Replace Pins, Meet Aero', hotfix: true, major: false, items: [
         '<b>Replace Pin</b> — Right-click a pinned app and choose Replace Pin to save the current page as its new destination, keeping its place in the sidebar.',
         '<b>Nav is now Aero</b> — The assistant has its new name throughout the browser, settings, onboarding, and documentation.' ] },

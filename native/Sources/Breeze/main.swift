@@ -149,10 +149,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func windowClosed(_ notification: Notification) {
         guard let win = notification.object as? NSWindow else { return }
+        saveRestorableOpenTabs()
         closedWindowIds.insert(ObjectIdentifier(win))
         guard let index = browsers.firstIndex(where: { $0.window === win }) else { return }
 
         browsers.remove(at: index).finalizeWindowClosure()
+        if restorableBrowsers().isEmpty { BrowserController.didRestoreSession = false }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ s: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -171,7 +173,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveRestorableOpenTabs() {
-        Store.shared.openTabs = restorableBrowsers().flatMap { $0.restorableTabURLs() }
+        let windows = restorableBrowsers()
+        guard !windows.isEmpty else { return }
+        Store.shared.openTabs = windows.flatMap { $0.restorableTabURLs() }
         Store.shared.saveOpenTabs()
     }
 
@@ -188,8 +192,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func isUsable(_ browser: BrowserController) -> Bool {
         !closedWindowIds.contains(ObjectIdentifier(browser.window)) && browser.window.isVisible
     }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows {
+            if let existing = browsers.first(where: isOpen) { existing.window.makeKeyAndOrderFront(nil) }
+            else { _ = makeBrowser() }
+        }
+        return true
+    }
+
     @objc func newWindow() {
-        let b = BrowserController(initialContent: .newTab)
+        let b = BrowserController(initialContent: restorableBrowsers().isEmpty ? .restoredSession : .newTab)
         browsers.append(b)
     }
     @objc func newPrivateWindow() {
@@ -226,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openUpdates() { activeBrowser?.openInternal(.updates) }
     @objc func checkForUpdates() { Updater.shared.check(manual: true) }
     private func makeBrowser() -> BrowserController {
-        let b = BrowserController(initialContent: .newTab)
+        let b = BrowserController(initialContent: restorableBrowsers().isEmpty ? .restoredSession : .newTab)
         browsers.append(b)
         return b
     }
