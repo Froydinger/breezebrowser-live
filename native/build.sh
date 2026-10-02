@@ -2,7 +2,7 @@
 # Build Breeze Native into a runnable .app. Uses swiftc directly (the SwiftPM
 # `swift build` binary is broken in the standalone Command Line Tools — dyld
 # can't load BuildServerProtocol.framework). Compiles every file in
-# Sources/Breeze. Nav talks to the Breeze Cloud Worker; there is no bundled
+# Sources/Breeze. Aero talks to the Breeze Cloud Worker; there is no bundled
 # AI runtime and no OpenAI key in the app.
 set -e
 cd "$(dirname "$0")"
@@ -90,8 +90,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>6.3.1</string>
-  <key>CFBundleShortVersionString</key><string>6.3.1</string>
+  <key>CFBundleVersion</key><string>6.3.2</string>
+  <key>CFBundleShortVersionString</key><string>6.3.2</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>

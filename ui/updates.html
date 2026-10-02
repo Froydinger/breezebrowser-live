@@ -226,31 +226,34 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.2', icon: 'pin', title: 'Replace Pins, Meet Aero', hotfix: true, major: false, items: [
+        '<b>Replace Pin</b> — Right-click a pinned app and choose Replace Pin to save the current page as its new destination, keeping its place in the sidebar.',
+        '<b>Nav is now Aero</b> — The assistant has its new name throughout the browser, settings, onboarding, and documentation.' ] },
       { v: '6.3.1', icon: 'key-round', title: 'Breeze Cloud, Right in Breeze', hotfix: false, major: false, items: [
         '<b>Google sign-in stays in Breeze</b> — When macOS hands the authorize page back as if it were the final callback, Breeze now continues the request in a normal browser tab and completes sign-in there.',
-        '<b>Choose what syncs</b> — Sign in with Google or email, then opt in separately to sync bookmarks, open tabs, history, Nav chats, and reminders. Sync stays off until you enable a category.',
+        '<b>Choose what syncs</b> — Sign in with Google or email, then opt in separately to sync bookmarks, open tabs, history, Aero chats, and reminders. Sync stays off until you enable a category.',
         '<b>Clear account controls</b> — Export or delete your account from Settings. Signing out asks first, clears the selected synced copies from this Mac, and leaves your cloud account data in place.' ] },
-      { v: '6.3.0', icon: 'search-check', title: 'Nav Actually Does the Work', hotfix: false, major: true, items: [
+      { v: '6.3.0', icon: 'search-check', title: 'Aero Actually Does the Work', hotfix: false, major: true, items: [
         '<b>Research really reads now</b> — /research used to glance at one page and give up. It now runs real searches, opens and reads several of the best results in its own tab (you can watch), follows a link deeper when a page points somewhere better, and writes up a sourced answer. It reads the article itself, not the site’s menus, so long lists and tables come through complete.',
-        '<b>Nav can see the page</b> — Ask about a comic, a chart, an image or “what’s on my screen” and Nav takes a look. It reads the screen on your Mac and only sends the text, so it costs no more than reading a page.',
+        '<b>Aero can see the page</b> — Ask about a comic, a chart, an image or “what’s on my screen” and Aero takes a look. It reads the screen on your Mac and only sends the text, so it costs no more than reading a page.',
         '<b>/factcheck checks for real</b> — It searches, reads several sources, and gives a clear verdict (true, false, mixed or unverified) with the evidence linked.',
         '<b>/summarize covers the whole page</b> — It summarizes the full article instead of the first screen of menus, and reads image-heavy pages off the screen.',
         '<b>Creator Tools sees your thumbnail</b> — The YouTube breakdown now reads the video page, so its notes on title, thumbnail and views reflect what’s actually there.',
-        '<b>Nav follows through</b> — No more “let me check that” and then nothing. Nav now does the step it says it will, and lines in its answers like “Click Settings” are never mistaken for commands on your page.' ] },
+        '<b>Aero follows through</b> — No more “let me check that” and then nothing. Aero now does the step it says it will, and lines in its answers like “Click Settings” are never mistaken for commands on your page.' ] },
       { v: '6.2.7', icon: 'columns', title: 'Split Resizing, Actually Fixed', hotfix: true, major: false, items: [
         '<b>Panes stay put when you resize</b> \u2014 The page buttons added to each split pane in 6.2.3 made the toolbar wider than a narrow pane, and the layout gave way by shoving the panes around. A narrow pane\u2019s toolbar now drops those buttons until there\u2019s room again, so resizing is smooth at any width.' ] },
       { v: '6.2.6', icon: 'columns', title: 'Split Resizing, Restored', hotfix: true, major: false, items: [
         '<b>Resizing split view behaves again</b> \u2014 6.2.5 changed how the two panes share space, and resizing started pushing one pane around the other. That sizing is back to exactly how it worked before.' ] },
       { v: '6.2.5', icon: 'columns', title: 'Split View, Squared Away', hotfix: true, major: false, items: [
         '<b>Cleaner corners</b> \u2014 Split panes now sit with an even margin inside the window, so their rounded corners no longer run into the window\u2019s own and leave an odd double edge.',
-        '<b>Nav button lines up</b> \u2014 In split view the Nav button now sits level with the pane address bars instead of riding a little high.' ] },
+        '<b>Aero button lines up</b> \u2014 In split view the Aero button now sits level with the pane address bars instead of riding a little high.' ] },
       { v: '6.2.4', icon: 'check-check', title: 'Copy Button, Out of the Way', hotfix: true, major: false, items: [
-        '<b>Nav\u2019s copy button no longer covers the reply</b> \u2014 It sat on top of the first line of every answer. It now has its own spot beside the text, so nothing is hidden when you hover.' ] },
+        '<b>Aero\u2019s copy button no longer covers the reply</b> \u2014 It sat on top of the first line of every answer. It now has its own spot beside the text, so nothing is hidden when you hover.' ] },
       { v: '6.2.3', icon: 'columns', title: 'Every Window Is Its Own', hotfix: true, major: false, items: [
         '<b>Links from other apps open where you can see them</b> \u2014 Clicking a link in another app could send it to a Breeze window buried in the background or on another Space. The tab row showed up in your sidebar, but the page sat on a new-tab screen that never finished loading. Links now go to your frontmost window, which comes forward to show them.',
         '<b>Separate windows, separate tabs</b> \u2014 A new window now starts clean instead of mirroring every tab from your other windows, just like Safari. Pinned tabs still show up in every window. Closing a window closes its tabs.',
-        '<b>Split view, tidied</b> \u2014 Each pane\u2019s toolbar now makes room for the window buttons and the Nav button instead of crowding under them, the divider is half as thick, and every pane has its own copy link, clear cache, bookmark, and share buttons.',
-        '<b>Nav talks like a person, and finishes its thoughts</b> \u2014 Nav\u2019s replies were capped at a length that cut off long answers and research mid-sentence. The cap is gone. Nav now keeps everyday replies short and conversational, and takes the room it needs when a question really calls for it.' ] },
+        '<b>Split view, tidied</b> \u2014 Each pane\u2019s toolbar now makes room for the window buttons and the Aero button instead of crowding under them, the divider is half as thick, and every pane has its own copy link, clear cache, bookmark, and share buttons.',
+        '<b>Aero talks like a person, and finishes its thoughts</b> \u2014 Aero\u2019s replies were capped at a length that cut off long answers and research mid-sentence. The cap is gone. Aero now keeps everyday replies short and conversational, and takes the room it needs when a question really calls for it.' ] },
       { v: '6.2.2', icon: 'circle-check', title: 'Minimising Breeze No Longer Clears Your Tabs', hotfix: true, major: false, items: [
         '<b>Backgrounding Breeze is safe again</b> \u2014 macOS sends memory warnings freely to apps sitting in the background, and Breeze was answering the strongest of them by sleeping every tab but the one in front, with no grace period. Minimising the window could shed a whole session. Tabs you have touched recently are now left alone.',
         '<b>Tabs killed by macOS come back properly</b> \u2014 When the system reclaims a tab\u2019s memory itself, that tab used to come back blank and stay blank until you reopened the window \u2014 including the tab you were on. It now reloads immediately if it\u2019s on screen, and otherwise shows as sleeping and restores when you click it.' ] },
@@ -274,13 +277,13 @@
         '<b>Why It Needed Doing Specially</b> — YouTube does not serve a video as a file. It serves a manifest and hundreds of small pieces, so “Download Video” on the player had nothing to point at. Breeze now hands the page to <code>yt-dlp</code>, which puts the pieces back together.',
         '<b>It Uses Your Copy Of yt-dlp</b> — Breeze does not ship its own. YouTube changes how it serves video constantly and yt-dlp ships fixes within days; a copy frozen inside Breeze would quietly stop working within weeks. If you do not have it, Breeze tells you the one Homebrew command that installs it.',
         '<b>Video Or Just Audio</b> — Video comes down as an MP4 up to 1080p with the audio merged in. Audio only comes down as an M4A. Either can be cancelled from the downloads list while it runs.' ] },
-      { v: '6.0.2', icon: 'circle-stop', title: 'You Can Stop Nav', hotfix: true, major: false, items: [
-        '<b>A Stop Button</b> — While Nav is working, the send button becomes a stop button. Press it and the whole thing stops where it is — no finishing the step it was on, no trying to summarise what it had.',
-        '<b>It Keeps What It Did</b> — A stopped run does not vanish. Nav says it was stopped, and the chips stay so you can see which pages it had already opened and read. A stopped research run says “Research interrupted.”',
+      { v: '6.0.2', icon: 'circle-stop', title: 'You Can Stop Aero', hotfix: true, major: false, items: [
+        '<b>A Stop Button</b> — While Aero is working, the send button becomes a stop button. Press it and the whole thing stops where it is — no finishing the step it was on, no trying to summarise what it had.',
+        '<b>It Keeps What It Did</b> — A stopped run does not vanish. Aero says it was stopped, and the chips stay so you can see which pages it had already opened and read. A stopped research run says “Research interrupted.”',
         '<b>Only That Request</b> — Stopping cancels the one reply in flight and nothing else. The chat stays, your history stays, and the next thing you send works normally. A reply that arrives after you stop is discarded rather than appearing late.' ] },
-      { v: '6.0.1', icon: 'copy', title: 'Copy What Nav Says, And Sites Behave Again', hotfix: true, major: false, items: [
-        '<b>Nav Replies Are Text Again</b> — You can select them, right-click them, and copy them. A Copy button appears on a reply when you hover it. Nav’s answers were being drawn as pictures of text, which is why none of that worked.',
-        '<b>Replies Float, You Get The Pill</b> — Nav’s answers are plain text on the panel and your own messages are a translucent accent pill outlined in full-strength teal, so it is still obvious who said what without boxing long answers in.',
+      { v: '6.0.1', icon: 'copy', title: 'Copy What Aero Says, And Sites Behave Again', hotfix: true, major: false, items: [
+        '<b>Aero Replies Are Text Again</b> — You can select them, right-click them, and copy them. A Copy button appears on a reply when you hover it. Aero’s answers were being drawn as pictures of text, which is why none of that worked.',
+        '<b>Replies Float, You Get The Pill</b> — Aero’s answers are plain text on the panel and your own messages are a translucent accent pill outlined in full-strength teal, so it is still obvious who said what without boxing long answers in.',
         '<b>Readable In Light Mode</b> — Message colours were baked in when a reply was drawn and never updated, so a chat written in dark mode turned near-invisible after switching to light. Messages re-colour with the theme now, and the context chips above the box have contrast in both.',
         '<b>Right-Click Works On Sites That Have Their Own</b> — Sites with a custom right-click menu, like Suno, showed Breeze’s menu instead of theirs — Breeze grabbed the event before the page could. The page goes first now.',
         '<b>Delete Deletes</b> — Pressing Delete to remove a selected item did nothing on some sites, because Breeze marked the key as handled before the page saw it. The page gets it first; Breeze only steps in to stop the old Backspace-goes-back behaviour when nothing else wanted the key.',
@@ -291,7 +294,7 @@
         '<b>A Command Tile In The Sidebar</b> — The loose row of icons at the bottom of the sidebar is now a single grouped tile holding the time, the date and the browser controls. Narrow the sidebar and the icons scale down instead of squashing together. Click the time for reminders, the date for today’s news.',
         '<b>Settings Is One Page</b> — Eleven tabs, some holding a single button, became one scrolling page with a search box at the top: type “sleep” or “sounds” and only those settings remain. The rail jumps you around and follows as you scroll, and the Danger Zone is back as its own clearly-marked section.',
         '<b>Dark Mode Is Actually Dark</b> — Every surface carried a teal wash, so “dark” read as dark teal rather than black. It is a flat neutral #191919 now — chrome, sidebar and new tab the same colour, no seam where they meet. Coloured accents stay.',
-        '<b>Nav Looks The Part</b> — The composer is a floating rounded bar with a border and a soft shadow rather than a flat strip welded to the bottom, and messages ease in instead of snapping into place.',
+        '<b>Aero Looks The Part</b> — The composer is a floating rounded bar with a border and a soft shadow rather than a flat strip welded to the bottom, and messages ease in instead of snapping into place.',
         '<b>Settings You Could Not Reach</b> — How many tabs Breeze keeps loaded is yours to set. Sleep timing gained 30-minute and 1-hour options. The sites you switched ad blocking off for are listed in one place so you can switch them back on without visiting each one.',
         '<b>breeze:// Links Work</b> — Opening a breeze:// address handed it to macOS, which put up a dialog saying no application could open it. Breeze handles its own addresses now.',
         '<b>Odds And Ends</b> — Selector pills sit in a properly round track, the ⏎ and ⇧ glyphs on the new tab are centred in their keys, and the clock wakes once a minute instead of once a second.' ] },
@@ -354,7 +357,7 @@
       { v: '5.5.3', icon: 'play-circle', title: 'Fullscreen Video & Research Fixed', hotfix: true, major: false, items: [
         '<b>No More Black Fullscreen Video</b> — Fullscreen video could go black while the audio kept playing, on YouTube, Xbox Cloud Gaming, and anywhere else. Breeze now always squares off the window in fullscreen so the GPU’s hardware video overlay is never clipped.',
         '<b>One Less Way To Break It</b> — The “Smoother fullscreen video” toggle is gone. Turning it off was never really a style choice; it silently caused the black-video bug, so the fix is simply always on now. If you had it off, this repairs itself — nothing to change.',
-        '<b>Research Actually Researches</b> — Asking Nav to research a topic could come back with “I’ll look into that…” or a question instead of real findings. Nav now goes straight to searching and reading sources.' ] },
+        '<b>Research Actually Researches</b> — Asking Aero to research a topic could come back with “I’ll look into that…” or a question instead of real findings. Aero now goes straight to searching and reading sources.' ] },
       { v: '5.5.2', icon: 'shield-check', title: 'No More Text-Field Crashes', hotfix: true, major: false, items: [
         '<b>Google Meet Crash Fixed</b> — Breeze no longer quits when your pointer moves over a text box. Meet’s chat and name fields, and any other page with an input, are safe again.',
         '<b>The Real Cause</b> — macOS 27’s new Siri writing assistant draws its pop-up from a separate system process, and that handoff fails on the beta, taking the whole app down with it.',
@@ -398,12 +401,12 @@
         '<b>Breeze Visual Language</b> — The compact centered card follows the active Breeze palette, accent, rounded surfaces, and dark mode instead of presenting a stretched gray panel.',
         '<b>Fullscreen-Safe</b> — The prompt still avoids creating a separate alert window, preserving the WebKit fullscreen and Picture in Picture crash protection added in 5.2.7.' ] },
       { v: '5.2.8', icon: 'refresh-cw', title: 'Pages Open Where They Belong', hotfix: true, major: false, items: [
-        '<b>First Navigation Renders</b> — Typing a site into the top address bar from New Tab, Nav Chat, onboarding, or another Breeze page now opens the page on the first attempt instead of leaving a blank WebKit surface.',
+        '<b>First Navigation Renders</b> — Typing a site into the top address bar from New Tab, Aero Chat, onboarding, or another Breeze page now opens the page on the first attempt instead of leaving a blank WebKit surface.',
         '<b>HTML Stays in the Browser</b> — Internal-to-web navigations are treated as display intent, so normal HTML renders in its tab instead of being mistakenly saved to Downloads.',
         '<b>Cleaner Fullscreen and PiP</b> — Fullscreen ownership is isolated from ordinary navigation and chrome updates, while Picture in Picture uses a smaller, more reliable state model.',
         '<b>Native Window Edges</b> — Web pages now run flush to the sidebar, right edge, and bottom edge so AppKit supplies the natural outer-window rounding without clipping WebKit.',
         '<b>Dark Internal Pages</b> — Onboarding and What’s New now initialize and update with Breeze’s active theme, with improved light-mode Tasks badge contrast.',
-        '<b>Clear Ask and Search Keys</b> — New Tab and Nav Chat now show compact Return and Shift keycaps for Ask and Search instead of a Shortcuts link.' ] },
+        '<b>Clear Ask and Search Keys</b> — New Tab and Aero Chat now show compact Return and Shift keycaps for Ask and Search instead of a Shortcuts link.' ] },
       { v: '5.2.7', icon: 'maximize', title: 'Tabs and Video Stay Put', hotfix: true, major: false, items: [
         '<b>Sleeping Tabs Keep Their Names</b> — Sleeping a tab now preserves its real title and site identity instead of fading into “New Tab” until it wakes.',
         '<b>Fullscreen Video Restored</b> — Breeze waits for macOS 27 to actually return the WebKit view after fullscreen, preventing black or white video surfaces during repeated fullscreen and PiP use.',
@@ -431,7 +434,7 @@
         '<b>Smart Picture-in-Picture Exit</b> — Clicking the restore button in the top-right of the PiP floating window returns you directly to the original video tab.',
         '<b>No Background Audio Stays</b> — Clicking the Close ("X") button on the PiP window now pauses video playback and stops audio output, instead of resuming it in the background.' ] },
       { v: '5.2.0', icon: 'panel-right', title: 'The Right Edge, Respected', hotfix: true, major: false, items: [
-        '<b>Pages Always Know Where Breeze Ends</b> — After opening or closing Nav, toggling the sidebar, or switching tabs, Breeze now verifies that every page agrees on the exact width of the web area and heals any mismatch on the spot, so sites no longer lay out past the visible right edge.',
+        '<b>Pages Always Know Where Breeze Ends</b> — After opening or closing Aero, toggling the sidebar, or switching tabs, Breeze now verifies that every page agrees on the exact width of the web area and heals any mismatch on the spot, so sites no longer lay out past the visible right edge.',
         '<b>Stray Zoom, Snapped Back</b> — An accidental pinch or smart-zoom can no longer leave a page rendering oversized and clipped; Breeze re-asserts your intended zoom whenever the window chrome changes.' ] },
       { v: '5.1.10', icon: 'check-check', title: 'YouTube Posts, Unblocked', hotfix: true, major: false, items: [
         '<b>A Fix Only Where It Is Needed</b> — YouTube channel post pages now use WebKit\'s native site identity for their embedded Google account content, while Google and every other page keep Breeze\'s current versioned compatibility.' ] },
@@ -476,7 +479,7 @@
       { v: '5.0.9', icon: 'volume-2', title: 'A Quieter, Roomier Breeze', major: false, items: [
         '<b>More Sounds, More Control</b> — Split view, closing split view, and pinning a site each have their own sound and independent Settings toggle.',
         '<b>Gentler by Default</b> — Added a 10% sound-volume option and made it the new default for everyone.',
-        '<b>Room for Nav</b> — The sidebar now resets to its smallest width while remaining fully resizable, leaving more desktop-sized space beside Nav.',
+        '<b>Room for Aero</b> — The sidebar now resets to its smallest width while remaining fully resizable, leaving more desktop-sized space beside Aero.',
         '<b>Smarter Media Controls</b> — Return to Tab now focuses the source tab first; press it again there to close Picture-in-Picture.',
         '<b>Quiet Pinned Apps</b> — Opening a pinned app no longer plays the new-tab sound.' ] },
       { v: '5.0.8', icon: 'volume-2', title: 'Breeze Finds Its Voice', major: false, items: [
@@ -495,36 +498,36 @@
         '<b>Sourced Research</b> — Research summaries now reliably list the source links they were built from.',
         '<b>One-Click Tabs</b> — Switching tabs (especially from a split view) now works on the first click instead of sometimes taking two or three.' ] },
       { v: '5.0.3', icon: 'search-check', title: 'Videos, Understood', major: false, items: [
-        '<b>Creator Tools Watches the Video</b> — Nav now reads YouTube\'s real captions directly, so creator breakdowns and video summaries are grounded in what was actually said—not just the title and description.',
-        '<b>Sources Everywhere</b> — Research Wrapped and Creator Tools breakdowns now include clickable links to the originating page, video, and every source Nav visited.',
+        '<b>Creator Tools Watches the Video</b> — Aero now reads YouTube\'s real captions directly, so creator breakdowns and video summaries are grounded in what was actually said—not just the title and description.',
+        '<b>Sources Everywhere</b> — Research Wrapped and Creator Tools breakdowns now include clickable links to the originating page, video, and every source Aero visited.',
         '<b>Refresh Without Rewinding</b> — Refreshing a page with a playing video keeps your place and resumes playback instead of throwing you back to the beginning.',
-        '<b>Room to Think</b> — Nav gets a larger response budget for thorough research and creator analysis, while duplicate page context is trimmed away.',
-        '<b>Nav, Focused</b> — Removed the unused image-generation backend so Nav stays centered on browsing, page understanding, research, creator tools, and reminders.' ] },
-      { v: '5.0.2', icon: 'check-check', title: 'Clearer Nav', major: false, items: [
-        '<b>Honest Errors</b> — If Nav can\'t reach Breeze Cloud or you\'ve hit the daily limit, it now tells you plainly instead of replying with a vague “Done.”',
-        '<b>Higher Daily Limit</b> — Raised the daily Nav usage limit so heavy days don\'t cut you off early.' ] },
+        '<b>Room to Think</b> — Aero gets a larger response budget for thorough research and creator analysis, while duplicate page context is trimmed away.',
+        '<b>Aero, Focused</b> — Removed the unused image-generation backend so Aero stays centered on browsing, page understanding, research, creator tools, and reminders.' ] },
+      { v: '5.0.2', icon: 'check-check', title: 'Clearer Aero', major: false, items: [
+        '<b>Honest Errors</b> — If Aero can\'t reach Breeze Cloud or you\'ve hit the daily limit, it now tells you plainly instead of replying with a vague “Done.”',
+        '<b>Higher Daily Limit</b> — Raised the daily Aero usage limit so heavy days don\'t cut you off early.' ] },
       { v: '5.0.1', icon: 'check-check', title: 'Tasks, Steadied', major: false, items: [
-        '<b>Nav Fixed</b> — Resolved a regression that could make Nav reply with just “Done.” — it answers normally again.',
+        '<b>Aero Fixed</b> — Resolved a regression that could make Aero reply with just “Done.” — it answers normally again.',
         '<b>Links Open Right</b> — Links meant to open in a new tab (<code>target="_blank"</code>) now reliably do, instead of sometimes doing nothing.',
         '<b>Better Favicons</b> — Site icons now try DuckDuckGo and the site itself before falling back, so logos that used to show a blank globe (e.g. Lovable) appear correctly.' ] },
       { v: '5.0.0', icon: 'rocket', title: 'Tasks', major: true, items: [
-        '<b>Meet Tasks</b> — Type <code>/</code> in Nav, a new tab, or the address bar to pop a menu of one-keystroke superpowers. Pick one, add your prompt — like <code>/research the best ebikes</code> — and Nav takes it from there.',
+        '<b>Meet Tasks</b> — Type <code>/</code> in Aero, a new tab, or the address bar to pop a menu of one-keystroke superpowers. Pick one, add your prompt — like <code>/research the best ebikes</code> — and Aero takes it from there.',
         '<b>Four to Start</b> — <code>/research</code> reads several sources into a sourced summary, <code>/summarize</code> TL;DRs the page you\'re on, <code>/factcheck</code> verifies a claim against multiple sources, and <code>/youtube</code> runs Creator Tools on a video.',
-        '<b>Slash Anywhere</b> — The Task palette works from the Nav chat, fullscreen Nav, the new-tab ask bar, and the address bar — the same <code>/</code> everywhere.',
-        '<b>Live Research Loader</b> — Nav now shows an animated working bubble that narrates what it\'s doing — searching, reading, thinking — paired with the ambient edge glow.',
+        '<b>Slash Anywhere</b> — The Task palette works from the Aero chat, fullscreen Aero, the new-tab ask bar, and the address bar — the same <code>/</code> everywhere.',
+        '<b>Live Research Loader</b> — Aero now shows an animated working bubble that narrates what it\'s doing — searching, reading, thinking — paired with the ambient edge glow.',
         '<b>A Proper Welcome</b> — Fresh installs get a real onboarding screen that introduces Breeze and Tasks instead of dropping you on a blank page.',
         '<b>Auto HTTPS</b> — Plain <code>http://</code> links now upgrade to <code>https://</code> automatically, while local and dev addresses stay on http.',
-        '<b>Patient Search</b> — Nav waits for slower search results to finish rendering before reading them, so answers stop coming up short.' ] },
+        '<b>Patient Search</b> — Aero waits for slower search results to finish rendering before reading them, so answers stop coming up short.' ] },
       { v: '4.x', icon: 'search-check', title: 'The Native Era', major: true, items: [
-        '<b>Modern Breeze</b> — Breeze 4 established the current native, AI-forward, privacy-focused generation: Nav with page context and browser actions, research summary pages, and rebuilt chat.',
-        '<b>Spectra Search</b> — Breeze\'s own private search engine arrived as a first-class option across New Tab, the address bar, and Nav.',
+        '<b>Modern Breeze</b> — Breeze 4 established the current native, AI-forward, privacy-focused generation: Aero with page context and browser actions, research summary pages, and rebuilt chat.',
+        '<b>Spectra Search</b> — Breeze\'s own private search engine arrived as a first-class option across New Tab, the address bar, and Aero.',
         '<b>Browsing Polish</b> — Sidebar drag-and-drop, smarter ad blocking, download reliability, Picture-in-Picture fixes, and the living What\'s New screen all landed here.',
         '<b>Full Breakdown</b> — <a href="https://github.com/Froydinger/breezebrowser-live/releases" target="_blank">See GitHub releases</a> for every v4 patch, from 4.0.0 to 4.1.6.' ] },
       { v: '3.x', icon: 'cpu', title: 'Picking Up Speed', major: true, items: [
         '<b>Native Mac Foundation</b> — Breeze was rebuilt as a Swift/AppKit/WKWebView Mac app for Apple Silicon.',
         '<b>WebKit Instead of Chromium</b> — The browser moved onto Apple’s system web engine for better Mac integration, lower overhead, and native media behavior.',
         '<b>Native Browser Core</b> — Tabs, sidebar, history, bookmarks, downloads, settings, private windows, and the updater became native app features.',
-        '<b>Nav Takes Shape</b> — The assistant evolved into Nav, with page context, browser actions, image generation, history, and richer app integration.',
+        '<b>Aero Takes Shape</b> — The assistant evolved into Aero, with page context, browser actions, image generation, history, and richer app integration.',
         '<b>Full Breakdown</b> — <a href="https://github.com/Froydinger/breezebrowser-live/releases" target="_blank">See GitHub releases</a> for every v3 patch, experiment, and fix.' ] },
       { v: '2.x', icon: 'columns', title: 'Gaining Traction', major: true, items: [
         '<b>Browser Shape Takes Form</b> — Breeze’s sidebar-first browsing model, pinned apps, splits, tab organization, and dashboard ideas matured.',

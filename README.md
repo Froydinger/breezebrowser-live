@@ -1,8 +1,27 @@
 # Breeze Browser
 
-Breeze is a fast native macOS browser built with Swift, AppKit, and WKWebView. Nav, its built-in assistant, talks to Breeze Cloud for chat plus image generation/editing without exposing provider credentials in the app.
+Breeze is a native macOS browser built with Swift, AppKit, and WKWebView. The
+current source version is **6.3.2** for Apple Silicon Macs.
 
-Current release: **4.1.2** for Apple Silicon Macs.
+## Aero
+
+Aero is Breeze's built-in browser assistant. It can answer questions about a
+page, search and research the web, summarize content, fact-check claims, analyze
+YouTube videos, use browser actions, and create reminders. Requests run through
+Breeze Cloud; image generation and editing are not supported. Image attachments
+can be included as context when supported by the request flow.
+
+Spectra is the default search engine for the address bar and new-tab page. Users
+can choose another engine in Settings.
+
+## Breeze Cloud accounts and sync
+
+Signing in with Google or email is optional. Signing in alone does not upload
+browser data. Separate sync controls are available for bookmarks, open tabs,
+history, Aero chats, and reminders; each category starts off. The password vault,
+private tabs, cookies, and website storage stay on the Mac. Synced cloud copies
+are protected in transit but are not end-to-end encrypted. Turning a category
+off pauses future syncing; deleting the account removes cloud data.
 
 ## Run it
 
@@ -38,20 +57,22 @@ open -n dist-test/BreezeTest.app --args --profile BreezeTest
 | Jump to tab | `⌘1`–`⌘9` |
 | Toggle dark mode | `⇧⌘D` |
 | DevTools (for current page) | `⌥⌘I` |
-| Toggle Nav | `⌘E` |
+| Toggle Aero | `⌘E` |
 
-## Features
+## More features
 
-- **Nav** — chat, browser actions, reminders, image generation, and image edits through the Breeze Cloud Worker. Fair-use limits are 30 chat requests and 10 image generations/edits per day.
-- **Cloud key safety** — users do not bring or expose provider credentials in the browser. Breeze talks to the Cloudflare Worker instead.
-- **Ad & tracker blocking** — EasyList content rules run in the network layer of every tab.
-- **Permissions** — websites can request microphone, camera, and location access through native WebKit permission prompts, with saved choices managed in Settings.
-- **Tab groups** — create, rename, disband, or delete groups. Command-clicking same-site links opens them in a grouped tab.
-- **Auto-update** — packaged builds check GitHub Releases on launch and every 4 hours, download silently, and show a "Restart" toast. No-op in dev mode.
-- **Themes** — teal is the default accent. Light, dark, system, black/white mono, and custom accents persist across launches.
-- **Sidebar** — Arc-style vertical tabs with favicons, loading spinners, and middle-click to close. Hide it with `⌘S` for a zen full-bleed view.
-- **Nice failures** — failed navigations render a Breeze recovery screen with retry/back suggestions instead of a raw WebKit dead end.
+- EasyList ad and tracker blocking in WebKit.
+- Native website permission prompts for microphone, camera, and location.
+- Tab groups, pinned sites, split browsing, picture-in-picture, downloads,
+  history, bookmarks, and reminders.
+- Optional macOS appearance, dark, light, and accent settings.
+- Packaged builds check GitHub Releases for updates.
 
-## Shipping updates
+## Download and privacy
 
-Auto-update is wired to GitHub Releases. See `AGENTS.md` for the native release pipeline.
+- macOS (Apple Silicon): <https://github.com/Froydinger/breezebrowser-live/releases/latest>
+- All releases: <https://github.com/Froydinger/breezebrowser-live/releases>
+- Privacy Policy: <https://breeze.froydingermedia.online/privacy.html>
+- Terms of Use: <https://breeze.froydingermedia.online/terms.html>
+
+See `AGENTS.md` for the native build and release workflow.

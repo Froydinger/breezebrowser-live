@@ -1,7 +1,7 @@
 import AppKit
 
-/// A "Task" is a one-shot Nav superpower invoked by a `/slash` command from any
-/// input surface — the Nav chat, fullscreen Nav, the new-chat ask bar, or the URL
+/// A "Task" is a one-shot Aero superpower invoked by a `/slash` command from any
+/// input surface — the Aero chat, fullscreen Aero, the new-chat ask bar, or the URL
 /// bar. Tasks are Breeze's renamed and expanded "Plugins" feature: instead of a
 /// settings toggle nobody finds, every Task is one keystroke away. Typing `/` pops
 /// the Task palette; `/research electric cars` runs the Research task on that topic.
@@ -20,12 +20,12 @@ struct BreezeTask {
     /// Placeholder/hint once the Task is picked.
     let placeholder: String
 
-    /// Every Task Nav can run. Order is the palette order.
+    /// Every Task Aero can run. Order is the palette order.
     static let all: [BreezeTask] = [
         BreezeTask(slug: "research", title: "Research",
                    subtitle: "Dig through several sources and write a sourced summary",
                    symbol: "sailboat.fill", needsPrompt: true,
-                   placeholder: "What should Nav research?"),
+                   placeholder: "What should Aero research?"),
         BreezeTask(slug: "summarize", title: "Summarize",
                    subtitle: "TL;DR the page or video you're on",
                    symbol: "text.line.first.and.arrowtriangle.forward", needsPrompt: false,
@@ -33,7 +33,7 @@ struct BreezeTask {
         BreezeTask(slug: "factcheck", title: "Fact-check",
                    subtitle: "Verify a claim against multiple sources",
                    symbol: "checkmark.seal.fill", needsPrompt: true,
-                   placeholder: "What claim should Nav check?"),
+                   placeholder: "What claim should Aero check?"),
         BreezeTask(slug: "youtube", title: "Creator Tools",
                    subtitle: "Analyze the YouTube video you're on for creators",
                    symbol: "play.rectangle.fill", needsPrompt: false,

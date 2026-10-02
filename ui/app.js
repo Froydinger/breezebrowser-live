@@ -1378,7 +1378,7 @@ breeze.onAIStatus((s) => {
         sendAI();
         break;
       }
-      aiStatusbar.textContent = 'Nav · Breeze Cloud';
+      aiStatusbar.textContent = 'Aero · Breeze Cloud';
       break;
     case 'error':
       aiStatusbar.textContent = `Error: ${s.message}`;

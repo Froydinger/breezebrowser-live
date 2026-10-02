@@ -325,7 +325,7 @@ final class SplitPane: NSView {
     /// The left pane's toolbar starts right of the window's traffic lights when
     /// the sidebar is hidden and the lights sit over it.
     var clearsTrafficLights = false { didSet { needsLayout = true } }
-    /// A view floating above this pane's toolbar (the Nav button on the right
+    /// A view floating above this pane's toolbar (the Aero button on the right
     /// pane) that the address field must end before instead of running under.
     weak var trailingObstacle: NSView? { didSet { needsLayout = true } }
 
@@ -411,7 +411,7 @@ final class SplitPane: NSView {
         clearsTrafficLights = isLeftPaneWithHiddenSidebar
     }
 
-    /// Measured from where the traffic lights and Nav button really are, not a
+    /// Measured from where the traffic lights and Aero button really are, not a
     /// guessed constant, so the toolbar clears them at any sidebar state or
     /// pane width, and while the sidebar slides.
     override func layout() {

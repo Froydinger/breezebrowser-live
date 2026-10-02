@@ -21,8 +21,8 @@ final class CloudLLM: NSObject {
         super.init()
         browser = tools
         lastStatus = usingCloud
-            ? "Nav is ready."
-            : "Nav is not configured in this build."
+            ? "Aero is ready."
+            : "Aero is not configured in this build."
     }
 
     func cacheKey(_ key: String) {}
@@ -42,12 +42,12 @@ final class CloudLLM: NSObject {
     func send(_ text: String, history: [[String: String]], contexts: [AIContext],
               completion: @escaping (Result<(String, [String]), Error>) -> Void) {
         guard usingCloud else {
-            completion(.failure(Self.error("Nav is not configured in this build.")))
+            completion(.failure(Self.error("Aero is not configured in this build.")))
             return
         }
 
         guard let tools = browser else {
-            completion(.failure(Self.error("Nav isn't ready yet.")))
+            completion(.failure(Self.error("Aero isn't ready yet.")))
             return
         }
 
@@ -105,7 +105,7 @@ final class CloudLLM: NSObject {
 
     private func complete(history: [[String: String]], minimal: Bool = false, requestID: String) async throws -> String {
         guard let url = endpoint(path: "/v1/chat/completions") else {
-            throw Self.error("Nav is not configured in this build.")
+            throw Self.error("Aero is not configured in this build.")
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

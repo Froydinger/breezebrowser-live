@@ -4,7 +4,7 @@ enum SuggestionType {
     case bookmark
     case history
     case search
-    case task        // a Nav /slash Task
+    case task        // a Aero /slash Task
 }
 
 struct SuggestionItem {

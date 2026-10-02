@@ -223,7 +223,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// 15s apart, is a state worth surfacing.
     private var heavySampleStreak = 0
     var aiExtras: [AIExtra] = []             // @-added tabs + attached images (current tab always included)
-    var aiVisitedSources: [(String, String)] = [] // real pages opened during the current Nav turn
+    var aiVisitedSources: [(String, String)] = [] // real pages opened during the current Aero turn
     weak var aiResearchTab: Tab?                  // the tab a research run browses in
     var aiNavWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     let ASSISTANT_W: CGFloat = 360
@@ -736,7 +736,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         themeButton = theme
         let tile = CommandTile(buttons: [settings, theme, history, bookmarks, dl])
         tile.onTimeTap = { [weak self] in
-            // Reminders live in the Nav group of Settings.
+            // Reminders live in the Aero group of Settings.
             self?.openInternal(.settings, fragment: "reminders")
         }
         tile.onDateTap = { [weak self] in
@@ -1752,7 +1752,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func makeTabRow(_ t: Tab) -> TabRowView {
         let i = tabs.firstIndex { $0.id == t.id } ?? 0
-        let title = t.isChatTab ? "Nav Chat" : t.title
+        let title = t.isChatTab ? "Aero Chat" : t.title
         let sleepingURL = t.sleptURL.flatMap(URL.init(string:))
         let host = t.isChatTab ? "nav" : hostOf(t.sleeping ? sleepingURL : t.webView.url)
         let inSplit = (t.splitPartnerId != nil)
@@ -2015,6 +2015,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if let tab = pinnedTab(url) {
             var entries: [MenuEntry] = [
                 .item(tab.id == current?.id ? "Open" : "Switch to Pin", { [weak self] in self?.openPin(url) }),
+                replacePinMenuEntry(url),
                 .separator,
             ]
             entries.append(contentsOf: tabMenu(for: tab))
@@ -2023,6 +2024,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return [
             .item("Open", { [weak self] in self?.openPin(url) }),
             .disabled("Close Tab"),
+            replacePinMenuEntry(url),
             .separator,
             .item("Unpin", { [weak self] in self?.unpin(url) }),
         ]
@@ -2800,7 +2802,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     /// The cleanup. Sleeps every eligible background tab and drops the URL
     /// cache. Everything protected stays protected: the tab you are on, audio
-    /// and video that is playing, split-view halves, Nav chats, pinned apps,
+    /// and video that is playing, split-view halves, Aero chats, pinned apps,
     /// and anything marked Keep Awake. Nothing is closed — slept tabs stay in
     /// the sidebar and come back exactly where they were.
     @discardableResult
@@ -2953,6 +2955,32 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         pins.removeAll { $0.url == url }; persistPins()
         for t in tabs where t.pinUrl == url { t.pinUrl = nil }
         refreshSidebar()
+    }
+
+    private func replacementPinURL(_ pinURL: String) -> String? {
+        guard let tab = current, !tab.isNewTab, !tab.isChatTab,
+              let url = (tab.sleeping ? tab.sleptURL.flatMap(URL.init(string:)) : tab.webView.url),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              pins.contains(where: { $0.url == pinURL }),
+              !pins.contains(where: { $0.url != pinURL && $0.url == url.absoluteString }) else { return nil }
+        return url.absoluteString
+    }
+
+    private func replacePinMenuEntry(_ url: String) -> MenuEntry {
+        guard replacementPinURL(url) != nil else { return .disabled("Replace Pin") }
+        return .item("Replace Pin", { [weak self] in self?.replacePin(url) })
+    }
+
+    /// Update the saved destination in place, preserving the pin's sidebar order.
+    func replacePin(_ oldURL: String) {
+        guard let newURL = replacementPinURL(oldURL), let tab = current,
+              let index = pins.firstIndex(where: { $0.url == oldURL }) else { return }
+        pins[index] = Pin(url: newURL, title: tab.title.isEmpty ? newURL : tab.title)
+        for previous in tabs where previous.pinUrl == oldURL { previous.pinUrl = nil }
+        tab.pinUrl = newURL
+        persistPins()
+        refreshSidebar()
+        persistOpenTabsSnapshot()
     }
 
     func persistPins() { Store.shared.pins = pins; Store.shared.savePins() }
@@ -3308,7 +3336,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
 
-        // A leading "/task" command runs a Nav Task instead of navigating/searching.
+        // A leading "/task" command runs a Aero Task instead of navigating/searching.
         if let (task, prompt) = BreezeTask.parse(q) {
             suggestionsPopover.hide()
             address.stringValue = ""; newTab.field.stringValue = ""
@@ -3353,7 +3381,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if fromNewTab, let t = current {
             t.isNewTab = false
             t.isChatTab = true
-            t.title = "Nav Chat"
+            t.title = "Aero Chat"
             if assistantOpen { setAssistant(false) }
             assistant.prepareForFullscreenReparent()
             prepareAIStatus()
@@ -3456,7 +3484,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     /// Re-assert the resting chrome constraints for the current mode. Animated
-    /// toggles that race each other (Nav + sidebar + tab switch landing in the
+    /// toggles that race each other (Aero + sidebar + tab switch landing in the
     /// same beat) can strand a stale constant, which leaves the web area wider
     /// than the visible page — sites then lay out past the window's right edge.
     /// Idempotent when nothing drifted.
@@ -3675,7 +3703,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     func setAssistant(_ open: Bool) {
         assistantOpen = open
-        if !open { assistant.stopTipRotation() }   // don't rotate tips while Nav is hidden
+        if !open { assistant.stopTipRotation() }   // don't rotate tips while Aero is hidden
         // If assistant is currently embedded in a chat tab, don't animate the sidebar panel
         if current?.isChatTab == true && !open { return }
         
@@ -3691,7 +3719,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         breezeCorner.isHidden = open
         let w: CGFloat = ASSISTANT_W
         // Commit the complete offscreen/on-screen starting state before changing
-        // any constants, otherwise revealing Nav and resizing WebKit can land in
+        // any constants, otherwise revealing Aero and resizing WebKit can land in
         // the same first frame and flash at the old geometry.
         root.layoutSubtreeIfNeeded()
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -3715,10 +3743,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func prepareAIStatus() {
         if llm.ready {
             assistant.setInputEnabled(true)
-            assistant.setModelStatus("Nav · Breeze Cloud. Ask anything, summarize pages, run Tasks, and act for you.")
+            assistant.setModelStatus("Aero · Breeze Cloud. Ask anything, summarize pages, run Tasks, and act for you.")
         } else {
-            assistant.setInputEnabled(true, placeholder: "Nav is not configured in this build…")
-            assistant.setModelStatus("Nav is not configured in this build.")
+            assistant.setInputEnabled(true, placeholder: "Aero is not configured in this build…")
+            assistant.setModelStatus("Aero is not configured in this build.")
         }
     }
 
@@ -3747,7 +3775,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     /// Pull YouTube's own caption track for the current video and flatten it to plain
-    /// text, so Nav can "watch" the video (what's actually said) instead of only
+    /// text, so Aero can "watch" the video (what's actually said) instead of only
     /// reading the page chrome. Returns "" when the video has no captions.
     @MainActor
     func youTubeTranscript(of t: Tab) async -> String {
@@ -4015,12 +4043,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     // MARK: - Tasks (the /slash command palette)
 
-    /// Set by the /research Task so the next Nav answer is forced onto the
+    /// Set by the /research Task so the next Aero answer is forced onto the
     /// "Research, wrapped." page even if the keyword heuristic wouldn't catch it.
     var forceResearchSummary = false
 
     /// Set by a Task that needs its own pipeline ("summarize" / "factcheck");
-    /// Agent.run takes it (once) at the start of the next Nav turn.
+    /// Agent.run takes it (once) at the start of the next Aero turn.
     var aiPendingTaskMode: String?
     @MainActor func aiTakeTaskMode() async -> String? {
         defer { aiPendingTaskMode = nil }
@@ -4031,9 +4059,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// back, the summary opens in a split right next to the video.
     weak var pendingCreatorVideoTab: Tab?
 
-    /// Pop the themed Task palette above the Nav input, filtered by what's typed
+    /// Pop the themed Task palette above the Aero input, filtered by what's typed
     /// after "/". Reuses our custom suggestions popover (not a system menu) so it
-    /// matches Breeze; picking a row fills "/slug " into the Nav input.
+    /// matches Breeze; picking a row fills "/slug " into the Aero input.
     func aiSlashTasks(_ token: String) {
         let matches = BreezeTask.suggestions(for: token)
         guard !matches.isEmpty else { suggestionsPopover.hide(); return }
@@ -4042,7 +4070,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     /// Run a Task. Page-based Tasks (summarize / youtube) act on the current tab;
-    /// prompt-based Tasks (research / fact-check) frame the user's text for Nav.
+    /// prompt-based Tasks (research / fact-check) frame the user's text for Aero.
     func runTask(_ task: BreezeTask, prompt: String) {
         if !assistantOpen { setAssistant(true) }
         assistant.setImageMode(false)
@@ -4072,7 +4100,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             aiPendingTaskMode = "factcheck"
             sendToAI("Fact-check this and tell me plainly whether it's TRUE, FALSE, or MIXED, then explain briefly with the sources you checked: \(claim)")
         case "research":
-            // The literal word "research" is what flips Nav into multi-source research
+            // The literal word "research" is what flips Aero into multi-source research
             // mode (Agent reads several pages); the flag forces the summary page.
             forceResearchSummary = true
             if prompt.isEmpty {
@@ -4091,7 +4119,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let q = video.title.isEmpty ? "This YouTube video" : video.title
         guard tabs.contains(where: { $0 === video }),
               let url = writeResearchSummaryPage(query: q, answer: answer,
-                                                 pill: "Nav Creator Tools",
+                                                 pill: "Aero Creator Tools",
                                                  heading: "Creator breakdown.",
                                                  kind: "creator") else {
             assistant.addAI(answer, chips: chips)   // fall back to a normal chat reply
@@ -4125,7 +4153,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             return
         }
         // Create a new chat tab
-        let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Nav Chat"
+        let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Aero Chat"
         wire(t)
         tabs.append(t); active = tabs.count - 1
         // Close the sidebar assistant panel
@@ -4145,7 +4173,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             assistant.prepareForFullscreenReparent()
             active = i
         } else {
-            let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Nav Chat"
+            let t = Tab(); t.isNewTab = false; t.isChatTab = true; t.title = "Aero Chat"
             wire(t)
             tabs.append(t); active = tabs.count - 1
         }
@@ -4161,7 +4189,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // Cloud not configured → warn instead of firing a doomed request.
         if !llm.ready {
             assistant.addUser(displayText ?? text)
-            assistant.addAI("Nav is not configured in this build yet. Use the BreezeTest build with the Worker URL embedded.", chips: [])
+            assistant.addAI("Aero is not configured in this build yet. Use the BreezeTest build with the Worker URL embedded.", chips: [])
             prepareAIStatus()
             return
         }
@@ -4255,7 +4283,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func writeResearchSummaryPage(query: String, answer: String,
-                                  pill: String = "Nav Research Summary",
+                                  pill: String = "Aero Research Summary",
                                   heading: String = "Research, wrapped.",
                                   kind: String = "research") -> URL? {
         let dir = Store.shared.supportDirectory.appendingPathComponent("Research Summaries", isDirectory: true)
@@ -4335,7 +4363,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return out.joined(separator: "\n")
     }
 
-    /// The real Nav icon (nav-icon.png) as a base64 data URI, so internal HTML pages
+    /// The real Aero icon (nav-icon.png) as a base64 data URI, so internal HTML pages
     /// written outside the bundle (e.g. the Research summary) can show the actual
     /// brand mark instead of a stand-in glyph.
     func navIconDataURI() -> String? {
@@ -4353,16 +4381,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func researchSummaryHTML(query: String, answer: String, links: [(String, String)],
-                             pill: String = "Nav Research Summary",
+                             pill: String = "Aero Research Summary",
                              heading: String = "Research, wrapped.") -> String {
         let body = markdownToResearchHTML(answer)
         let linkCards = links.map { label, url in
             "<a class=\"source\" href=\"\(url.htmlEscaped)\"><span>\(label.htmlEscaped)</span><small>\((URL(string: url)?.host ?? url).htmlEscaped)</small></a>"
         }.joined(separator: "\n")
-        // Prefer the real Nav PNG; fall back to a drawn navigation arrow if it's missing.
+        // Prefer the real Aero PNG; fall back to a drawn navigation arrow if it's missing.
         let navURI = navIconDataURI()
         let mark = navURI != nil
-            ? "<div class=\"mark\"><img src=\"\(navURI!)\" alt=\"Nav\"/></div>"
+            ? "<div class=\"mark\"><img src=\"\(navURI!)\" alt=\"Aero\"/></div>"
             : "<div class=\"mark mark--draw\"><svg viewBox=\"0 0 24 24\"><path d=\"M3 11 22 2 13 21 11 13 3 11Z\"/></svg></div>"
         return """
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -4387,7 +4415,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        let base = "Nav Image \(stamp.string(from: Date()))"
+        let base = "Aero Image \(stamp.string(from: Date()))"
         var dest = dir.appendingPathComponent("\(base).png")
         var i = 2
         while FileManager.default.fileExists(atPath: dest.path) {
@@ -4941,7 +4969,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         try? await Task.sleep(nanoseconds: 700_000_000)   // let the page settle
         var text = await readText(of: t)
         // Next to no DOM text (canvas app, image-only page, embedded PDF) → read it
-        // off the screen so Nav isn't blind.
+        // off the screen so Aero isn't blind.
         if let r = text.range(of: "Page text content:\n"), text[r.upperBound...].count < 300 {
             let seen = await screenRead(t, screens: 1)
             if !seen.isEmpty { text += "\n\nVisible on screen (OCR):\n" + seen }
@@ -4965,7 +4993,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // SHELL first — nav, header, "researching…" chrome — and only stream the
         // actual results in a beat later. So both "page loaded" and a one-shot
         // >400-char scrape can fire while the results area is still empty, which is
-        // why Nav was scraping before anything real had rendered.
+        // why Aero was scraping before anything real had rendered.
         //
         // Instead of trusting a single read, poll until the page text STOPS GROWING
         // (results have streamed in and settled), with a minimum floor so a slow
@@ -4997,7 +5025,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         if text.isEmpty { text = await readText(of: t) }
         // Capture the real result links so the Research summary always has sources —
-        // even when Nav synthesizes straight from the results page without opening each.
+        // even when Aero synthesizes straight from the results page without opening each.
         let engineHost = (URL(string: searchURL(for: query))?.host ?? "").lowercased()
         for (title, link) in await searchResultLinks(of: t, engineHost: engineHost)
         where !aiVisitedSources.contains(where: { $0.1 == link }) {
@@ -6640,7 +6668,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             menu.addTargetedItem("Copy", #selector(copyContextSelection), self)
             let short = selection.count > 32 ? String(selection.prefix(32)) + "..." : selection
             menu.addTargetedItem("Search for \"\(short)\"", #selector(searchContextSelection), self)
-            menu.addTargetedItem("Ask Nav About Selection", #selector(askNavAboutContextSelection), self)
+            menu.addTargetedItem("Ask Aero About Selection", #selector(askNavAboutContextSelection), self)
             menu.addItem(.separator())
         } else if editable {
             menu.addTargetedItem("Cut", #selector(cutContextEditable), self)
@@ -7550,7 +7578,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         address.needsDisplay = true
         // Tint within-window blur with the same accent wash used by the chrome
         // background, so hover-peek reads as chrome floating over the page.
-        // Same reason as the Nav wash: in dark mode this accent tint sat over the
+        // Same reason as the Aero wash: in dark mode this accent tint sat over the
         // neutral background and turned the sidebar teal. Neutral glass in dark.
         sidebarGlass.layer?.backgroundColor = p.isDark
             ? NSColor(white: 1, alpha: 0.02).cgColor

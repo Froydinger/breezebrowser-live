@@ -6,7 +6,7 @@ import ObjectiveC
 /// macOS 27 shows an Apple Intelligence writing affordance ("Campo" is Apple's
 /// internal name for it) whenever the pointer crosses an editable region. AppKit
 /// does this for every app that accepts text input — Breeze never opts in, and
-/// it is unrelated to Nav or anything Breeze builds.
+/// it is unrelated to Aero or anything Breeze builds.
 ///
 /// The affordance is drawn out-of-process and attached through `NSRemoteView`.
 /// On the macOS 27 betas that ViewBridge handoff throws an uncaught

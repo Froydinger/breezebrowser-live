@@ -67,7 +67,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         headerLogo.image = navLogo()
         headerLogo.imageScaling = .scaleProportionallyDown
         headerLogo.translatesAutoresizingMaskIntoConstraints = false
-        let title = NSTextField(labelWithString: "Nav")
+        let title = NSTextField(labelWithString: "Aero")
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         // Chat history lives on the History page now (breeze://history → Chats),
         // not as an in-panel overlay.
@@ -260,7 +260,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         emptyLogo.image = navLogo()
         emptyLogo.imageScaling = .scaleProportionallyDown
         emptyLogo.translatesAutoresizingMaskIntoConstraints = false
-        let h = NSTextField(labelWithString: "Nav")
+        let h = NSTextField(labelWithString: "Aero")
         h.font = .systemFont(ofSize: 16, weight: .semibold); h.alignment = .center
         h.translatesAutoresizingMaskIntoConstraints = false
         let p = NSTextField(labelWithString: "Powered by Breeze Cloud.\nReads pages, searches the web, and acts for you.")
@@ -291,14 +291,14 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private var emptyTitle: NSTextField!
     private var emptySub: NSTextField!
 
-    // MARK: - Rotating Nav tips (replaces the old quick-prompt chips)
+    // MARK: - Rotating Aero tips (replaces the old quick-prompt chips)
 
     private let navTips: [String] = [
         "Type / to run a Task — like /research or /summarize — right here, in a new tab, or the address bar.",
-        "Press ⌘E anytime to open or close Nav.",
+        "Press ⌘E anytime to open or close Aero.",
         "Type @ to pull another open tab into the conversation.",
-        "Highlight text on any page, then ask Nav about just that selection.",
-        "Tell Nav “remind me in 20 minutes to…” and it’ll fire a notification when it’s time."
+        "Highlight text on any page, then ask Aero about just that selection.",
+        "Tell Aero “remind me in 20 minutes to…” and it’ll fire a notification when it’s time."
     ]
     private var tipIndex = 0
     private var tipTimer: Timer?
@@ -377,7 +377,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         }
     }
     func stopTipRotation() { tipTimer?.invalidate(); tipTimer = nil }
-    /// Restart tip rotation when Nav is shown again on an empty chat.
+    /// Restart tip rotation when Aero is shown again on an empty chat.
     func resumeTipsIfEmpty() { if !empty.isHidden { refreshTipVisibility() } }
     private func dismissTips() {
         Store.shared.settings["hideNavTips"] = true; Store.shared.saveSettings()
@@ -596,7 +596,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         sendBtn.toolTip = running ? "Stop" : "Send"
     }
 
-    /// Close out an interrupted run: keep whatever Nav managed to do (the tool
+    /// Close out an interrupted run: keep whatever Aero managed to do (the tool
     /// chips show which pages it opened) and say plainly that it was stopped,
     /// rather than clearing the bubble as though nothing happened.
     func addInterrupted(_ note: String, chips: [String]) {
@@ -611,7 +611,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         if let s, !s.isEmpty { taskLoader?.setLabel(s) }   // keep the chat loader's label in sync
     }
 
-    // MARK: - Working loader (animated dots in the chat while Nav runs a Task)
+    // MARK: - Working loader (animated dots in the chat while Aero runs a Task)
 
     private var taskLoader: TaskLoaderView?
     /// Show an animated "working" bubble in the chat. The dots animate on the render
@@ -651,7 +651,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         input.placeholderString = placeholder ?? "Ask anything…  (@ tab · / task)"
     }
 
-    /// Image generation was removed from Nav; kept as a no-op so older call sites
+    /// Image generation was removed from Aero; kept as a no-op so older call sites
     /// (and any saved state) don't need to change.
     func setImageMode(_ on: Bool) {}
 
@@ -997,7 +997,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         wash.name = "assistantAccentWash"
         wash.frame = bounds
         // Dark mode keeps the surface a flat neutral: an accent-tinted wash over
-        // #191919 is what made Nav read teal, and opening it visibly re-tinted the
+        // #191919 is what made Aero read teal, and opening it visibly re-tinted the
         // whole window. Light mode still gets the accent tint.
         wash.backgroundColor = p.isDark
             ? NSColor(white: 1, alpha: 0.02).cgColor
@@ -1169,7 +1169,7 @@ private final class MessageBubbleView: NSView {
 
     private var textView: NSTextView!
     private var copyButton: HoverButton?
-    /// Nav replies keep a strip down the right for the copy button, so it sits
+    /// Aero replies keep a strip down the right for the copy button, so it sits
     /// beside the text instead of on top of the first line.
     private static let copyGutter: CGFloat = 26
     private var hovering = false
@@ -1183,7 +1183,7 @@ private final class MessageBubbleView: NSView {
         self.rawText = rawText
         self.accent = accent
         self.isUser = isUser
-        // Only the user gets a container. Nav's replies are free-floating prose on
+        // Only the user gets a container. Aero's replies are free-floating prose on
         // the panel itself - the accent pill vs plain text is what separates them,
         // and long answers read better without being boxed.
         // A washed accent fill with the accent itself at full strength on the
@@ -1315,7 +1315,7 @@ private final class MessageBubbleView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard isUser else { return }   // Nav's replies have no container to draw
+        guard isUser else { return }   // Aero's replies have no container to draw
         let fillColor = accent.withAlphaComponent(Theme.shared.palette.isDark ? 0.18 : 0.14)
         let strokeColor = accent
         let radius = min(28, bounds.height / 2)
@@ -1339,7 +1339,7 @@ private final class MessageBubbleView: NSView {
     }
 }
 
-/// The animated "Nav is working" bubble shown in the chat while a Task runs. Three
+/// The animated "Aero is working" bubble shown in the chat while a Task runs. Three
 /// dots breathe in a staggered wave (Core Animation, render-server) next to a live
 /// status label. It only exists between send and done, so there's no idle GPU cost.
 private final class TaskLoaderView: NSView {

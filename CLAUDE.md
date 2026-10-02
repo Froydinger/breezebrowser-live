@@ -31,12 +31,12 @@ native releases are now just normal GitHub "latest". Everything here is native.
   standalone Command Line Tools: dyld can't load BuildServerProtocol.framework).
   No Xcode. `native/build.sh` compiles all of `Sources/Breeze/*.swift`, bundles
   `../ui/` + icon, writes Info.plist, and signs with "Breeze Signing". No AI
-  runtime is bundled — Nav talks to Breeze Cloud.
+  runtime is bundled — Aero talks to Breeze Cloud.
 - **Cloud build env is required:** every Breeze or BreezeTest build that will be
   tested, shipped, zipped, or released must include `BREEZE_CLOUD_AI_BASE_URL`
   and `BREEZE_CLOUD_CLIENT_TOKEN`. The local token lives at
   `cloudflare/breeze-chat-worker/.breeze-client-token`. A build without these
-  plist keys will show "Nav is not configured in this build" and must not ship.
+  plist keys will show "Aero is not configured in this build" and must not ship.
   Use this pattern:
   ```
   TOKEN=$(tr -d '\n\r' < cloudflare/breeze-chat-worker/.breeze-client-token)
@@ -94,12 +94,11 @@ native releases are now just normal GitHub "latest". Everything here is native.
   `BREEZE_CLOUD_CLIENT_TOKEN` at build time. Do NOT add a local model
   (Llama/llama-server/GGUF), Apple Foundation Models, a model picker, BYOK UI, or
   a second client-side model path.
-- **Next update cleanup:** remove image generation/editing from the native app
-  and Breeze Cloud client surface. It is no longer worth the code/UI weight; keep
-  Nav focused on page understanding, browsing, search, creator tools, and
-  reminders.
+- Image generation and editing are not supported in the current native app.
+  Keep Aero focused on page understanding, browsing, search, creator tools, and
+  reminders. Image attachments may still be used as request context.
 - **No Cloud config → warn, don't fail:** a build without the Worker URL/token
-  shows "Nav is not configured in this build." This is expected for an
+  shows "Aero is not configured in this build." This is expected for an
   unconfigured dev build and unacceptable for BreezeTest validation or release.
 - **Agentic loop lives in `Agent.swift`** (backend-agnostic; takes `ask`/`askFresh`
   closures). The model drives the browser via a tiny text protocol:
@@ -119,13 +118,13 @@ native releases are now just normal GitHub "latest". Everything here is native.
   don't ask for a ZIP), and always relays results instead of going quiet. Injects
   today's date and the user's custom `aiInstructions`.
 - **Tasks (the `/slash` palette, `Tasks.swift`)** — the renamed/expanded "Plugins"
-  feature. Typing `/` in the Nav chat, fullscreen Nav, the new-tab ask bar, or the
+  feature. Typing `/` in the Aero chat, fullscreen Aero, the new-tab ask bar, or the
   address bar pops a palette of `BreezeTask`s; `/research <topic>` etc. routes through
   `runTask`. The literal word "research" is what flips `Agent.run` into multi-source
   **research mode** (open + read ≈3–4 result pages, then synthesize) and opens the
   "Research, wrapped." page (`openResearchSummaryIfNeeded`, gated on the word
   "research"; uses the real `nav-icon.png` via `navIconDataURI`). A live animated
-  loader bubble (`AssistantPanel.showTaskLoader`) narrates status while Nav works.
+  loader bubble (`AssistantPanel.showTaskLoader`) narrates status while Aero works.
 - **Onboarding** — fresh installs show `ui/onboarding.html` (InternalPage
   `.onboarding`) once, gated on the `hasOnboarded` setting in `showWhatsNewIfUpdated`
   (updated installs still get What's New). `BREEZE_ONBOARD=1` forces it; the
@@ -146,7 +145,7 @@ native releases are now just normal GitHub "latest". Everything here is native.
 ## Releasing a new native version (do it in this order)
 
 The native updater finds releases by scanning for the newest native tag — **any
-`vX.Y.Z` with major ≥ 3** (`Updater.nativeVersion`), currently the **5.x** line —
+`vX.Y.Z` with major ≥ 3** (`Updater.nativeVersion`), currently the **6.x** line —
 with a `.zip` asset (see `Updater.swift`). It does NOT read GitHub's "latest" flag,
 so the release can (and now should) be marked latest normally.
 

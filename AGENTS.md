@@ -1,4 +1,4 @@
-# Breeze Browser — agent rules (native 5.x)
+# Breeze Browser — agent rules (native 6.x)
 
 **Breeze is a native macOS app** (Swift + AppKit + WKWebView), Apple Silicon only.
 The Electron/Chromium build (2.x) is retired. All code lives in `native/`.
@@ -80,10 +80,9 @@ Skip any step only if the user explicitly says so.
 - One backend only: Breeze Cloud via `CloudLLM.swift`. Provider routing lives
   server-side. Do NOT add a local model, BYOK setup, bundled runtime, model
   picker, or fallback backend.
-- Next update cleanup: remove image generation/editing from the native app and
-  Breeze Cloud client surface. It is no longer considered worth the code/UI
-  weight; keep Nav focused on page understanding, browsing, search, creator
-  tools, and reminders.
+- Image generation and editing are not supported in the current native app.
+  Keep Aero focused on page understanding, browsing, search, creator tools,
+  and reminders. Image attachments may still be used as request context.
 - Every Breeze/BreezeTest build that will be tested, shipped, zipped, or released
   must embed `BREEZE_CLOUD_AI_BASE_URL` and `BREEZE_CLOUD_CLIENT_TOKEN` in
   `Info.plist`. The local token is read from
@@ -95,13 +94,13 @@ Skip any step only if the user explicitly says so.
   BREEZE_CLOUD_AI_BASE_URL="https://breeze-chat.jakefroydinger.workers.dev" \
   BREEZE_CLOUD_CLIENT_TOKEN="$TOKEN" ./build.sh
   ```
-- A build without those plist keys shows "Nav is not configured in this build"
+- A build without those plist keys shows "Aero is not configured in this build"
   and must not ship.
 - Text protocol: OPEN/SEARCH/READ/CLICK/TYPE/REMIND actions. Up to 8 chained steps;
   READ exposes numbered interactive elements that CLICK/TYPE should prefer.
 - Keep SEARCH queries plain: no injected year, `site:`, `OR`, or other operators;
   preserve "near me" because the browser supplies location.
-- Tasks are available from Nav chat, fullscreen Nav, the new-tab ask bar, and the
+- Tasks are available from Aero chat, fullscreen Aero, the new-tab ask bar, and the
   address bar. `/research` reads about 3–4 sources and opens a sourced Research
   summary; `/youtube` and creator analysis can open Creator breakdown summaries.
 - Fresh installs use `ui/onboarding.html`, gated by `hasOnboarded`;
@@ -118,5 +117,5 @@ Skip any step only if the user explicitly says so.
 - Apple Silicon (arm64) only — no Rosetta.
 - Self-signed "Breeze Signing" cert — never lose it or auto-updates break.
 - The updater accepts semantic `vX.Y.Z` releases with major ≥ 3 and a ZIP asset;
-  the current product line is 5.x.
-- Every release is marked GitHub latest; native 5.x is the only product.
+  the current product line is 6.x.
+- Every release is marked GitHub latest; native 6.x is the only product.

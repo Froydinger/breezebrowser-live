@@ -57,7 +57,7 @@ enum Agent {
         }
 
         return """
-        You are Nav, the AI assistant built into the Breeze web browser. You can \
+        You are Aero, the AI assistant built into the Breeze web browser. You can \
         see and control the user's browser to get things done for them. Right now it \
         is \(df.string(from: Date())).
 
@@ -314,7 +314,7 @@ enum Agent {
         // instead of replying blind ("not sure which video you mean").
         var lastResult = currentCtx
         // Research mode is summoned ONLY by the literal word "research". In that mode
-        // Nav must not just summarize the results page — it has to OPEN and READ a few
+        // Aero must not just summarize the results page — it has to OPEN and READ a few
         // (≈3–4) of the top result pages and synthesize across them.
         let isResearch = userText.range(of: "research", options: .caseInsensitive) != nil
         // Restated on every continuation step. The FM backend uses a fresh session per
@@ -334,7 +334,7 @@ enum Agent {
         // problem, not a reasoning one (research succeeded 0/5 at none, 1/5 at
         // medium, 3/5 at high), so state the directive on the first turn too.
         let visual = wantsVisual(userText)
-        // Skip the glance when they're sending Nav somewhere else ("go to xkcd.com
+        // Skip the glance when they're sending Aero somewhere else ("go to xkcd.com
         // and…") — the post-OPEN look covers that page instead.
         let navigatesAway = userText.range(of: #"(?i)\b(go to|open|visit|navigate to|head to)\b|https?://|\b[\w-]+\.(com|org|net|io|dev|app|co|ai)\b"#,
                                            options: .regularExpression) != nil
@@ -382,7 +382,7 @@ enum Agent {
             catch {
                 // If the very first call fails, surface the real error (daily limit
                 // reached, network down, auth) instead of silently falling back to a
-                // canned "Done." — that masked a 429 and made Nav look broken. Once
+                // canned "Done." — that masked a 429 and made Aero look broken. Once
                 // we've gathered something, self-heal from it instead.
                 if step == 0 && chips.isEmpty { throw error }
                 return (await recover(), chips)

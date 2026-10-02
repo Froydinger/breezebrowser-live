@@ -264,7 +264,7 @@
     </header>
     <div class="seg" id="seg">
       <button data-mode="pages" class="on">Pages</button>
-      <button data-mode="chats">Nav chats</button>
+      <button data-mode="chats">Aero chats</button>
       <button data-mode="summaries">Summaries</button>
       <button data-mode="images">Images</button>
     </div>
@@ -357,7 +357,7 @@
       const items = q ? chats.filter((c) => (c.title || '').toLowerCase().includes(q)) : chats;
       listEl.textContent = '';
       emptyEl.style.display = items.length ? 'none' : '';
-      emptyEl.textContent = 'No Nav chats yet.';
+      emptyEl.textContent = 'No Aero chats yet.';
       for (const c of items) {
         const el = document.createElement('div');
         el.className = 'entry';
@@ -474,8 +474,8 @@
       mode = m;
       for (const b of document.querySelectorAll('#seg button')) b.classList.toggle('on', b.dataset.mode === m);
       clearBtn.style.display = m === 'pages' ? '' : 'none';
-      const ph = { pages: 'Search history…', chats: 'Search Nav chats…', summaries: 'Search summaries…', images: 'Search images…' };
-      const em = { pages: 'Nothing here yet.', chats: 'No Nav chats yet.', summaries: 'No saved summaries yet. Run /research or /youtube to create one.', images: 'No generated images yet.' };
+      const ph = { pages: 'Search history…', chats: 'Search Aero chats…', summaries: 'Search summaries…', images: 'Search images…' };
+      const em = { pages: 'Nothing here yet.', chats: 'No Aero chats yet.', summaries: 'No saved summaries yet. Run /research or /youtube to create one.', images: 'No generated images yet.' };
       searchEl.placeholder = ph[m] || 'Search…';
       emptyEl.textContent = em[m] || 'Nothing here yet.';
       render();

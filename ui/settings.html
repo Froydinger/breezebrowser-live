@@ -377,7 +377,7 @@
       <button data-jump="general" class="on">General</button>
       <button data-jump="search">Search</button>
       <button data-jump="tabs">Tabs</button>
-      <button data-jump="nav">Nav</button>
+      <button data-jump="nav">Aero</button>
       <button data-jump="cloud">Breeze Cloud</button>
       <button data-jump="privacy">Privacy</button>
       <button data-jump="sounds">Sounds</button>
@@ -482,7 +482,7 @@
             <div class="row-hint">Choose what plain text does when it is not clearly a URL</div>
           </div>
           <select id="newTabInputMode">
-            <option value="ask">Ask Nav</option>
+            <option value="ask">Ask Aero</option>
             <option value="search">Search the web</option>
           </select>
         </div>
@@ -569,10 +569,10 @@
         </div>
       </div>
     </section>
-    <div class="sec-eyebrow">Nav</div>
+    <div class="sec-eyebrow">Aero</div>
     <section data-sec="nav">
       <h2>Tasks</h2>
-      <p class="section-intro">Tasks are one-keystroke Nav superpowers. Type <code>/</code> in Nav, a new tab, or the address bar to see them, then <code>/research electric cars</code> to run one. Here's what Nav can do:</p>
+      <p class="section-intro">Tasks are one-keystroke Aero superpowers. Type <code>/</code> in Aero, a new tab, or the address bar to see them, then <code>/research electric cars</code> to run one. Here's what Aero can do:</p>
       <div class="card">
         <div class="row">
           <div>
@@ -603,7 +603,7 @@
           </label>
         </div>
       </div>
-      <p class="section-intro">The toggle adds a one-click Creator Tools button to the Nav header whenever you're on a YouTube page. <code>/youtube</code> works either way.</p>
+      <p class="section-intro">The toggle adds a one-click Creator Tools button to the Aero header whenever you're on a YouTube page. <code>/youtube</code> works either way.</p>
     </section>
     <section data-sec="nav">
       
@@ -628,7 +628,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:16px">
             <div style="flex:1">
               <div class="row-label">Breeze Cloud</div>
-              <div class="row-hint">Nav is powered by <b>Breeze Cloud</b>. Your app does not store or expose a provider credential.</div>
+              <div class="row-hint">Aero is powered by <b>Breeze Cloud</b>. Your app does not store or expose a provider credential.</div>
             </div>
             <span id="aiCloudStatus" class="badge">Checking</span>
           </div>
@@ -648,13 +648,13 @@
         </div>
         <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
           <div>
-            <div class="row-label">Nav privacy</div>
-            <div class="row-hint">The current page is included so Nav can answer what you are looking at. Broader context starts off and can be added here.</div>
+            <div class="row-label">Aero privacy</div>
+            <div class="row-hint">The current page is included so Aero can answer what you are looking at. Broader context starts off and can be added here.</div>
           </div>
           <div class="row">
             <div>
-              <div class="row-label">Show Nav tips</div>
-              <div class="row-hint">Rotating suggestions in an empty Nav panel</div>
+              <div class="row-label">Show Aero tips</div>
+              <div class="row-hint">Rotating suggestions in an empty Aero panel</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="showNavTips" />
@@ -674,7 +674,7 @@
           <div class="row">
             <div>
               <div class="row-label">Include recent browsing history</div>
-              <div class="row-hint">Let Nav reference recently visited pages when you ask broad questions.</div>
+              <div class="row-hint">Let Aero reference recently visited pages when you ask broad questions.</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="aiIncludeHistory" />
@@ -684,7 +684,7 @@
           <div class="row">
             <div>
               <div class="row-label">Include bookmarks</div>
-              <div class="row-hint">Let Nav use saved sites as optional reference context.</div>
+              <div class="row-hint">Let Aero use saved sites as optional reference context.</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="aiIncludeBookmarks" />
@@ -694,7 +694,7 @@
           <div class="row">
             <div>
               <div class="row-label">Include other open tabs</div>
-              <div class="row-hint">Let Nav see titles and domains for tabs you did not explicitly @ add.</div>
+              <div class="row-hint">Let Aero see titles and domains for tabs you did not explicitly @ add.</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="aiIncludeOpenTabs" />
@@ -714,7 +714,7 @@
       <h2>Reminders</h2>
       <div class="card" id="reminder-list">
         <div class="row" id="reminder-empty">
-          <div class="row-hint">No active reminders. Ask Nav to remind you — e.g. "remind me in 20 minutes to call mom" — and they'll show up here.</div>
+          <div class="row-hint">No active reminders. Ask Aero to remind you — e.g. "remind me in 20 minutes to call mom" — and they'll show up here.</div>
         </div>
       </div>
     </section>
@@ -762,7 +762,7 @@
           <label class="toggle"><input type="checkbox" data-cloud-category="history" /><span class="knob"></span></label>
         </div>
         <div class="row cloud-category">
-          <div><div class="row-label">Nav chats</div><div class="row-hint">Conversation text, titles, and source links</div></div>
+          <div><div class="row-label">Aero chats</div><div class="row-hint">Conversation text, titles, and source links</div></div>
           <label class="toggle"><input type="checkbox" data-cloud-category="chats" /><span class="knob"></span></label>
         </div>
         <div class="row cloud-category">
@@ -783,14 +783,14 @@
         <details>
           <summary>Privacy Policy</summary>
           <p><b>Account.</b> Supabase processes your email or Google account identity to sign you in. Breeze does not receive your Google password.</p>
-          <p><b>Optional sync.</b> Bookmarks, open tab URLs and titles, browsing history, Nav conversation text and source links, and reminders sync only when you enable each category. Sync starts off. The password vault, private tabs, cookies, and website storage are never synced. Turning a category off stops future syncing but keeps its existing cloud copy. Signing out clears selected synced copies from this Mac; deleting the account removes cloud data.</p>
-          <p><b>Nav.</b> When you send a Nav request, its prompt and relevant chat or page context are sent through Breeze Cloud on Cloudflare and may be processed by OpenAI to produce a response. Breeze does not sell personal data or use it for advertising. Websites you visit receive normal connection data directly from your browser.</p>
+          <p><b>Optional sync.</b> Bookmarks, open tab URLs and titles, browsing history, Aero conversation text and source links, and reminders sync only when you enable each category. Sync starts off. The password vault, private tabs, cookies, and website storage are never synced. Turning a category off stops future syncing but keeps its existing cloud copy. Signing out clears selected synced copies from this Mac; deleting the account removes cloud data.</p>
+          <p><b>Aero.</b> When you send a Aero request, its prompt and relevant chat or page context are sent through Breeze Cloud on Cloudflare and may be processed by OpenAI to produce a response. Breeze does not sell personal data or use it for advertising. Websites you visit receive normal connection data directly from your browser.</p>
           <p><b>Control.</b> You can leave sync off, export cloud data, sign out, or delete your account in Settings. Contact <a class="key-link" href="mailto:jake@winthenight.info">jake@winthenight.info</a> for privacy requests.</p>
         </details>
         <details>
           <summary>Terms of Service</summary>
           <p>Breeze Cloud accounts are optional. You are responsible for securing your account and device. Enable only the data categories you want stored with your account. You can export or delete account data in Settings; turning off sync does not remove an existing cloud copy.</p>
-          <p>Nav uses AI services and can return incomplete or inaccurate information. Verify important claims yourself. Breeze and connected services may change or be unavailable. Do not rely on Nav or reminders for emergencies or safety-critical needs.</p>
+          <p>Aero uses AI services and can return incomplete or inaccurate information. Verify important claims yourself. Breeze and connected services may change or be unavailable. Do not rely on Aero or reminders for emergencies or safety-critical needs.</p>
           <p>Effective September 25, 2026. Questions: <a class="key-link" href="mailto:jake@winthenight.info">jake@winthenight.info</a>.</p>
         </details>
       </div>
@@ -1005,12 +1005,12 @@
       </div>
       <div class="card" id="faq">
         <details>
-          <summary>How does Nav work?</summary>
-          <p>Press <b>⌘E</b> to open it. It's powered by <b>Breeze Cloud</b> through Breeze Cloud. Ask it to "summarize this page," open a site, look something up on the web, make an image, or set a reminder, and it drives the browser to get it done.</p>
+          <summary>How does Aero work?</summary>
+          <p>Press <b>⌘E</b> to open it. It uses <b>Breeze Cloud</b> for chat, page understanding, web research, browser actions, and reminders.</p>
         </details>
         <details>
           <summary>Run a Task with <code>/</code></summary>
-          <p>Type <code>/</code> in Nav, a new tab, or the address bar to open the <b>Tasks</b> menu — one-keystroke Nav superpowers. <code>/research</code> reads several sources into a sourced summary, <code>/summarize</code> TL;DRs the page you're on, <code>/factcheck</code> verifies a claim, and <code>/youtube</code> runs Creator Tools on a video. Pick one and add your prompt, e.g. <code>/research the best ebikes</code>. See the <b>Tasks</b> tab for the full list.</p>
+          <p>Type <code>/</code> in Aero, a new tab, or the address bar to open the <b>Tasks</b> menu — one-keystroke Aero superpowers. <code>/research</code> reads several sources into a sourced summary, <code>/summarize</code> TL;DRs the page you're on, <code>/factcheck</code> verifies a claim, and <code>/youtube</code> runs Creator Tools on a video. Pick one and add your prompt, e.g. <code>/research the best ebikes</code>. See the <b>Tasks</b> tab for the full list.</p>
         </details>
         <details>
           <summary>Use the AI on selected text</summary>
@@ -1018,7 +1018,7 @@
         </details>
         <details>
           <summary>Search the web</summary>
-          <p>Just ask — when a question needs live info, Nav opens your default search engine in a tab, reads the results, and answers with sources. Web browsing uses your normal browser; AI requests go through Breeze Cloud.</p>
+          <p>Just ask — when a question needs live info, Aero opens your default search engine in a tab, reads the results, and answers with sources. Spectra is the default search engine, and you can change it in Settings. Web browsing uses your normal browser; AI requests go through Breeze Cloud.</p>
         </details>
         <details>
           <summary>Set a reminder</summary>
@@ -1030,7 +1030,7 @@
         </details>
         <details>
           <summary>Shortcuts cheat-sheet</summary>
-          <p><b>⌘T</b> new tab · <b>⇧⌘T</b> new chat · <b>⌥⌘T</b> private tab · <b>⇧⌘N</b> private window · <b>⌘W</b> close tab · <b>⌘L</b> address bar · <b>/</b> open the Tasks menu (in Nav, a new tab, or the address bar) · <b>Shift-Enter</b> force web search from the address/new-tab field · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⇧⌘G</b> previous match · <b>⌘R</b> reload · <b>⌘[</b> back · <b>⌘]</b> forward · <b>⌘S</b> sidebar · <b>⌘E</b> Nav · <b>⇧⌘D</b> cycle theme · <b>⌘Y</b> history · <b>⌥⌘B</b> bookmarks · <b>⇧⌘J</b> downloads.</p>
+          <p><b>⌘T</b> new tab · <b>⇧⌘T</b> new chat · <b>⌥⌘T</b> private tab · <b>⇧⌘N</b> private window · <b>⌘W</b> close tab · <b>⌘L</b> address bar · <b>/</b> open the Tasks menu (in Aero, a new tab, or the address bar) · <b>Shift-Enter</b> force web search from the address/new-tab field · <b>⌘F</b> find · <b>⌘G</b> next match · <b>⇧⌘G</b> previous match · <b>⌘R</b> reload · <b>⌘[</b> back · <b>⌘]</b> forward · <b>⌘S</b> sidebar · <b>⌘E</b> Aero · <b>⇧⌘D</b> cycle theme · <b>⌘Y</b> history · <b>⌥⌘B</b> bookmarks · <b>⇧⌘J</b> downloads.</p>
         </details>
         <details>
           <summary>A site looks broken</summary>
@@ -1038,7 +1038,7 @@
         </details>
         <details>
           <summary>Privacy &amp; your data</summary>
-          <p>History, generated images, and saved passwords live on this Mac; passwords use your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Breeze does not store a provider credential in the app. When you ask Nav for help, the prompt and relevant page/tab/image context are sent through Breeze Cloud to a supported AI service, with daily fair-use limits.</p>
+          <p>History, generated images, and saved passwords live on this Mac; passwords use your system keychain. Incognito tabs (⌘⇧N) keep nothing and wipe on close. Breeze does not store a provider credential in the app. When you ask Aero for help, the prompt and relevant page/tab/image context are sent through Breeze Cloud to a supported AI service, with daily fair-use limits.</p>
         </details>
       </div>
     </section>

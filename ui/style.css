@@ -484,7 +484,7 @@ html.dark .tab .close:hover { background: rgba(255, 255, 255, 0.12); }
 #update-btn:active { transform: scale(0.95); }
 
 /* ------------------------------------------------------------------ */
-/* Nav row extras                                                      */
+/* Aero row extras                                                      */
 /* ------------------------------------------------------------------ */
 
 .nav-spacer { flex: 1; -webkit-app-region: drag; }
