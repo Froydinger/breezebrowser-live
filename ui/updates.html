@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.4', icon: 'shield-check', title: 'A Trusted Download', hotfix: false, major: false, items: [
+        '<b>Apple-Verified Distribution</b> — Breeze is signed with our Apple Developer ID and notarized for direct download.',
+        '<b>Your Browser Stays Yours</b> — Aero, saved browsing data, password autofill, and video downloading remain available in this GitHub edition.' ] },
       { v: '6.3.3', icon: 'history', title: 'Keep Your Session', hotfix: true, major: false, items: [
         '<b>Restore asks every time</b> — Reopening Breeze, including after an update, asks whether to restore saved tabs. The restore prompt no longer overwrites its saved list with a blank tab.',
         '<b>Close windows deliberately</b> — Closing a browser window asks first. The last normal window’s tabs stay saved for reopening, including sleeping tabs.' ] },

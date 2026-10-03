@@ -26,7 +26,8 @@ do the FULL release pipeline — not just `git push`. The complete steps:
 1. **Bump version** in `native/build.sh` (`CFBundleVersion` + `CFBundleShortVersionString`).
 2. **Add a What's New entry** to `ui/updates.html` (the `RELEASES` array, newest first;
    `major: true` for headline releases). This auto-opens after an update.
-3. **Build** — `cd native && ./build.sh`
+3. **Build** with the required Cloud configuration and `BREEZE_SIGNING_MODE=developer-id`, `BREEZE_SIGNING_IDENTITY="Developer ID Application: Jacob Freudinger (9228JV4RRX)"`.
+   Run `native/notarize-release.sh dist/Breeze.app apple-notary-9228JV4RRX` with that identity to replace steps 4–6. It notarizes and staples the app before creating the updater ZIP, then signs, notarizes, staples and assesses the DMG. Publish only after every check succeeds.
 4. **Create the auto-update ZIP** — `ditto -c -k --keepParent dist/Breeze.app dist/Breeze-X.Y.Z-arm64.zip`
 5. **Generate the DMG background** — `cd native/dmg && swiftc makebg.swift -o /tmp/makebg && /tmp/makebg`
 6. **Create the DMG** — `create-dmg --volname "Breeze" --background dmg/background.tiff --window-pos 240 120 --window-size 620 420 --icon-size 128 --icon "Breeze.app" 165 215 --app-drop-link 455 215 --hide-extension "Breeze.app" --no-internet-enable dist/Breeze-X.Y.Z-arm64.dmg dist/Breeze.app`
@@ -115,7 +116,7 @@ Skip any step only if the user explicitly says so.
 - No perpetual CSS/timer animations on the main thread.
 - Pages load at 100% zoom (`magnification = 1.0` reset in `didCommit`).
 - Apple Silicon (arm64) only — no Rosetta.
-- Self-signed "Breeze Signing" cert — never lose it or auto-updates break.
+- Direct releases use Apple Developer ID Application for team 9228JV4RRX, hardened runtime and notarization. Preserve the legacy "Breeze Signing" identity for old builds; do not recreate it.
 - The updater accepts semantic `vX.Y.Z` releases with major ≥ 3 and a ZIP asset;
   the current product line is 6.x.
 - Every release is marked GitHub latest; native 6.x is the only product.

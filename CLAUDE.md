@@ -30,7 +30,7 @@ native releases are now just normal GitHub "latest". Everything here is native.
 - **Build:** `swiftc` directly (NOT SwiftPM — `swift build` is broken in the
   standalone Command Line Tools: dyld can't load BuildServerProtocol.framework).
   No Xcode. `native/build.sh` compiles all of `Sources/Breeze/*.swift`, bundles
-  `../ui/` + icon, writes Info.plist, and signs with "Breeze Signing". No AI
+  `../ui/` + icon, writes Info.plist, and signs in the explicitly selected local or Developer ID mode. No AI
   runtime is bundled — Aero talks to Breeze Cloud.
 - **Cloud build env is required:** every Breeze or BreezeTest build that will be
   tested, shipped, zipped, or released must include `BREEZE_CLOUD_AI_BASE_URL`
@@ -222,17 +222,20 @@ The `.tiff`/`.png`/binary are gitignored; only `makebg.swift` is tracked.
 
 ## Code signing — CRITICAL
 
-- Self-signed cert **"Breeze Signing"** in the login keychain (used by both
-  `build.sh` and the codesign of the DMG/zip). NOT Apple Developer ID, NOT
-  notarized. Auto-updates work because every build is signed with this SAME cert
-  — if it's lost/regenerated, the updater's signature check fails. **Back it up:
-  Keychain Access → export "Breeze Signing" as .p12.** `hardenedRuntime` stays
-  off (no entitlements needed for the hand-built app). See [[breeze-code-signing]].
-- **First install shows a Gatekeeper warning** ("Apple could not verify Breeze").
-  On macOS 26 the right-click→Open path is gone — users open **System Settings →
-  Privacy & Security → "Open Anyway"** once. Removing this needs an Apple
-  Developer ID ($99/yr) + notarization. The lander + What's New both document it.
-- Apple Silicon (arm64) only — deliberate, no Rosetta.
+- Direct GitHub releases use `BREEZE_SIGNING_MODE=developer-id` and identity
+  `Developer ID Application: Jacob Freudinger (9228JV4RRX)`.
+- Embed the existing Cloud configuration, then run `native/notarize-release.sh
+  dist/Breeze.app apple-notary-9228JV4RRX` with that signing identity. This replaces
+  the manual ZIP/DMG packaging above: Apple must accept the app, its ticket must
+  be stapled before the ZIP is made, and the signed DMG must also be accepted,
+  stapled and pass Gatekeeper. Never publish an unaccepted artifact.
+- Authentication uses the approved Keychain profile alias only. Never retrieve,
+  print or export its credentials. Keep the legacy Breeze Signing identity intact.
+- Hardened runtime is enabled with minimal camera, microphone and location
+  entitlements. No JIT or library validation exceptions are enabled.
+- Website passkey support needs a separate organization-only Apple entitlement;
+  do not advertise it on the current individual account.
+- Apple Silicon (arm64) only. App Store work lives in the separate BREEZE MAC chat.
 
 ## Gotchas / invariants (native)
 

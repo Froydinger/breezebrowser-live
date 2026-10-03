@@ -20,6 +20,26 @@ OUT_DIR="${BREEZE_DIST:-dist}"
 APP="$OUT_DIR/${APP_NAME}.app"
 SDK="${BREEZE_SDK:-$(xcrun --show-sdk-path)}"
 MODULE_CACHE="${BREEZE_MODULE_CACHE:-${TMPDIR:-/tmp}/breeze-swift-module-cache}"
+# Explicit signing modes: keep local builds stable; opt in to Apple distribution.
+SIGNING_MODE="${BREEZE_SIGNING_MODE:-local}"
+SIGNING_ID="${BREEZE_SIGNING_IDENTITY:-Breeze Signing}"
+SIGN_ARGS=()
+case "$SIGNING_MODE" in
+  local) ;;
+  developer-id)
+    case "$SIGNING_ID" in
+      "Developer ID Application: "*" (9228JV4RRX)") ;;
+      *) echo "Choose the approved Developer ID Application identity for team 9228JV4RRX." >&2; exit 1 ;;
+    esac
+    SIGN_ARGS=(--options runtime --timestamp --entitlements Breeze-DeveloperID.entitlements)
+    ;;
+  *) echo "Unknown Breeze signing mode." >&2; exit 1 ;;
+esac
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -Fq "\"$SIGNING_ID\""; then
+  echo "Required signing identity is unavailable. Unlock the signing keychain or finish the approved certificate setup." >&2
+  exit 1
+fi
+
 mkdir -p "$MODULE_CACHE"
 
 xml_escape() {
@@ -90,8 +110,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$APP_NAME</string>
   <key>CFBundleDisplayName</key><string>$APP_NAME</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleVersion</key><string>6.3.3</string>
-  <key>CFBundleShortVersionString</key><string>6.3.3</string>
+  <key>CFBundleVersion</key><string>6.3.4</string>
+  <key>CFBundleShortVersionString</key><string>6.3.4</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
 ${CLOUD_PLIST_KEYS}  <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>icon</string>
@@ -165,18 +185,6 @@ PLIST
 # Codesign rejects those inside a bundle, so strip them after all resources copy.
 xattr -cr "$APP" 2>/dev/null || true
 
-# Sign with the stable self-signed "Breeze Signing" cert so auto-updates verify.
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "Breeze Signing"; then
-  SIGNING_ID="Breeze Signing"
-  SIGNING_LABEL="Breeze Signing"
-else
-  SIGNING_ID="-"
-  SIGNING_LABEL="ad-hoc (Breeze Signing cert not found)"
-fi
-codesign --force --sign "$SIGNING_ID" "$APP" >/dev/null
-if [[ "$SIGNING_ID" == "Breeze Signing" ]]; then
-  echo "Signed with: Breeze Signing"
-else
-  echo "Signed: $SIGNING_LABEL"
-fi
+codesign --force --sign "$SIGNING_ID" "${SIGN_ARGS[@]}" "$APP" >/dev/null
+echo "Signed with: $SIGNING_ID ($SIGNING_MODE)"
 echo "Built: $APP"
