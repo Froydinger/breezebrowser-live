@@ -96,7 +96,7 @@ private struct BreezeCloudSyncState: Codable {
 /// embeds the public project key; user tokens live in Keychain and passwords are
 /// sent once over TLS, never saved by Breeze.
 @MainActor
-final class BreezeCloud: NSObject, ASWebAuthenticationPresentationContextProviding {
+final class BreezeCloud: NSObject {
     static let shared = BreezeCloud()
     static let stateDidChange = Notification.Name("BreezeCloudStateDidChange")
     static var redirectURI: String { breezeCloudRedirectURI }
@@ -110,7 +110,6 @@ final class BreezeCloud: NSObject, ASWebAuthenticationPresentationContextProvidi
     private var preferences = BreezeCloudSyncPreferences()
     private var syncState = BreezeCloudSyncState()
     private var syncTasks: [String: Task<Void, Never>] = [:]
-    private var authenticationSession: ASWebAuthenticationSession?
     private weak var pendingGoogleAuthBrowser: BrowserController?
     private var pendingGoogleAuthTabID: UUID?
     private var pendingGoogleAuthPreviousTabID: UUID?
@@ -187,21 +186,22 @@ final class BreezeCloud: NSObject, ASWebAuthenticationPresentationContextProvidi
         try await syncNow()
     }
 
-    /// Starts Google sign-in with AuthenticationServices. On macOS builds where
-    /// the system reports the original authorize URL as the callback (instead of
-    /// calling the browser's `begin` handler), continue that exact request in a
-    /// normal Breeze tab and finish through the same PKCE deep-link callback.
-    /// Other unexpected URLs still fail closed.
+    /// Breeze is already the browser. Open its own account authorization in a
+    /// real browser tab instead of asking macOS to route a session back to us.
+    /// The PKCE verifier and strict callback validation remain unchanged.
     func signInWithGoogle(in browser: BrowserController) async throws -> Bool {
         try requireConfigured()
-        guard authenticationSession == nil else {
-            throw cloudError("Google sign-in is already in progress.")
+        if let tabID = pendingGoogleAuthTabID,
+           let pendingBrowser = pendingGoogleAuthBrowser,
+           let index = pendingBrowser.tabs.firstIndex(where: { $0.id == tabID }) {
+            pendingBrowser.select(index)
+            if pendingBrowser.window.isMiniaturized { pendingBrowser.window.deminiaturize(nil) }
+            pendingBrowser.window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            setStatus("Finish Google sign-in in the Breeze tab")
+            return false
         }
-        if let pendingGoogleAuthTabID,
-           let pendingGoogleAuthBrowser,
-           pendingGoogleAuthBrowser.tabs.contains(where: { $0.id == pendingGoogleAuthTabID }) {
-            throw cloudError("Finish the Google sign-in already open in Breeze first.")
-        }
+        // A closed tab/window must never lock out a later sign-in attempt.
         clearPendingGoogleAuthTab()
         let verifier = makeVerifier()
         session["pending_verifier"] = verifier
@@ -215,72 +215,22 @@ final class BreezeCloud: NSObject, ASWebAuthenticationPresentationContextProvidi
             URLQueryItem(name: "prompt", value: "select_account")
         ]
         guard let url = components.url else { throw cloudError("Could not open Google sign-in.") }
-        authLogger.info("Opening Google OAuth with account selection enabled")
-        setStatus("Waiting for Google sign-in in Breeze…")
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
-            let completion: (URL?, Error?) -> Void = { [weak self] callbackURL, error in
-                Task { @MainActor in
-                    guard let self else {
-                        continuation.resume(throwing: NSError(domain: "BreezeCloud", code: 1,
-                                                              userInfo: [NSLocalizedDescriptionKey: "Breeze closed before sign-in finished."]))
-                        return
-                    }
-                    self.authenticationSession = nil
-                    if let callbackURL, callbackURL.absoluteString == url.absoluteString {
-                        self.authLogger.notice("AuthenticationServices returned the authorize start URL; continuing in a Breeze tab")
-                        self.openGoogleAuthTab(url, in: browser)
-                        self.setStatus("Finish Google sign-in in the Breeze tab")
-                        continuation.resume(returning: false)
-                        return
-                    }
-                    if let error {
-                        self.setStatus("Google sign-in was canceled")
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    guard let callbackURL else {
-                        continuation.resume(throwing: self.cloudError("Google sign-in did not return to Breeze."))
-                        return
-                    }
-                    do {
-                        try await self.finishAuthCallback(callbackURL)
-                        self.setStatus("Signed in with Google")
-                        continuation.resume(returning: true)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
-            }
-            let session: ASWebAuthenticationSession
-            if #available(macOS 14.4, *) {
-                // Use Apple's explicit callback matcher so the browser session
-                // handler receives the exact redirect contract. The legacy
-                // callbackURLScheme initializer has produced the authorize
-                // start URL as a false completion in browser-handler flows.
-                let callback = ASWebAuthenticationSession.Callback.customScheme(Self.redirectScheme)
-                session = ASWebAuthenticationSession(url: url, callback: callback,
-                                                     completionHandler: completion)
-            } else {
-                session = ASWebAuthenticationSession(url: url, callbackURLScheme: Self.redirectScheme,
-                                                     completionHandler: completion)
-            }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
-            authenticationSession = session
-            guard session.start() else {
-                authenticationSession = nil
-                continuation.resume(throwing: cloudError("Breeze could not start Google sign-in."))
-                return
-            }
-        }
+        authLogger.info("Opening Google OAuth in a Breeze tab with account selection enabled")
+        openGoogleAuthTab(url, in: browser)
+        setStatus("Finish Google sign-in in the Breeze tab")
+        return false
     }
 
     private func openGoogleAuthTab(_ url: URL, in browser: BrowserController) {
         let previousTabID = browser.current?.id
-        let tab = browser.openTab(url: url.absoluteString, playSound: false)
-        pendingGoogleAuthBrowser = browser
-        pendingGoogleAuthTabID = tab.id
-        pendingGoogleAuthPreviousTabID = previousTabID
+        _ = browser.openWebAuthenticationTab(url: url, isPrivate: false) { tab in
+            pendingGoogleAuthBrowser = browser
+            pendingGoogleAuthTabID = tab.id
+            pendingGoogleAuthPreviousTabID = previousTabID
+        }
+        if browser.window.isMiniaturized { browser.window.deminiaturize(nil) }
+        browser.window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func clearPendingGoogleAuthTab() {
@@ -304,12 +254,6 @@ final class BreezeCloud: NSObject, ASWebAuthenticationPresentationContextProvidi
            let index = browser.tabs.firstIndex(where: { $0.id == previousTabID }) {
             browser.select(index)
         }
-    }
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        if let keyWindow = NSApp.keyWindow { return keyWindow }
-        if let browser = (NSApp.delegate as? AppDelegate)?.activeBrowser { return browser.window }
-        return NSApp.windows.first ?? NSWindow()
     }
 
     func finishAuthCallback(_ url: URL) async throws {

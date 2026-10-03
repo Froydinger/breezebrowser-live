@@ -226,6 +226,9 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.5', icon: 'shield-check', title: 'Google Sign-In, Unstuck', hotfix: true, major: false, items: [
+        '<b>Sign in inside Breeze</b> — Google account sign-in opens directly in a Breeze tab and returns to your Cloud settings.',
+        '<b>Retry without a dead end</b> — Clicking again brings the sign-in tab forward. Closing it lets you start a fresh attempt.' ] },
       { v: '6.3.4', icon: 'shield-check', title: 'A Trusted Download', hotfix: false, major: false, items: [
         '<b>Apple-Verified Distribution</b> — Breeze is signed with our Apple Developer ID and notarized for direct download.',
         '<b>Your Browser Stays Yours</b> — Aero, saved browsing data, password autofill, and video downloading remain available in this GitHub edition.' ] },

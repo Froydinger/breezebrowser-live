@@ -64,3 +64,17 @@ References:
 - Exact artifacts are native/dist/Breeze-6.3.4-arm64.zip and .dmg.
 - Coordinator confirmed GitHub publication approval. Website publication remains
   held pending separate approval. Publish only the verified 6.3.4 artifacts.
+
+## GitHub publication complete
+
+- v6.3.4 published as latest at
+  https://github.com/Froydinger/breezebrowser-live/releases/tag/v6.3.4
+- Release commit: 7fbc002f3947ccb56067e227a8b2243f72964420.
+- Downloaded published assets matched local SHA256 values and independently
+  passed signature, stapling and Gatekeeper checks:
+  - ZIP: 559c871f9dc89d2475e337cd4c41b4abefefd0081976750640748bf8a1f35295
+  - DMG: 88ffb7cbbb8409765cc3bc810e258ba8906eadbafce7cba859a2347db0bf5738
+- Do not repeat GitHub publication or upload the assets again.
+- Website deployment remains on hold under the Git-only approval. Its prepared
+  changes remain local in /Users/jakefreudinger/APPS/Browser/source.
+- Interactive updater/relaunch migration remains unverified and was disclosed.
