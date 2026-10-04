@@ -8,6 +8,9 @@ const APP_URL=pathToFileURL(path.join(__dirname,'renderer/index.html')).href;
 let win,store,vault,cloud,browserSession,blocker;
 let tabs=[],activeTabId=null,splitTabId=null,layout=null,quitting=false,closingWindow=false,syncTimer=null;
 const liveDownloads=new Map();const reminderTimers=new Map();const closedTabs=[];
+// Internal pages cover, rather than navigate, the retained website. Keep its
+// state separate so late web events and session saves cannot replace the cover.
+const internalWebPages=new WeakMap();
 const assistant={visible:false,running:false,chatId:null,messages:[],status:'',error:null,attachments:[]};
 let assistantGeneration=0;
 let passwordMetadata=[],cloudState={configured:false},restoreTabs=[];
@@ -35,9 +38,10 @@ function event(data){if(win&&!win.isDestroyed())win.webContents.send('breeze:eve
 function snapshot(){const tab=getTab();return {version:app.getVersion(),development:!!config.development,cloudDisabled:!!config.cloudDisabled,cloudMode:config.cloudMode||'configured',buildLabel:config.development?'Unconfigured Windows test build':config.cloudDisabled?'Breeze for Windows':'Windows',platform:process.platform,chromiumVersion:process.versions.chrome,electronVersion:process.versions.electron,tabs:tabs.map(metadataTab),activeTabId,splitTabId,internalPage:tab?.page??null,pins:store.get('pins'),groups:store.get('groups'),settings:settings(),history:store.get('history'),bookmarks:store.get('bookmarks'),downloads:store.get('downloads'),chats:store.get('chats'),reminders:store.get('reminders'),cloud:{...cloudState,configured:!!cloudState.configured,aeroConfigured:!!(config.aiBaseURL&&config.aiClientToken),account:cloudState.signedIn?{...cloudState,email:cloudState.email}:null},passwords:passwordMetadata,assistant:{...assistant,attachments:assistant.attachments.map(({id,name})=>({id,name}))},restoreTabs,systemDark:nativeTheme.shouldUseDarkColors,maximized:win?.isMaximized()||false};}
 function broadcast(){if(!win||win.isDestroyed())return;win.webContents.send('breeze:state',snapshot());}
 function toast(text,type='info'){event({type:'toast',text,error:type==='error'});}
-function saveTabs(){if(!store)return;const pending=restoreTabs.filter(r=>webURL(r.url));store.set('openTabs',[...pending,...tabs.filter(t=>webURL(t.url)).map(t=>({id:t.id,url:t.url,title:t.title,groupId:t.groupId||null,pinned:t.pinned||false,sleeping:t.sleeping||false}))].filter((t,i,all)=>all.findIndex(r=>r.url===t.url)===i));}
+function saveTabs(){if(!store)return;const pending=restoreTabs.filter(r=>webURL(r.url));const current=tabs.flatMap(t=>{const page=internalWebPages.get(t)||t;return webURL(page.url)?[{id:t.id,url:page.url,title:page.title,groupId:t.groupId||null,pinned:t.pinned||false,sleeping:t.sleeping||false}]:[];});store.set('openTabs',[...pending,...current].filter((t,i,all)=>all.findIndex(r=>r.url===t.url)===i));}
 function changed(collection){broadcast();if(!cloud?.account?.isApplyingChanges?.()&&['history','pins','bookmarks','chats','reminders','openTabs','settings','passwords'].includes(collection)){clearTimeout(syncTimer);syncTimer=setTimeout(()=>{cloud?.account?.syncNow().catch(()=>{});},2000);}}
 function updateTab(tab,patch){Object.assign(tab,patch);broadcast();}
+function updateWebPage(tab,patch){Object.assign(internalWebPages.get(tab)||tab,patch);broadcast();}
 function applyTheme(){nativeTheme.themeSource=settings().theme;win?.setBackgroundColor(nativeTheme.shouldUseDarkColors?'#000000':'#ffffff');}
 function positionViews(){if(!win||!layout)return;const bounds=win.getContentBounds();const active=getTab();for(const tab of tabs){if(!tab.view)continue;const visible=!layout.overlayOpen&&layout.width>0&&layout.height>0&&!active?.page&&(tab.id===activeTabId||tab.id===splitTabId);tab.view.setVisible(visible);if(visible){const rect=tab.id===splitTabId&&layout.split?layout.split:layout;tab.view.setBounds(boundedRect(rect,bounds));}}}
 function createTab(value='breeze://newtab',{activate=true,split=false,groupId=null,pinned=false,deferred=false}={}){
@@ -60,19 +64,19 @@ function createView(tab,inheritedPreferences={},load=true){
     if((!webURL(url)&&url!=='about:blank')||blocker?.shouldBlock({url,resourceType:'mainFrame',isPopup:true,webContentsId:wc.id,referrer:wc.getURL()}))return{action:'deny'};
     return {action:'allow',outlivesOpener:true,createWindow:options=>{const created=createTab(url==='about:blank'?'breeze://newtab':url,{activate:disposition!=='background-tab',deferred:true});const child=getTab(created.id);child.url=url;child.page=null;child.title='New Tab';const childView=createView(child,options.webPreferences||{},false);positionViews();broadcast();return childView.webContents;}};
   });
-  wc.on('did-start-loading',()=>updateTab(tab,{loading:true,error:null}));
-  wc.on('did-stop-loading',()=>{if(wc.isDestroyed())return;updateTab(tab,{loading:false,canGoBack:wc.navigationHistory.canGoBack(),canGoForward:wc.navigationHistory.canGoForward()});});
-  wc.on('did-navigate',(_e,url)=>{if(!webURL(url))return;tab.url=url;tab.page=null;tab.lastActive=Date.now();wc.setZoomFactor(1);recordHistory(tab);saveTabs();broadcast();});
-  wc.on('did-navigate-in-page',(_e,url,isMain)=>{if(isMain&&webURL(url)){tab.url=url;saveTabs();broadcast();}});
-  wc.on('page-title-updated',(_e,title)=>{tab.title=safeString(title,400);recordHistory(tab);broadcast();});
-  wc.on('page-favicon-updated',(_e,icons)=>{tab.favicon=icons.find(webURL)||null;broadcast();});
+  wc.on('did-start-loading',()=>updateWebPage(tab,{loading:true,error:null}));
+  wc.on('did-stop-loading',()=>{if(wc.isDestroyed())return;updateWebPage(tab,{loading:false,canGoBack:wc.navigationHistory.canGoBack(),canGoForward:wc.navigationHistory.canGoForward()});});
+  wc.on('did-navigate',(_e,url)=>{if(!webURL(url))return;const page=internalWebPages.get(tab)||tab;page.url=url;page.page=null;tab.lastActive=Date.now();wc.setZoomFactor(1);recordHistory(page);saveTabs();broadcast();});
+  wc.on('did-navigate-in-page',(_e,url,isMain)=>{if(isMain&&webURL(url)){const page=internalWebPages.get(tab)||tab;page.url=url;page.canGoBack=wc.navigationHistory.canGoBack();page.canGoForward=wc.navigationHistory.canGoForward();saveTabs();broadcast();}});
+  wc.on('page-title-updated',(_e,title)=>{const page=internalWebPages.get(tab)||tab;page.title=safeString(title,400);recordHistory(page);saveTabs();broadcast();});
+  wc.on('page-favicon-updated',(_e,icons)=>updateWebPage(tab,{favicon:icons.find(webURL)||null}));
   wc.on('audio-state-changed',()=>updateTab(tab,{audible:wc.isCurrentlyAudible()}));
-  wc.on('did-fail-load',(_e,code,description,_url,isMain)=>{if(isMain&&code!==-3){tab.error=`This page could not load (${description}).`;tab.loading=false;broadcast();}});
-  wc.on('render-process-gone',()=>{tab.error='This tab stopped. Reload to try again.';tab.loading=false;broadcast();});
+  wc.on('did-fail-load',(_e,code,description,_url,isMain)=>{if(isMain&&code!==-3)updateWebPage(tab,{error:`This page could not load (${description}).`,loading:false});});
+  wc.on('render-process-gone',()=>updateWebPage(tab,{error:'This tab stopped. Reload to try again.',loading:false}));
   wc.on('found-in-page',(_e,result)=>event({type:'find-result',...result}));
   wc.on('dom-ready',()=>{tab.cssKey=null;applyCosmetics(tab);});
   wc.on('context-menu',(_e,p)=>{const entries=[];if(p.linkURL&&webURL(p.linkURL))entries.push({label:'Open link in new tab',click:()=>createTab(p.linkURL)},{label:'Copy link address',click:()=>require('electron').clipboard.writeText(p.linkURL)},{type:'separator'});if(p.isEditable)entries.push({role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'});else if(p.selectionText)entries.push({role:'copy'},{label:'Search selection',click:()=>createTab(searchURL(p.selectionText,settings().searchEngine))});entries.push({type:'separator'},{label:'Back',enabled:wc.navigationHistory.canGoBack(),click:()=>wc.navigationHistory.goBack()},{label:'Reload',click:()=>wc.reload()},{label:'Pin this page',click:()=>pinCurrent()},{label:'Save bookmark',click:()=>bookmarkCurrent()},{label:'Print…',click:()=>wc.print()});Menu.buildFromTemplate(entries).popup({window:win});});
-  if(load)wc.loadURL(tab.url).catch(()=>{});positionViews();return view;
+  if(load)wc.loadURL((internalWebPages.get(tab)||tab).url).catch(()=>{});positionViews();return view;
 }
 async function applyCosmetics(tab){const wc=tab.view?.webContents;if(!wc||wc.isDestroyed())return;if(tab.cssKey){await wc.removeInsertedCSS(tab.cssKey).catch(()=>{});tab.cssKey=null;}const css=blocker?.cosmeticCSS(wc.getURL());if(css)tab.cssKey=await wc.insertCSS(css).catch(()=>null);}
 function recordHistory(tab){if(!webURL(tab.url))return;const rows=store.get('history').filter(h=>h.url!==tab.url);rows.unshift({id:id(),url:tab.url,title:tab.title||tab.url,ts:Date.now()});store.set('history',rows.slice(0,5000));}
@@ -85,10 +89,26 @@ async function retireView(tab){
  });
 }
 async function closeTab(tabId){const tab=getTab(tabId);if(!tab)return;if(!await retireView(tab))return;const index=tabs.findIndex(t=>t.id===tabId);if(index<0)return;tabs.splice(index,1);if(webURL(tab.url))closedTabs.push({url:tab.url});if(closedTabs.length>30)closedTabs.shift();if(splitTabId===tabId)splitTabId=null;if(activeTabId===tabId)activeTabId=tabs[Math.min(index,tabs.length-1)]?.id||null;if(!tabs.length)createTab();else activateTab(activeTabId);saveTabs();}
-function navigate(value,tabId=activeTabId){let tab=getTab(tabId);if(!tab)return createTab(value);const dest=navigateInput(value,settings().searchEngine);tab.url=dest.url;tab.page=dest.page;tab.error=null;if(dest.page){tab.title=dest.page==='newtab'?'New Tab':dest.page.charAt(0).toUpperCase()+dest.page.slice(1);tab.view?.webContents.stop();tab.loading=false;}else{const existing=!!tab.view;createView(tab);if(existing)tab.view.webContents.loadURL(dest.url).catch(()=>{});}positionViews();saveTabs();broadcast();return metadataTab(tab);}
-function openInternal(page){if(page===null){const tab=getTab();if(tab?.view&&webURL(tab.view.webContents.getURL())){tab.page=null;tab.url=tab.view.webContents.getURL();positionViews();broadcast();}return;}if(!INTERNAL_PAGES.has(page))throw new Error('Unknown Breeze page.');return navigate('breeze://'+page);}
-function goBack(){const tab=getTab();if(tab?.page&&tab.view){tab.page=null;tab.url=tab.view.webContents.getURL();positionViews();broadcast();}else if(tab?.view?.webContents.navigationHistory.canGoBack())tab.view.webContents.navigationHistory.goBack();}
-function goForward(){const wc=getTab()?.view?.webContents;if(wc?.navigationHistory.canGoForward())wc.navigationHistory.goForward();}
+function navigate(value,tabId=activeTabId){
+ const tab=getTab(tabId);if(!tab)return createTab(value);const dest=navigateInput(value,settings().searchEngine);
+ if(dest.page){
+  if(!tab.page&&webURL(tab.url)){const {url,title,loading,canGoBack,canGoForward,error,favicon}=tab;internalWebPages.set(tab,{url,title,loading,canGoBack,canGoForward,error,favicon});}
+  Object.assign(tab,{...dest,title:dest.page==='newtab'?'New Tab':dest.page.charAt(0).toUpperCase()+dest.page.slice(1),error:null,favicon:null,loading:false,canGoBack:internalWebPages.has(tab),canGoForward:false});tab.view?.webContents.stop();
+ }else{
+  Object.assign(tab,internalWebPages.get(tab)||{},dest,{error:null});internalWebPages.delete(tab);const existing=!!tab.view;createView(tab);if(existing)tab.view.webContents.loadURL(dest.url).catch(()=>{});
+ }
+ positionViews();saveTabs();broadcast();return metadataTab(tab);
+}
+function returnToWebPage(tab){
+ const page=tab&&internalWebPages.get(tab);if(!page)return;
+ Object.assign(tab,page,{page:null});internalWebPages.delete(tab);
+ if(!tab.view)createView(tab);const wc=tab.view.webContents;
+ tab.loading=wc.isLoading();tab.canGoBack=wc.navigationHistory.canGoBack();tab.canGoForward=wc.navigationHistory.canGoForward();
+ positionViews();saveTabs();broadcast();
+}
+function openInternal(page){if(page===null)return returnToWebPage(getTab());if(!INTERNAL_PAGES.has(page))throw new Error('Unknown Breeze page.');return navigate('breeze://'+page);}
+function goBack(){const tab=getTab();if(tab?.page)return returnToWebPage(tab);if(tab?.view?.webContents.navigationHistory.canGoBack())tab.view.webContents.navigationHistory.goBack();}
+function goForward(){const tab=getTab();if(tab?.page)return;const wc=tab?.view?.webContents;if(wc?.navigationHistory.canGoForward())wc.navigationHistory.goForward();}
 function reloadTab(){const tab=getTab();if(!tab||tab.page)return;if(tab.sleeping)createView(tab);else if(tab.loading)tab.view?.webContents.stop();else tab.view?.webContents.reload();}
 async function sleepTab(tab){if(!tab?.view||tab.id===activeTabId||tab.id===splitTabId||tab.view.webContents.isCurrentlyAudible())return false;if(!await retireView(tab))return false;tab.sleeping=true;tab.loading=false;broadcast();return true;}
 async function enforceTabBudget(){const max=settings().maxLiveTabs;const live=tabs.filter(t=>t.view);if(max>0&&live.length>max){for(const tab of live.sort((a,b)=>a.lastActive-b.lastActive)){if(tabs.filter(t=>t.view).length<=max)break;if(settings().keepPinnedAppsAwake&&tab.pinned)continue;await sleepTab(tab);}}}
@@ -215,6 +235,11 @@ async function runSmokeTest(){
   let blocked=false;try{navigate('file:///C:/Windows/win.ini');}catch{blocked=true;}assert.ok(blocked);checks.push('unsafe URL blocked');
   await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
   assert.match(await win.webContents.executeJavaScript('document.querySelector("#page-content").innerText'),/Settings/);checks.push('settings renderer');
+  assert.equal(await win.webContents.executeJavaScript('document.querySelector("#go-back").disabled'),false);
+  assert.ok(store.get('openTabs').some(row=>row.id===tab.id&&row.url===getTab().view.webContents.getURL()));
+  goBack();assert.equal(getTab().page,null);assert.equal(getTab().title,getTab().view.webContents.getTitle());
+  assert.equal(getTab().canGoBack,getTab().view.webContents.navigationHistory.canGoBack());
+  assert.equal(getTab().canGoForward,getTab().view.webContents.navigationHistory.canGoForward());checks.push('internal-page Back and session preservation');
   openInternal('newtab');await win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
   assert.match(await win.webContents.executeJavaScript('document.querySelector("#page-content").innerText'),/exploring/);checks.push('new-tab renderer');
   if(process.platform==='win32'){await vault.ready;const testPassword='synthetic-smoke-'+id();const saved=await vault.savePassword({origin:'https://example.test',username:'breeze-smoke',password:testPassword});assert.equal((await vault.revealPassword(saved.id)).password,testPassword);assert.ok(!JSON.stringify(store.get('secureVault')).includes(testPassword));await vault.deletePassword(saved.id);checks.push('Windows DPAPI vault round-trip');}

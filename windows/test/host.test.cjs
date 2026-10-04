@@ -170,6 +170,152 @@ test('an explicit restore dismissal is persisted immediately', async () => {
   assert.deepEqual(h.data.openTabs, []);
 });
 
+function loadWebPage(h, tabId, { title = 'Fixture website', back = false, forward = false } = {}) {
+  const wc = h.host.getTab(tabId).view.webContents;
+  wc.navigationHistory.canGoBack = () => back;
+  wc.navigationHistory.canGoForward = () => forward;
+  wc.emit('did-navigate', {}, wc.getURL());
+  wc.emit('page-title-updated', {}, title);
+  wc.emit('did-stop-loading');
+  return wc;
+}
+
+test('internal pages offer Back to the first website and preserve it across quitting', async () => {
+  const h = await harness();
+  const tab = await h.invoke('tab:new', { url: 'https://example.test/first', pinned: true, groupId: 'group-one' });
+  const wc = loadWebPage(h, tab.id, { title: 'First website' });
+  await h.invoke('browser:internal', { page: 'settings' });
+  const internal = h.host.getTab(tab.id);
+  assert.equal(internal.page, 'settings');
+  assert.equal(internal.title, 'Settings');
+  assert.equal(internal.canGoBack, true, 'The renderer must enable Back even without Chromium history');
+  assert.equal(internal.canGoForward, false);
+  assert.equal(internal.view.webContents, wc, 'The original page remains available without reloading');
+  h.app.emit('before-quit');
+  assert.deepEqual(h.data.openTabs, [{ id: tab.id, url: tab.url, title: 'First website', groupId: 'group-one', pinned: true, sleeping: false }]);
+  const restarted = await harness({ settings: { restoreTabs: 'always' }, openTabs: h.data.openTabs });
+  assert.equal(restarted.host.getTab().url, tab.url);
+  assert.equal(restarted.host.getTab().pinned, true);
+  assert.equal(restarted.host.getTab().groupId, 'group-one');
+  await h.invoke('tab:back');
+  assert.equal(internal.page, null);
+  assert.equal(internal.url, tab.url);
+  assert.equal(internal.title, 'First website');
+  assert.equal(internal.canGoBack, false);
+  assert.equal(internal.canGoForward, false);
+});
+
+test('dismissing repeated internal pages restores website metadata and real history controls', async () => {
+  const h = await harness();
+  const tab = await h.invoke('tab:new', { url: 'https://example.test/current' });
+  const wc = loadWebPage(h, tab.id, { title: 'Current website', back: true, forward: true });
+  wc.emit('page-favicon-updated', {}, ['https://example.test/favicon.ico']);
+  await h.invoke('browser:internal', { page: 'history' });
+  await h.invoke('tab:navigate', { url: 'breeze://bookmarks' });
+  assert.equal(h.host.getTab(tab.id).canGoForward, false);
+  let forwardCalls = 0;
+  wc.navigationHistory.goForward = () => { forwardCalls++; };
+  await h.invoke('tab:forward');
+  assert.equal(forwardCalls, 0, 'Forward must not change the hidden website');
+  await h.invoke('browser:internal', { page: null });
+  const restored = h.host.getTab(tab.id);
+  assert.equal(restored.page, null);
+  assert.equal(restored.url, tab.url);
+  assert.equal(restored.title, 'Current website');
+  assert.equal(restored.favicon, 'https://example.test/favicon.ico');
+  assert.equal(restored.canGoBack, true);
+  assert.equal(restored.canGoForward, true);
+});
+
+test('late hidden website events cannot replace the internal page or disable its Back button', async () => {
+  const h = await harness();
+  const tab = await h.invoke('tab:new', { url: 'https://example.test/loading' });
+  const wc = loadWebPage(h, tab.id, { title: 'Loading website' });
+  await h.invoke('browser:internal', { page: 'downloads' });
+  wc.url = 'https://example.test/redirected';
+  wc.emit('did-start-loading');
+  wc.emit('did-navigate', {}, wc.url);
+  wc.emit('page-title-updated', {}, 'Redirected website');
+  wc.url += '#section';
+  wc.emit('did-navigate-in-page', {}, wc.url, true);
+  wc.emit('did-fail-load', {}, -105, 'NAME_NOT_RESOLVED', wc.url, true);
+  wc.emit('did-stop-loading');
+  const internal = h.host.getTab(tab.id);
+  assert.equal(internal.page, 'downloads');
+  assert.equal(internal.url, 'breeze://downloads');
+  assert.equal(internal.title, 'Downloads');
+  assert.equal(internal.loading, false);
+  assert.equal(internal.error, null);
+  assert.equal(internal.canGoBack, true);
+  assert.equal(h.data.openTabs[0].url, wc.url);
+  assert.equal(h.data.openTabs[0].title, 'Redirected website');
+  await h.invoke('tab:back');
+  assert.equal(internal.url, wc.url);
+  assert.equal(internal.title, 'Redirected website');
+  assert.equal(internal.canGoBack, false);
+  assert.match(internal.error, /NAME_NOT_RESOLVED/);
+});
+
+test('internal pages retain a sleeping website and can return after its view is retired', async () => {
+  const h = await harness();
+  const tab = await h.invoke('tab:new', { url: 'https://example.test/sleeping' });
+  loadWebPage(h, tab.id, { title: 'Sleeping website' });
+  await h.invoke('browser:internal', { page: 'settings' });
+  await h.invoke('tab:new');
+  assert.equal(await h.invoke('tab:sleep', { id: tab.id }), true);
+  await h.invoke('tab:activate', { id: tab.id });
+  assert.equal(h.host.getTab(tab.id).view, undefined);
+  await h.invoke('tab:back');
+  const restored = h.host.getTab(tab.id);
+  assert.equal(restored.page, null);
+  assert.equal(restored.url, tab.url);
+  assert.equal(restored.title, 'Sleeping website');
+  assert.equal(restored.sleeping, false);
+  assert.equal(restored.view.webContents.getURL(), tab.url);
+  assert.equal(h.data.openTabs[0].url, tab.url);
+});
+
+test('a new web navigation replaces the retained website and internal-only tabs stay internal', async () => {
+  const h = await harness();
+  await h.invoke('browser:internal', { page: 'history' });
+  await h.invoke('tab:back');
+  await h.invoke('browser:internal', { page: null });
+  assert.equal(h.host.getTab().page, 'history');
+  assert.equal(h.host.getTab().canGoBack, false);
+  assert.deepEqual(h.data.openTabs, []);
+  await h.invoke('tab:navigate', { url: 'https://example.test/old' });
+  loadWebPage(h, h.host.getTab().id, { title: 'Old website' });
+  await h.invoke('browser:internal', { page: 'settings' });
+  await h.invoke('tab:navigate', { url: 'https://example.test/new' });
+  loadWebPage(h, h.host.getTab().id, { title: 'New website' });
+  await h.invoke('browser:internal', { page: 'history' });
+  await h.invoke('tab:back');
+  assert.equal(h.host.getTab().url, 'https://example.test/new');
+  assert.equal(h.host.getTab().title, 'New website');
+  assert.equal(h.data.openTabs.length, 1);
+  assert.equal(h.data.openTabs[0].url, 'https://example.test/new');
+});
+
+test('explicitly waking a covered sleeping tab loads its website while keeping the internal page', async () => {
+  const h = await harness();
+  const tab = await h.invoke('tab:new', { url: 'https://example.test/sleeping' });
+  loadWebPage(h, tab.id, { title: 'Sleeping website' });
+  await h.invoke('tab:new');
+  await h.invoke('tab:sleep', { id: tab.id });
+  await h.invoke('tab:navigate', { id: tab.id, url: 'breeze://settings' });
+  await h.invoke('tab:sleep', { id: tab.id, sleeping: false });
+  const covered = h.host.getTab(tab.id);
+  assert.equal(covered.view.webContents.getURL(), tab.url);
+  assert.equal(covered.page, 'settings');
+  assert.equal(covered.canGoBack, true);
+  assert.equal(h.data.openTabs.find(row => row.id === tab.id).url, tab.url);
+  await h.invoke('tab:activate', { id: tab.id });
+  await h.invoke('tab:back');
+  assert.equal(covered.page, null);
+  assert.equal(covered.url, tab.url);
+  assert.equal(covered.title, 'Sleeping website');
+});
+
 test('canceled old reply cannot clear a newer run or add its answer to the new chat', async () => {
   const h = await harness();
   const first = h.host.sendAssistant({ text: 'Old question' });
