@@ -3,7 +3,7 @@ name: Windows build and release
 on:
   push:
     branches: [windows-chromium-port, windows-release]
-    tags: ['windows-v1.0.0']
+    tags: ['windows-v1.0.1']
 
 # Native and Android release channels are deliberately excluded.
 permissions:
@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: 1.0.0
-  RELEASE_TAG: windows-v1.0.0
-  INSTALLER: Breeze-1.0.0-windows-x64.exe
+  RELEASE_VERSION: 1.0.1
+  RELEASE_TAG: windows-v1.0.1
+  INSTALLER: Breeze-1.0.1-windows-x64.exe
 
 jobs:
   build:
@@ -110,7 +110,7 @@ jobs:
     if: >-
       github.repository == 'Froydinger/breezebrowser-live' &&
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.0')
+      (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.1')
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
@@ -164,6 +164,8 @@ jobs:
           }
           $notes = @"
           Breeze $env:RELEASE_VERSION for Windows 10/11 x64.
+
+          Fixes Back navigation and tab/session persistence when opening internal browser pages.
 
           Dedicated Windows release. Aero AI and Breeze Cloud account/sync are Coming soon on Windows.
           Ordinary browsing does not require a Cloud account. Mac and Android release channels are unchanged.
