@@ -44,9 +44,9 @@ struct Palette {
         // Flat neutral, not a cool-tinted gradient. The chrome and the new-tab
         // surface read as one continuous colour instead of two slightly
         // different dark teals meeting at a seam.
-        bg: srgb(25, 25, 25),
-        bgTop: srgb(25, 25, 25),
-        bgBottom: srgb(25, 25, 25),
+        bg: srgb(0, 0, 0),
+        bgTop: srgb(0, 0, 0),
+        bgBottom: srgb(0, 0, 0),
         text: srgb(236, 236, 240),
         textSoft: srgb(236, 236, 240, 0.56),
         surface: NSColor(white: 1, alpha: 0.055),

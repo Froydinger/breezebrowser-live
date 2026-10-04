@@ -19,7 +19,7 @@
       --ease: cubic-bezier(0.22,1,0.36,1);
     }
     html.dark {
-      --bg: #191919; --bg-alt: #1f1f1f; --card: rgba(255,255,255,0.07); --text: #ececf0;
+      --bg: #000000; --bg-alt: #1f1f1f; --card: rgba(255,255,255,0.07); --text: #ececf0;
       --soft: rgba(236,236,240,0.62); --faint: rgba(236,236,240,0.34); --line: rgba(255,255,255,0.1);
       --shadow: 0 22px 70px rgba(0,0,0,0.28);
       color-scheme: dark;
@@ -226,6 +226,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.6', icon: 'sparkles', title: 'Room to Explore', hotfix: false, major: true, items: [
+        '<b>A fresh new tab</b> — A cleaner Aero input, quick research, fact-check and reminder actions, and shortcut hints tucked beside the help button.',
+        '<b>Deep black</b> — A true black dark theme with subtle teal glass edges.',
+        '<b>Photos for Aero</b> — Attach a photo from the new-tab camera to start an Aero chat with image context.',
+        '<b>Smoother resizing</b> — The window background keeps up as you resize.' ] },
       { v: '6.3.5', icon: 'shield-check', title: 'Google Sign-In, Unstuck', hotfix: true, major: false, items: [
         '<b>Sign in inside Breeze</b> — Google account sign-in opens directly in a Breeze tab and returns to your Cloud settings.',
         '<b>Retry without a dead end</b> — Clicking again brings the sign-in tab forward. Closing it lets you start a fresh attempt.' ] },
@@ -302,7 +307,7 @@
         '<b>Suggested Sites</b> — The sites you actually use, one click under the search box. Worked out on your Mac from your own history — nothing is sent anywhere, nothing is profiled, and clearing your history clears them. Hide them with the × on the shelf; a quiet “Show suggested sites” brings them back without a trip to Settings.',
         '<b>A Command Tile In The Sidebar</b> — The loose row of icons at the bottom of the sidebar is now a single grouped tile holding the time, the date and the browser controls. Narrow the sidebar and the icons scale down instead of squashing together. Click the time for reminders, the date for today’s news.',
         '<b>Settings Is One Page</b> — Eleven tabs, some holding a single button, became one scrolling page with a search box at the top: type “sleep” or “sounds” and only those settings remain. The rail jumps you around and follows as you scroll, and the Danger Zone is back as its own clearly-marked section.',
-        '<b>Dark Mode Is Actually Dark</b> — Every surface carried a teal wash, so “dark” read as dark teal rather than black. It is a flat neutral #191919 now — chrome, sidebar and new tab the same colour, no seam where they meet. Coloured accents stay.',
+        '<b>Dark Mode Is Actually Dark</b> — Every surface carried a teal wash, so “dark” read as dark teal rather than black. It is a flat neutral #000000 now — chrome, sidebar and new tab the same colour, no seam where they meet. Coloured accents stay.',
         '<b>Aero Looks The Part</b> — The composer is a floating rounded bar with a border and a soft shadow rather than a flat strip welded to the bottom, and messages ease in instead of snapping into place.',
         '<b>Settings You Could Not Reach</b> — How many tabs Breeze keeps loaded is yours to set. Sleep timing gained 30-minute and 1-hour options. The sites you switched ad blocking off for are listed in one place so you can switch them back on without visiting each one.',
         '<b>breeze:// Links Work</b> — Opening a breeze:// address handed it to macOS, which put up a dialog saying no application could open it. Breeze handles its own addresses now.',

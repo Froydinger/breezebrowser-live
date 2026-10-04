@@ -1,4 +1,4 @@
-// Native new-tab page: logo + greeting + "Ask Breeze, or type a URL" + the
+// Native new-tab page: logo + greeting + "Ask Aero, or enter a URL" + the
 // suggested-sites shelf. The clock lives in the sidebar, not here.
 // Ports ui/newtab.html. No perpetual animation (per project rule) — the orbs are
 // static. The greeting timer fires once a minute and pauses when hidden.
@@ -150,12 +150,31 @@ func navLogo() -> NSImage? {
     return img
 }
 
+private final class NewTabActionButton: NSButton {
+    var glyph = ""
+    override func draw(_ dirtyRect: NSRect) {
+        let p = Theme.shared.palette
+        let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 14, yRadius: 14)
+        NSGradient(starting: p.isDark ? NSColor(white: 0.075, alpha: 1) : .white,
+                   ending: p.isDark ? NSColor(white: 0.025, alpha: 1) : NSColor(white: 0.95, alpha: 1))?.draw(in: shape, angle: 90)
+        p.accent.withAlphaComponent(0.25).setStroke()
+        shape.lineWidth = 1
+        shape.stroke()
+        let icon = tintedSymbol(glyph, point: 19, weight: .regular, color: p.text.withAlphaComponent(0.85))
+        icon?.draw(in: NSRect(x: (bounds.width - 22)/2, y: bounds.height - 37, width: 22, height: 22))
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .regular), .foregroundColor: p.text]
+        let size = (title as NSString).size(withAttributes: attributes)
+        (title as NSString).draw(at: NSPoint(x: (bounds.width-size.width)/2, y: 15), withAttributes: attributes)
+    }
+}
+
 final class NewTabView: GradientBackgroundView {
-    private let baseFieldHeight: CGFloat = 54
+    private let baseFieldHeight: CGFloat = 58
     private let maxFieldLines = 4
     private let logo = NSImageView()
     private let greeting = NSTextField(labelWithString: "")
     private let inputHint = NSStackView()
+    private let shortcutHelp = NSButton(title: "?", target: nil, action: nil)
     /// Most-visited sites, from local history only (Store.topSites). Hidden when
     /// the setting is off or history is empty, so a fresh profile shows nothing
     /// rather than an empty shelf.
@@ -168,6 +187,8 @@ final class NewTabView: GradientBackgroundView {
     private let searchHint = NSTextField(labelWithString: "Search")
     let field = NSTextField()
     var onSubmit: ((String, Bool) -> Void)?
+    var onAttach: (() -> Void)?
+    private var actionButtons: [NSButton] = []
     private var timer: Timer?
 
     override init(frame: NSRect) {
@@ -179,10 +200,16 @@ final class NewTabView: GradientBackgroundView {
         logo.translatesAutoresizingMaskIntoConstraints = false
 
 
-        greeting.font = .systemFont(ofSize: 30, weight: .light)
+        greeting.font = .systemFont(ofSize: 30, weight: .regular)
         greeting.alignment = .center
         greeting.translatesAutoresizingMaskIntoConstraints = false
 
+        shortcutHelp.isBordered = false
+        shortcutHelp.font = .systemFont(ofSize: 12, weight: .medium)
+        shortcutHelp.toolTip = "Keyboard shortcuts: Return to ask Aero · Shift-Return to search"
+        shortcutHelp.target = self
+        shortcutHelp.action = #selector(toggleShortcutHelp)
+        inputHint.isHidden = true
         inputHint.translatesAutoresizingMaskIntoConstraints = false
         inputHint.orientation = .horizontal
         inputHint.alignment = .centerY
@@ -209,7 +236,7 @@ final class NewTabView: GradientBackgroundView {
         inputHint.addArrangedSubview(searchReturnKey)
         inputHint.addArrangedSubview(searchHint)
 
-        field.placeholderString = "Ask Breeze, or type a URL"
+        field.placeholderString = "Ask Aero, or enter a URL"
         field.font = .systemFont(ofSize: 16)
         field.alignment = .left
         field.isBordered = false
@@ -229,6 +256,58 @@ final class NewTabView: GradientBackgroundView {
         fieldWrap.layer?.cornerRadius = 27
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
+        let camera = HoverButton(symbol: "camera", size: 32, point: 18)
+        camera.toolTip = "Attach a photo to Aero"
+        camera.onTap = { [weak self] in self?.onAttach?() }
+        let microphone = HoverButton(symbol: "mic", size: 32, point: 18)
+        microphone.toolTip = "Dictate"
+        microphone.onTap = { [weak self] in
+            guard let self else { return }
+            self.window?.makeFirstResponder(self.field)
+            NSApp.sendAction(Selector(("startDictation:")), to: nil, from: self.field)
+        }
+        let send = HoverButton(symbol: "paperplane", size: 38, point: 18)
+        send.toolTip = "Ask Aero"
+        send.wantsLayer = true
+        send.layer?.cornerRadius = 19
+        send.layer?.backgroundColor = NSColor(calibratedRed: 0.16, green: 0.50, blue: 0.55, alpha: 1).cgColor
+        send.onTap = { [weak self] in self?.submit() }
+        for button in [camera, microphone, send] {
+            button.translatesAutoresizingMaskIntoConstraints = false
+            fieldWrap.addSubview(button)
+            button.centerYAnchor.constraint(equalTo: fieldWrap.centerYAnchor).isActive = true
+        }
+        NSLayoutConstraint.activate([
+            camera.leadingAnchor.constraint(equalTo: fieldWrap.leadingAnchor, constant: 14),
+            send.trailingAnchor.constraint(equalTo: fieldWrap.trailingAnchor, constant: -10),
+            microphone.trailingAnchor.constraint(equalTo: send.leadingAnchor, constant: -10)
+        ])
+        let actions = NSStackView()
+        actions.orientation = .horizontal
+        actions.spacing = 14
+        actions.distribution = .fillEqually
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        for (title, symbol, command) in [("Research something", "magnifyingglass", "/research "), ("Check a fact", "doc.text", "/factcheck "), ("Set a reminder", "bell", "Remind me to ")] {
+            let button = NewTabActionButton(title: title, target: nil, action: nil)
+            button.glyph = symbol
+            button.setAccessibilityLabel(title)
+            button.imagePosition = .imageAbove
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 12, weight: .medium)
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 14
+            button.layer?.borderWidth = 1
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.heightAnchor.constraint(equalToConstant: 72).isActive = true
+            button.target = self
+            button.action = #selector(chooseQuickAction(_:))
+            button.identifier = NSUserInterfaceItemIdentifier(command)
+            actionButtons.append(button)
+            actions.addArrangedSubview(button)
+        }
+        let favoritesTitle = NSTextField(labelWithString: "Your favorites")
+        favoritesTitle.font = .systemFont(ofSize: 11, weight: .medium)
+        favoritesTitle.textColor = .secondaryLabelColor
 
         suggestions.translatesAutoresizingMaskIntoConstraints = false
         suggestions.orientation = .horizontal
@@ -239,7 +318,25 @@ final class NewTabView: GradientBackgroundView {
         // Everything lives in one column centred as a group. It used to be a chain
         // of constraints hanging off the clock's centre, so adding anything at the
         // bottom (the suggestion shelf) pushed the whole page visibly low.
-        let column = NSStackView(views: [logo, greeting, fieldWrap, inputHint, suggestions])
+        let helpRow = NSView()
+        helpRow.translatesAutoresizingMaskIntoConstraints = false
+        shortcutHelp.translatesAutoresizingMaskIntoConstraints = false
+        shortcutHelp.wantsLayer = true
+        shortcutHelp.layer?.cornerRadius = 10
+        shortcutHelp.layer?.borderWidth = 1
+        shortcutHelp.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        helpRow.addSubview(shortcutHelp)
+        helpRow.addSubview(inputHint)
+        NSLayoutConstraint.activate([
+            helpRow.heightAnchor.constraint(equalToConstant: 20),
+            shortcutHelp.trailingAnchor.constraint(equalTo: helpRow.trailingAnchor, constant: -8),
+            shortcutHelp.centerYAnchor.constraint(equalTo: helpRow.centerYAnchor),
+            shortcutHelp.widthAnchor.constraint(equalToConstant: 20),
+            shortcutHelp.heightAnchor.constraint(equalToConstant: 20),
+            inputHint.trailingAnchor.constraint(equalTo: shortcutHelp.leadingAnchor, constant: -12),
+            inputHint.centerYAnchor.constraint(equalTo: helpRow.centerYAnchor)
+        ])
+        let column = NSStackView(views: [logo, greeting, fieldWrap, helpRow, actions, favoritesTitle, suggestions])
         column.orientation = .vertical
         column.alignment = .centerX
         column.spacing = 0
@@ -247,18 +344,20 @@ final class NewTabView: GradientBackgroundView {
         column.translatesAutoresizingMaskIntoConstraints = false
         column.setCustomSpacing(22, after: logo)
         column.setCustomSpacing(28, after: greeting)
-        column.setCustomSpacing(11, after: fieldWrap)
-        column.setCustomSpacing(34, after: inputHint)
+        column.setCustomSpacing(10, after: fieldWrap)
+        column.setCustomSpacing(16, after: helpRow)
+        column.setCustomSpacing(32, after: actions)
+        column.setCustomSpacing(14, after: favoritesTitle)
         addSubview(column)
-        let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 560)
+        let widthC = fieldWrap.widthAnchor.constraint(equalToConstant: 620)
         widthC.priority = .defaultHigh
         let maxC = fieldWrap.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48)
         maxC.priority = .required
 
         fieldHeightConstraint = fieldWrap.heightAnchor.constraint(equalToConstant: baseFieldHeight)
         NSLayoutConstraint.activate([
-            logo.widthAnchor.constraint(equalToConstant: 54),
-            logo.heightAnchor.constraint(equalToConstant: 54),
+            logo.widthAnchor.constraint(equalToConstant: 80),
+            logo.heightAnchor.constraint(equalToConstant: 80),
 
             column.centerXAnchor.constraint(equalTo: centerXAnchor),
             // Nudged up a touch so the column reads as optically centred rather
@@ -267,14 +366,16 @@ final class NewTabView: GradientBackgroundView {
             column.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
             column.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -24),
 
+            helpRow.widthAnchor.constraint(equalTo: fieldWrap.widthAnchor),
+            actions.widthAnchor.constraint(equalTo: fieldWrap.widthAnchor, multiplier: 0.82),
             widthC,
             maxC,
             fieldHeightConstraint,
 
-            field.leadingAnchor.constraint(equalTo: fieldWrap.leadingAnchor, constant: 22),
-            field.trailingAnchor.constraint(equalTo: fieldWrap.trailingAnchor, constant: -22),
-            field.topAnchor.constraint(equalTo: fieldWrap.topAnchor, constant: 16),
-            field.bottomAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: -16),
+            field.leadingAnchor.constraint(equalTo: fieldWrap.leadingAnchor, constant: 58),
+            field.trailingAnchor.constraint(equalTo: fieldWrap.trailingAnchor, constant: -100),
+            field.topAnchor.constraint(equalTo: fieldWrap.topAnchor, constant: 20),
+            field.bottomAnchor.constraint(equalTo: fieldWrap.bottomAnchor, constant: -12),
 
             suggestions.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -48),
         ])
@@ -375,7 +476,15 @@ final class NewTabView: GradientBackgroundView {
 
         logo.image = breezeLogo()
         let softColor = p.isDark ? p.text.withAlphaComponent(0.62) : p.text.withAlphaComponent(0.68)
-        greeting.textColor = softColor
+        greeting.textColor = p.text
+        actionButtons.forEach { button in
+            button.contentTintColor = p.text
+            button.layer?.backgroundColor = p.surface.cgColor
+            button.layer?.borderColor = p.accent.withAlphaComponent(0.20).cgColor
+            button.needsDisplay = true
+        }
+        fieldWrap.layer?.borderWidth = 1
+        fieldWrap.layer?.borderColor = p.accent.withAlphaComponent(0.45).cgColor
         let hintColor = p.text.withAlphaComponent(p.isDark ? 0.50 : 0.56)
         inputHint.arrangedSubviews.compactMap { $0 as? NSTextField }.forEach { $0.textColor = hintColor }
         [askReturnKey, shiftKey, searchReturnKey].forEach { key in
@@ -401,17 +510,17 @@ final class NewTabView: GradientBackgroundView {
         if !suggestions.arrangedSubviews.isEmpty { reloadSuggestions() }
         field.textColor = p.text
         field.placeholderAttributedString = NSAttributedString(
-            string: "Ask Breeze, or type a URL",
+            string: "Ask Aero, or enter a URL",
             attributes: [
                 .foregroundColor: softColor,
                 .font: field.font ?? NSFont.systemFont(ofSize: 16)
             ]
         )
         fieldWrap.layer?.backgroundColor = (p.isDark ? p.surface : NSColor.white.withAlphaComponent(0.72)).cgColor
-        fieldWrap.layer?.shadowColor = NSColor.black.cgColor
-        fieldWrap.layer?.shadowOpacity = p.isDark ? 0.25 : 0.10
+        fieldWrap.layer?.shadowColor = p.accent.cgColor
+        fieldWrap.layer?.shadowOpacity = p.isDark ? 0.24 : 0.10
         fieldWrap.layer?.shadowRadius = p.isDark ? 18 : 16
-        fieldWrap.layer?.shadowOffset = CGSize(width: 0, height: -6)
+        fieldWrap.layer?.shadowOffset = CGSize(width: 0, height: 0)
     }
 
     func tick() {
@@ -420,7 +529,7 @@ final class NewTabView: GradientBackgroundView {
         let part = h < 12 ? "Good morning" : (h < 18 ? "Good afternoon" : "Good evening")
         let name = (Store.shared.settings["userName"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        greeting.stringValue = name.isEmpty ? "\(part)." : "\(part), \(name)."
+        greeting.stringValue = "What are we exploring?"
         greeting.isHidden = !Store.shared.bool("showGreeting")
         // Name the engine the keystroke will actually use, so ⇧⏎ is not a guess.
         searchHint.stringValue = "Search with \(NewTabView.searchEngineName())"
@@ -450,6 +559,15 @@ final class NewTabView: GradientBackgroundView {
         }
     }
     func stopClock() { timer?.invalidate(); timer = nil }
+
+    @objc private func toggleShortcutHelp() { inputHint.isHidden.toggle() }
+
+    @objc private func chooseQuickAction(_ sender: NSButton) {
+        field.stringValue = sender.identifier?.rawValue ?? ""
+        window?.makeFirstResponder(field)
+        if let editor = field.currentEditor() { editor.selectedRange = NSRange(location: field.stringValue.utf16.count, length: 0) }
+        updateFieldHeight()
+    }
 
     @objc private func submit() {
         let t = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

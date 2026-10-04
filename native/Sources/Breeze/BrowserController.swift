@@ -1038,6 +1038,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         webContainer.layer?.masksToBounds = false
         newTab.translatesAutoresizingMaskIntoConstraints = false
         newTab.onSubmit = { [weak self] t, cmd in self?.submitQuery(t, isCmdEnter: cmd) }
+        newTab.onAttach = { [weak self] in
+            guard let self else { return }
+            self.newFullscreenChat()
+            self.aiAttachImage()
+        }
         NotificationCenter.default.addObserver(forName: NewTabView.suggestionsDismissed,
                                                object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
@@ -4262,7 +4267,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
             }
-            self.llm.send(text, history: history, contexts: contexts, completion: done)
+            self.llm.send(text, history: history, contexts: contexts, images: self.aiExtras.compactMap { $0.imageData }, completion: done)
         }
     }
 

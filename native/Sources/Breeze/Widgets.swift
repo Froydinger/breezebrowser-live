@@ -106,6 +106,9 @@ class GradientBackgroundView: NSView {
     override func updateLayer() {
         guard let layer = layer else { return }
         let p = Theme.shared.palette
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.backgroundColor = p.bg.cgColor
         let g = CAGradientLayer()
         g.frame = bounds
         g.colors = [p.bgTop.cgColor, p.bg.cgColor, p.bgBottom.cgColor]
@@ -125,10 +128,15 @@ class GradientBackgroundView: NSView {
             : p.accent.withAlphaComponent(0.12).cgColor
         wash.name = "accentWash"
         layer.insertSublayer(wash, above: g)
+        CATransaction.commit()
     }
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.backgroundColor = Theme.shared.palette.bg.cgColor
         layer?.sublayers?.forEach { if $0.name == "bgGrad" || $0.name == "accentWash" { $0.frame = bounds } }
+        CATransaction.commit()
     }
 }
 

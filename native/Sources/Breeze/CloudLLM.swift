@@ -39,7 +39,7 @@ final class CloudLLM: NSObject {
 
     // MARK: - Chat
 
-    func send(_ text: String, history: [[String: String]], contexts: [AIContext],
+    func send(_ text: String, history: [[String: String]], contexts: [AIContext], images: [Data] = [],
               completion: @escaping (Result<(String, [String]), Error>) -> Void) {
         guard usingCloud else {
             completion(.failure(Self.error("Aero is not configured in this build.")))
@@ -70,7 +70,7 @@ final class CloudLLM: NSObject {
                     userText: text, contexts: contexts, tools: tools,
                     ask: { msg in
                         turnHistory.append(["role": "user", "content": msg])
-                        let reply = try await self.complete(history: turnHistory, requestID: turnID)
+                        let reply = try await self.complete(history: turnHistory, images: images, requestID: turnID)
                         turnHistory.append(["role": "assistant", "content": reply])
                         return reply
                     },
@@ -79,7 +79,7 @@ final class CloudLLM: NSObject {
                             ["role": "system", "content": Agent.systemPrompt(extra: Store.shared.string("aiInstructions"))],
                             ["role": "user", "content": msg]
                         ]
-                        return try await self.complete(history: freshHistory, requestID: turnID)
+                        return try await self.complete(history: freshHistory, images: images, requestID: turnID)
                     })
                 if Task.isCancelled { return }
                 await MainActor.run { completion(.success((answer, chips))) }
@@ -103,7 +103,7 @@ final class CloudLLM: NSObject {
 
     var isRunning: Bool { currentTask != nil && !(currentTask?.isCancelled ?? true) }
 
-    private func complete(history: [[String: String]], minimal: Bool = false, requestID: String) async throws -> String {
+    private func complete(history: [[String: String]], images: [Data] = [], minimal: Bool = false, requestID: String) async throws -> String {
         guard let url = endpoint(path: "/v1/chat/completions") else {
             throw Self.error("Aero is not configured in this build.")
         }
@@ -113,7 +113,13 @@ final class CloudLLM: NSObject {
         applyAuth(to: &req, requestID: requestID)
         req.timeoutInterval = 300   // long answers take a while to generate
 
-        var body: [String: Any] = ["messages": history]
+        var messages: [[String: Any]] = history.map { ["role": $0["role"] ?? "user", "content": $0["content"] ?? ""] }
+        if !images.isEmpty, let index = messages.lastIndex(where: { ($0["role"] as? String) == "user" }) {
+            var content: [[String: Any]] = [["type": "text", "text": messages[index]["content"] as? String ?? ""]]
+            content += images.map { ["type": "image_url", "image_url": ["url": "data:image/png;base64," + $0.base64EncodedString()]] }
+            messages[index]["content"] = content
+        }
+        var body: [String: Any] = ["messages": messages]
         // No output cap from the client: Breeze Cloud applies its own ceiling
         // (MAX_OUTPUT_TOKENS), and a hard 2400 here cut off long answers, which
         // share that budget with the model's reasoning tokens. Length is steered
@@ -128,7 +134,7 @@ final class CloudLLM: NSObject {
             throw Self.error("No response from Breeze Cloud.")
         }
         if http.statusCode == 400 && !minimal {
-            return try await complete(history: history, minimal: true, requestID: requestID)
+            return try await complete(history: history, images: images, minimal: true, requestID: requestID)
         }
         guard http.statusCode == 200 else {
             throw Self.error(Self.friendlyError(status: http.statusCode, data: data))
