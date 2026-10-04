@@ -1,0 +1,8 @@
+'use strict';
+const {contextBridge,ipcRenderer}=require('electron');
+const actions=new Set(['state:get','tab:new','tab:activate','tab:close','tab:navigate','tab:back','tab:forward','tab:reload','tab:mute','tab:duplicate','tab:sleep','pin:add','pin:remove','group:create','group:update','group:assign','settings:update','bookmark:add','bookmark:remove','history:clear','downloads:open','downloads:show','downloads:cancel','passwords:list','passwords:save','passwords:reveal','passwords:remove','passwords:fill','cloud:signIn','cloud:signUp','cloud:signOut','cloud:sync','cloud:google','cloud:syncPreference','cloud:export','cloud:deleteAccount','assistant:send','assistant:stop','assistant:new','assistant:open','assistant:attach','reminder:add','reminder:remove','window:minimize','window:maximize','window:close','browser:layout','browser:internal','browser:find','browser:zoom','browser:restore','browser:print','browser:clearData','browser:update']);
+contextBridge.exposeInMainWorld('breeze',Object.freeze({
+  invoke(action,payload={}){if(!actions.has(action))return Promise.reject(new Error('Unsupported Breeze action.'));return ipcRenderer.invoke('breeze:invoke',action,payload);},
+  onState(callback){if(typeof callback!=='function')throw new Error('Expected callback.');const listener=(_event,state)=>callback(state);ipcRenderer.on('breeze:state',listener);ipcRenderer.invoke('breeze:invoke','state:get',{}).then(state=>callback(state)).catch(()=>{});return()=>ipcRenderer.removeListener('breeze:state',listener);},
+  onEvent(callback){if(typeof callback!=='function')throw new Error('Expected callback.');const listener=(_event,event)=>callback(event);ipcRenderer.on('breeze:event',listener);return()=>ipcRenderer.removeListener('breeze:event',listener);}
+}));

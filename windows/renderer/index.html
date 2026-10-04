@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>Breeze</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div id="app">
+    <header id="toolbar" aria-label="Browser toolbar">
+      <button id="workspace-button" class="workspace-button" title="Breeze menu" aria-label="Breeze menu" aria-haspopup="menu"><span data-icon="workspace"></span></button>
+      <button id="sidebar-toggle" class="icon-button" title="Toggle sidebar (Ctrl+Shift+S)" aria-label="Toggle sidebar"><span data-icon="sidebar"></span></button>
+      <nav class="navigation" aria-label="Page navigation">
+        <button id="go-back" class="icon-button" title="Back (Alt+Left)" aria-label="Back" disabled><span data-icon="back"></span></button>
+        <button id="go-forward" class="icon-button" title="Forward (Alt+Right)" aria-label="Forward" disabled><span data-icon="forward"></span></button>
+        <button id="reload" class="icon-button" title="Reload (Ctrl+R)" aria-label="Reload"><span data-icon="reload"></span></button>
+      </nav>
+      <form id="address-form" autocomplete="off">
+        <button id="page-info" class="icon-button" type="button" title="Page address" aria-label="Page address"><span data-icon="link"></span></button>
+        <input id="address" aria-label="Search or enter URL" placeholder="Search or enter URL" spellcheck="false" autocomplete="off">
+      </form>
+      <div class="page-actions">
+        <button id="pin-current" class="icon-button" title="Pin this site" aria-label="Pin this site"><span data-icon="pin"></span></button>
+        <button id="bookmark-current" class="icon-button" title="Bookmark this page (Ctrl+D)" aria-label="Bookmark this page"><span data-icon="bookmark"></span></button>
+        <button id="split-button" class="icon-button" title="Split view" aria-label="Split view"><span data-icon="split"></span></button>
+        <button id="browser-menu" class="icon-button" title="More" aria-label="More browser actions" aria-haspopup="menu"><span data-icon="more"></span></button>
+        <button id="aero-toggle" class="aero-toggle" title="Ask Aero (Ctrl+J)" aria-label="Ask Aero"><img src="assets/nav-icon.png" alt=""></button>
+      </div>
+      <div class="caption-controls" aria-label="Window controls">
+        <button id="window-minimize" title="Minimize" aria-label="Minimize"><span data-icon="minimize"></span></button>
+        <button id="window-maximize" title="Maximize or restore" aria-label="Maximize or restore"><span data-icon="maximize"></span></button>
+        <button id="window-close" title="Close window" aria-label="Close window"><span data-icon="close"></span></button>
+      </div>
+    </header>
+    <div id="build-notice" role="status" hidden></div>
+    <div id="workspace">
+      <aside id="sidebar" aria-label="Tabs and favorites">
+        <div id="sidebar-address-host"></div>
+        <div id="pins" class="pin-grid" aria-label="Pinned sites"></div>
+        <div class="tab-scroll">
+          <div id="tabs" role="tablist" aria-orientation="vertical" aria-label="Open tabs"></div>
+          <button id="new-tab" class="new-tab-button" title="New tab (Ctrl+T)" aria-label="New tab"><span></span><span data-icon="plus"></span><span></span></button>
+        </div>
+        <div id="sidebar-reminders"></div>
+        <footer class="command-tile">
+          <button id="clock" class="clock" title="Manage reminders" aria-label="Manage reminders"></button>
+          <nav class="footer-actions" aria-label="Breeze tools">
+            <button data-page="settings" class="icon-button" title="Settings" aria-label="Settings"><span data-icon="settings"></span></button>
+            <button id="theme-toggle" class="icon-button" title="Change theme" aria-label="Change theme"><span data-icon="moon"></span></button>
+            <button data-page="history" class="icon-button" title="History (Ctrl+H)" aria-label="History"><span data-icon="history"></span></button>
+            <button data-page="bookmarks" class="icon-button" title="Bookmarks" aria-label="Bookmarks"><span data-icon="bookmark"></span></button>
+            <button data-page="downloads" class="icon-button" title="Downloads (Ctrl+Shift+J)" aria-label="Downloads"><span data-icon="download"></span></button>
+          </nav>
+        </footer>
+      </aside>
+      <main id="content">
+        <div id="find-bar" hidden>
+          <input id="find-input" placeholder="Find in page" aria-label="Find in page" autocomplete="off">
+          <span id="find-count" aria-live="polite"></span>
+          <button id="find-previous" class="icon-button" title="Previous match" aria-label="Previous match"><span data-icon="up"></span></button>
+          <button id="find-next" class="icon-button" title="Next match" aria-label="Next match"><span data-icon="down"></span></button>
+          <button id="find-close" class="icon-button" title="Close find" aria-label="Close find"><span data-icon="close"></span></button>
+        </div>
+        <div id="split-toolbar" hidden><span data-icon="split"></span><span id="split-title"></span><button id="split-close" class="quiet-button">Close split view</button></div>
+        <div id="page-content"></div>
+        <div id="browser-region" aria-label="Web page" hidden><div id="browser-primary"></div><div id="split-divider" role="separator" aria-orientation="vertical" aria-label="Resize split view" tabindex="0" hidden></div><div id="browser-secondary" hidden></div></div>
+      </main>
+      <aside id="assistant" aria-label="Aero assistant" hidden>
+        <header class="assistant-header"><img src="assets/nav-icon.png" alt=""><strong>Aero</strong><span class="spacer"></span><button id="assistant-expand" class="icon-button" title="Expand Aero" aria-label="Expand Aero"><span data-icon="expand"></span></button><button id="assistant-new" class="icon-button" title="New chat" aria-label="New chat"><span data-icon="compose"></span></button><button id="assistant-close" class="icon-button" title="Close Aero" aria-label="Close Aero"><span data-icon="close"></span></button></header>
+        <div id="assistant-messages" class="assistant-messages" aria-live="polite"></div>
+        <div id="assistant-status" class="assistant-status" role="status"></div>
+        <div id="assistant-context" class="context-row"></div>
+        <div id="assistant-attachments" class="context-row"></div>
+        <form id="assistant-form" class="assistant-composer"><button id="assistant-attach" class="icon-button" type="button" title="Attach image" aria-label="Attach image"><span data-icon="attach"></span></button><textarea id="assistant-input" rows="1" placeholder="Ask anything…" aria-label="Ask Aero"></textarea><button id="assistant-send" class="send-button" title="Send" aria-label="Send"><span data-icon="send"></span></button></form>
+        <p class="assistant-note">Aero can make mistakes. Check important information.</p>
+      </aside>
+    </div>
+  </div>
+  <div id="context-menu" class="context-menu" role="menu" hidden></div>
+  <div id="task-palette" class="task-palette" role="listbox" aria-label="Aero tasks" hidden></div>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="dialog" aria-labelledby="dialog-title"><form id="dialog-form"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="dialog-close" class="icon-button" type="button" title="Close" aria-label="Close"><span data-icon="close"></span></button></div><div id="dialog-body"></div><p id="dialog-error" class="error-text" role="alert"></p><div id="dialog-actions" class="dialog-actions"></div></form></dialog>
+</body>
+</html>

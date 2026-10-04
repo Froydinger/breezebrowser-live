@@ -1,0 +1,78 @@
+{
+  "name": "breeze-windows",
+  "version": "1.0.0",
+  "description": "Breeze for Windows \u2014 Chromium browser with Aero and Breeze Cloud",
+  "author": "Breeze",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/app.js",
+    "build:win": "node scripts/build-config.cjs && electron-builder --win nsis --x64 --publish never",
+    "build:win:dir": "node scripts/build-config.cjs && electron-builder --win --x64 --dir --publish never",
+    "build:test:win": "node scripts/build-config.cjs --development && electron-builder --config electron-builder.test.cjs --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.froydinger.breeze.windows",
+    "productName": "Breeze",
+    "copyright": "Copyright \u00a9 2026 Breeze",
+    "asar": true,
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "lib/**",
+      "renderer/**",
+      "assets/**",
+      "config.generated.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../native/easylist.json",
+        "to": "easylist.json"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Breeze Cloud",
+        "schemes": [
+          "com.froydinger.breeze"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Breeze-${version}-windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    }
+  },
+  "dependencies": {
+    "tldts": "7.4.16"
+  }
+}

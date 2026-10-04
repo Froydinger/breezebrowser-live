@@ -1,0 +1,190 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [windows-chromium-port, windows-release]
+    tags: ['windows-v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the tested Windows build (windows-release branch only)
+        type: boolean
+        default: false
+
+# Native and Android release channels are deliberately excluded.
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: 1.0.0
+  RELEASE_TAG: windows-v1.0.0
+  INSTALLER: Breeze-1.0.0-windows-x64.exe
+
+jobs:
+  build:
+    if: >-
+      github.repository == 'Froydinger/breezebrowser-live' &&
+      (github.ref == 'refs/heads/windows-chromium-port' || github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.0')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      INSTALLER: ${{ github.ref == 'refs/heads/windows-chromium-port' && 'Breeze-Test-1.0.0-windows-x64.exe' || 'Breeze-1.0.0-windows-x64.exe' }}
+      APP_EXE: ${{ github.ref == 'refs/heads/windows-chromium-port' && 'Breeze Test.exe' || 'Breeze.exe' }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - name: Check isolated Windows version and release tag
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($package.version -ne $env:RELEASE_VERSION) { throw 'Windows package/release version mismatch.' }
+          if ($env:GITHUB_REF.StartsWith('refs/tags/') -and $env:GITHUB_REF -ne "refs/tags/$env:RELEASE_TAG") {
+            throw 'Only the matching windows-v release tag is supported.'
+          }
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run Windows tests
+        run: npm test
+      - name: Check application syntax
+        run: npm run check
+      - name: Build isolated unconfigured test installer
+        if: github.ref == 'refs/heads/windows-chromium-port'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm run build:test:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $config = Get-Content config.generated.json -Raw | ConvertFrom-Json
+          if ($config.development -ne $true -or $config.aiBaseURL -or $config.aiClientToken -or $config.supabaseURL -or $config.supabaseAnonKey -or $config.redirectURI -ne 'com.froydinger.breeze.test://auth-callback') {
+            throw 'Test installer configuration must be isolated and contain no Cloud credentials.'
+          }
+      - name: Verify existing Cloud configuration and build production NSIS x64
+        if: github.ref != 'refs/heads/windows-chromium-port'
+        env:
+          BREEZE_CLOUD_AI_BASE_URL: https://breeze-chat.jakefroydinger.workers.dev
+          BREEZE_CLOUD_CLIENT_TOKEN: ${{ secrets.BREEZE_CLOUD_CLIENT_TOKEN }}
+          BREEZE_CLOUD_SUPABASE_URL: https://sbvjjseitpahdpewsqqc.supabase.co
+          BREEZE_CLOUD_SUPABASE_ANON_KEY: ${{ vars.BREEZE_CLOUD_SUPABASE_ANON_KEY || secrets.BREEZE_CLOUD_SUPABASE_ANON_KEY }}
+          BREEZE_CLOUD_REDIRECT_URI: com.froydinger.breeze://auth-callback
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node scripts/build-config.cjs --check --verify-network
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build:win
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke-test the packaged Windows application
+        run: |
+          $app = Resolve-Path "dist/win-unpacked/$env:APP_EXE"
+          $process = Start-Process -FilePath $app -ArgumentList '--smoke-test' -WorkingDirectory $PWD.Path -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged Windows smoke test failed (exit $($process.ExitCode))." }
+          if (-not (Test-Path -LiteralPath 'smoke-result.json')) { throw 'Packaged smoke test did not produce its result.' }
+          $smoke = Get-Content smoke-result.json -Raw | ConvertFrom-Json
+          if ($smoke.ok -ne $true -or $smoke.version -ne $env:RELEASE_VERSION -or $smoke.checks -notcontains 'Windows DPAPI vault round-trip') { throw 'Packaged Windows smoke evidence is incomplete.' }
+      - name: Verify installer and calculate SHA-256
+        run: |
+          $installer = Join-Path 'dist' $env:INSTALLER
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Expected Windows installer is missing.' }
+          if ((Get-Item -LiteralPath $installer).Length -lt 1MB) { throw 'Windows installer is unexpectedly small.' }
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$pwd/$installer.sha256", "$hash  $env:INSTALLER`n", [Text.UTF8Encoding]::new($false))
+          $signature = Get-AuthenticodeSignature -FilePath $installer
+          "Installer Authenticode status: $($signature.Status)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          'This Windows release is distributed unsigned. Do not describe it as signed or notarized.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          if ($env:GITHUB_REF -eq 'refs/heads/windows-chromium-port') {
+            'Breeze Test: isolated unconfigured test build. Aero and Breeze Cloud are disabled. Not a production release.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }
+      - name: Retain verified installer only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ github.ref == 'refs/heads/windows-chromium-port' && 'breeze-test-windows-x64' || 'breeze-windows-x64' }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            windows/dist/${{ env.INSTALLER }}
+            windows/dist/${{ env.INSTALLER }}.sha256
+      - name: Retain Windows smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: breeze-windows-smoke-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            windows/smoke-result.json
+            windows/smoke-screenshot.png
+      - name: Remove materialized build configuration
+        if: always()
+        run: Remove-Item -LiteralPath config.generated.json -ErrorAction SilentlyContinue
+
+  publish:
+    needs: build
+    if: >-
+      github.repository == 'Froydinger/breezebrowser-live' &&
+      ((github.event_name == 'push' && (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.0')) ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/windows-release' && inputs.publish))
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: breeze-windows-x64-${{ github.sha }}
+          path: dist
+      - name: Verify downloaded release bytes
+        run: |
+          $checksum = (Get-Content "dist/$env:INSTALLER.sha256" -Raw).Trim()
+          $actual = (Get-FileHash "dist/$env:INSTALLER" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($checksum -ne "$actual  $env:INSTALLER") { throw 'Installer SHA-256 mismatch.' }
+      - name: Publish to the dedicated Windows channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Create is deliberately non-destructive: never overwrite an existing release or asset.
+          # --target pins the newly created Windows tag to the exact tested commit.
+          $remoteTag = git ls-remote --tags "https://github.com/$env:GH_REPO.git" "refs/tags/$env:RELEASE_TAG" "refs/tags/$env:RELEASE_TAG^{}"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not verify the Windows tag before publication.' }
+          if ($remoteTag) {
+            $resolvedTag = (($remoteTag | Select-Object -Last 1) -split '\s+')[0]
+            if ($resolvedTag -ne $env:GITHUB_SHA) { throw 'The Windows release tag already points to another commit. Do not move it.' }
+          }
+          $notes = @"
+          Breeze $env:RELEASE_VERSION for Windows 10/11 x64.
+
+          Dedicated Windows release. Mac and Android release channels are unchanged.
+          This installer is unsigned. Windows SmartScreen may warn or block installation.
+          Verify the installer against the attached SHA-256 checksum.
+
+          Tested source commit: $env:GITHUB_SHA
+          "@
+          gh release create $env:RELEASE_TAG "dist/$env:INSTALLER" "dist/$env:INSTALLER.sha256" `
+            --repo $env:GH_REPO --target $env:GITHUB_SHA --title "Breeze $env:RELEASE_VERSION for Windows" `
+            --draft --latest=false --notes $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Windows publication failed. Inspect the existing release before retrying; do not overwrite assets.' }
+          $release = gh release view $env:RELEASE_TAG --repo $env:GH_REPO --json tagName,isDraft,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $release.isDraft -or $release.tagName -ne $env:RELEASE_TAG) { throw 'Windows draft release verification failed.' }
+          $names = @($release.assets | ForEach-Object { $_.name })
+          if ($names -notcontains $env:INSTALLER -or $names -notcontains "$env:INSTALLER.sha256") { throw 'Windows release assets are incomplete.' }
+          gh release edit $env:RELEASE_TAG --repo $env:GH_REPO --draft=false --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'The verified Windows draft could not be published.' }
+          $isDraft = gh release view $env:RELEASE_TAG --repo $env:GH_REPO --json isDraft --jq '.isDraft'
+          if ($LASTEXITCODE -ne 0 -or $isDraft -ne 'false') { throw 'Windows release publication could not be verified.' }
+          $latest = gh api "repos/$env:GH_REPO/releases/latest" --jq '.tag_name'
+          if ($LASTEXITCODE -ne 0 -or $latest -eq $env:RELEASE_TAG) { throw 'Windows release must never replace the native latest release.' }
