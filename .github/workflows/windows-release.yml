@@ -2,7 +2,7 @@ name: Windows build and release
 
 on:
   push:
-    branches: [windows-chromium-port, windows-release]
+    branches: [windows-chromium-port, windows-release, windows-release-v1.0.1]
     tags: ['windows-v1.0.1']
 
 # Native and Android release channels are deliberately excluded.
@@ -110,7 +110,7 @@ jobs:
     if: >-
       github.repository == 'Froydinger/breezebrowser-live' &&
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.1')
+      (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/heads/windows-release-v1.0.1' || github.ref == 'refs/tags/windows-v1.0.1')
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
