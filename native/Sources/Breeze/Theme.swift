@@ -28,14 +28,14 @@ struct Palette {
     }
 
     static let light = Palette(
-        bg: srgb(242, 240, 237),
-        bgTop: srgb(245, 242, 238),
-        bgBottom: srgb(233, 228, 221),
+        bg: srgb(255, 255, 255),
+        bgTop: srgb(255, 255, 255),
+        bgBottom: srgb(255, 255, 255),
         text: srgb(42, 42, 46),
         textSoft: srgb(42, 42, 46, 0.55),
-        surface: NSColor(white: 1, alpha: 0.55),
-        surfaceHover: NSColor(white: 1, alpha: 0.8),
-        surfaceActive: NSColor(white: 1, alpha: 0.95),
+        surface: NSColor(white: 0, alpha: 0.035),
+        surfaceHover: srgb(58, 166, 185, 0.08),
+        surfaceActive: srgb(58, 166, 185, 0.12),
         accent: srgb(58, 166, 185),        // default teal, close to the Breeze mark
         isDark: false
     )
@@ -49,9 +49,9 @@ struct Palette {
         bgBottom: srgb(0, 0, 0),
         text: srgb(236, 236, 240),
         textSoft: srgb(236, 236, 240, 0.56),
-        surface: NSColor(white: 1, alpha: 0.055),
-        surfaceHover: NSColor(white: 1, alpha: 0.095),
-        surfaceActive: NSColor(white: 1, alpha: 0.13),
+        surface: NSColor(white: 1, alpha: 0.14),
+        surfaceHover: NSColor(white: 1, alpha: 0.18),
+        surfaceActive: NSColor(white: 1, alpha: 0.22),
         accent: srgb(58, 166, 185),        // default teal, close to the Breeze mark
         isDark: true
     )

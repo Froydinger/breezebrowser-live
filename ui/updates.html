@@ -181,6 +181,7 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="page-theme.css" />
 </head>
 <body>
   <div class="wrap">
@@ -226,6 +227,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.7', icon: 'palette', title: 'Black and White, Throughout', hotfix: true, major: false, items: [
+        '<b>Consistent themes</b> — Dark internal pages now use the same black canvas as the browser; light browser chrome is white with gray and teal accents.',
+        '<b>A seamless address bar</b> — The URL pill is gone, with teal address text when you are not editing.',
+        '<b>Aero and history</b> — Aero uses the same white or black canvas in sidebar and fullscreen views. The retired Images tab is removed from History.',
+        '<b>Quiet glass edges</b> — Teal accents stay subtle, with no looping shine or drifting background on the update page.' ] },
       { v: '6.3.6', icon: 'sparkles', title: 'Room to Explore', hotfix: false, major: true, items: [
         '<b>A fresh new tab</b> — A cleaner Aero input, quick research, fact-check and reminder actions, and shortcut hints tucked beside the help button.',
         '<b>Deep black</b> — A true black dark theme with subtle teal glass edges.',

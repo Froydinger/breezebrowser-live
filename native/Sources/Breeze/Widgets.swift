@@ -120,12 +120,8 @@ class GradientBackgroundView: NSView {
         layer.insertSublayer(g, at: 0)
         let wash = CALayer()
         wash.frame = bounds
-        // The window-wide accent wash. In dark mode this 12% teal sat over every
-        // surface - chrome, sidebar, new tab - which is what made "dark" read as
-        // dark teal rather than black. Neutral in dark, accent tint kept in light.
-        wash.backgroundColor = p.isDark
-            ? NSColor(white: 1, alpha: 0.015).cgColor
-            : p.accent.withAlphaComponent(0.12).cgColor
+        // Keep the canvas neutral; accent color belongs on controls and edges.
+        wash.backgroundColor = NSColor.clear.cgColor
         wash.name = "accentWash"
         layer.insertSublayer(wash, above: g)
         CATransaction.commit()

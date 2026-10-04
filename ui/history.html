@@ -255,6 +255,7 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
   </style>
+  <link rel="stylesheet" href="page-theme.css" />
 </head>
 <body>
   <main>
@@ -266,7 +267,6 @@
       <button data-mode="pages" class="on">Pages</button>
       <button data-mode="chats">Aero chats</button>
       <button data-mode="summaries">Summaries</button>
-      <button data-mode="images">Images</button>
     </div>
     <input id="search" type="text" placeholder="Search history…" autofocus />
     <div id="list"></div>
@@ -471,6 +471,7 @@
     }
 
     function setMode(m) {
+      if (!["pages", "chats", "summaries"].includes(m)) m = "pages";
       mode = m;
       for (const b of document.querySelectorAll('#seg button')) b.classList.toggle('on', b.dataset.mode === m);
       clearBtn.style.display = m === 'pages' ? '' : 'none';

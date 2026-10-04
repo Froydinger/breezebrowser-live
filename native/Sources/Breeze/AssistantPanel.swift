@@ -984,6 +984,9 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
     private func syncBackgroundLayers() {
         guard let layer else { return }
         let p = Theme.shared.palette
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         let gradient = (layer.sublayers?.first { $0.name == "assistantBgGrad" } as? CAGradientLayer) ?? CAGradientLayer()
         gradient.name = "assistantBgGrad"
         gradient.frame = bounds
@@ -996,12 +999,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         let wash = layer.sublayers?.first { $0.name == "assistantAccentWash" } ?? CALayer()
         wash.name = "assistantAccentWash"
         wash.frame = bounds
-        // Dark mode keeps the surface a flat neutral: an accent-tinted wash over
-        // #191919 is what made Aero read teal, and opening it visibly re-tinted the
-        // whole window. Light mode still gets the accent tint.
-        wash.backgroundColor = p.isDark
-            ? NSColor(white: 1, alpha: 0.02).cgColor
-            : p.accent.withAlphaComponent(0.12).cgColor
+        wash.backgroundColor = NSColor.clear.cgColor
         if wash.superlayer == nil { layer.insertSublayer(wash, above: gradient) }
     }
 
@@ -1019,9 +1017,7 @@ final class AssistantPanel: NSView, NSTextFieldDelegate {
         syncBackgroundLayers()
         // Lift the composer off the panel: brighter fill than the surface behind it
         // plus a hairline border, which is what makes Arc's input read as floating.
-        inputWrap.layer?.backgroundColor = (p.isDark
-            ? NSColor(white: 1, alpha: 0.055)
-            : NSColor(white: 1, alpha: 0.92)).cgColor
+        inputWrap.layer?.backgroundColor = p.surface.cgColor
         inputWrap.layer?.borderColor = (p.isDark
             ? NSColor(white: 1, alpha: 0.10)
             : NSColor.black.withAlphaComponent(0.08)).cgColor

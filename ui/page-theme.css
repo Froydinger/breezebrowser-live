@@ -1,0 +1,17 @@
+/* Shared black/white canvas matching the native browser chrome. */
+html:not(.dark) { --bg: #fff; --bg-alt: #fff; --page-bg: #fff; --card: #fff; color-scheme: light; }
+html:not(.dark) body { background: #fff; }
+html:not(.dark) header::before, html:not(.dark) .hero-orb { display: none; }
+/* Dark internal-page canvas matches the native black browser chrome. */
+html.dark { --bg: #000; --bg-alt: #000; --page-bg: #000; --card: #050505; color-scheme: dark; }
+html.dark body { background: #000; }
+html.dark .hero, html.dark .feat { border-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+html.dark .hero::after, html.dark .hero-orb, html.dark header::before { display: none; }
+/* Keep entrance motion; avoid perpetual idle animation. */
+.hero { animation: hero-pop 0.6s var(--ease) 0.06s backwards; }
+header img { animation: mark-pop 0.62s var(--ease) 0.08s backwards; }
+header::before, .hero-orb { animation: none; }
+.hero::after { animation: hero-shine 1s var(--ease) 0.4s 1; }
+
+.orb1, .orb2, .orb3 { display: none; }
+html:not(.dark) .hero { background: #fff; }

@@ -820,7 +820,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         forward.onTap = { [weak self] in self?.current?.webView.goForward() }
         reload.onTap = { [weak self] in self?.reloadCurrentTab() }
 
-        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 17
+        addressWrap.wantsLayer = true; addressWrap.layer?.cornerRadius = 0
         addressWrap.translatesAutoresizingMaskIntoConstraints = false
         let copylink = HoverButton(symbol: "link", size: 22, point: 12)
         copylink.onTap = { [weak self] in if let t = self?.current { self?.copyLink(t) } }
@@ -3338,14 +3338,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func styledAddress(_ s: String) -> NSAttributedString {
         let p = Theme.shared.palette
         let font = address.font ?? .systemFont(ofSize: 13.5)
-        let attr = NSMutableAttributedString(string: s, attributes: [.foregroundColor: p.text, .font: font])
+        let attr = NSMutableAttributedString(string: s, attributes: [.foregroundColor: p.accent, .font: font])
         let ns = s as NSString
         let scheme = ns.range(of: "://")
         if scheme.location != NSNotFound {
             let afterScheme = scheme.location + scheme.length
             let slash = ns.range(of: "/", options: [], range: NSRange(location: afterScheme, length: ns.length - afterScheme))
             if slash.location != NSNotFound {
-                attr.addAttribute(.foregroundColor, value: p.text.withAlphaComponent(0.5),
+                attr.addAttribute(.foregroundColor, value: p.accent.withAlphaComponent(0.65),
                                   range: NSRange(location: slash.location, length: ns.length - slash.location))
             }
         }
@@ -4416,9 +4416,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Research Summary — Breeze</title>
         <style>
-        :root{color-scheme:light dark;--bg:#f2f0ed;--card:rgba(255,255,255,.72);--text:#23232a;--soft:rgba(35,35,42,.58);--accent:#3aa6b9;--line:rgba(0,0,0,.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-        @media(prefers-color-scheme:dark){:root{--bg:#16161a;--card:rgba(255,255,255,.055);--text:#ececf0;--soft:rgba(236,236,240,.55);--line:rgba(255,255,255,.11)}}
-        *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 18% 6%,color-mix(in srgb,var(--accent) 28%,transparent),transparent 28%),linear-gradient(160deg,var(--bg),color-mix(in srgb,var(--accent) 7%,var(--bg)));color:var(--text);padding:56px 24px 84px}.wrap{max-width:860px;margin:0 auto}
+        :root{color-scheme:light dark;--bg:#ffffff;--card:rgba(255,255,255,.72);--text:#23232a;--soft:rgba(35,35,42,.58);--accent:#3aa6b9;--line:rgba(0,0,0,.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+        @media(prefers-color-scheme:dark){:root{--bg:#000000;--card:rgba(255,255,255,.055);--text:#ececf0;--soft:rgba(236,236,240,.55);--line:rgba(255,255,255,.11)}}
+        *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);padding:56px 24px 84px}.wrap{max-width:860px;margin:0 auto}
         header{text-align:center;margin-bottom:34px;animation:rise .45s cubic-bezier(.22,1,.36,1)}.mark{width:64px;height:64px;margin:0 auto 16px;display:grid;place-items:center;filter:drop-shadow(0 18px 42px color-mix(in srgb,var(--accent) 32%,transparent))}.mark img{width:64px;height:64px;border-radius:18px;display:block}.mark--draw{border-radius:18px;background:linear-gradient(135deg,var(--accent),#7c5bfa)}.mark--draw svg{width:30px;height:30px;fill:white;stroke:white;stroke-width:1.6;stroke-linejoin:round}
         .pill{display:inline-block;color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent);font-size:12px;font-weight:750;padding:6px 12px;border-radius:999px;margin-bottom:12px}h1{font-size:44px;line-height:1.02;margin:0;font-weight:800;letter-spacing:-.8px}header p{color:var(--soft);font-size:16px;line-height:1.5;margin:14px auto 0;max-width:720px}
         .panel{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,.14);backdrop-filter:blur(18px);animation:rise .55s cubic-bezier(.22,1,.36,1)}
@@ -7585,8 +7585,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func applyChromeTheme() {
         guard !isClosing else { return }
         let p = Theme.shared.palette
-        addressWrap.layer?.backgroundColor = p.surface.cgColor
-        address.textColor = p.text
+        addressWrap.layer?.backgroundColor = NSColor.clear.cgColor
+        address.textColor = isEditingTextField(address) ? p.text : p.accent
         address.placeholderAttributedString = NSAttributedString(
             string: "Search or enter URL",
             attributes: [.foregroundColor: p.textSoft]
@@ -7600,9 +7600,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // background, so hover-peek reads as chrome floating over the page.
         // Same reason as the Aero wash: in dark mode this accent tint sat over the
         // neutral background and turned the sidebar teal. Neutral glass in dark.
-        sidebarGlass.layer?.backgroundColor = p.isDark
-            ? NSColor(white: 1, alpha: 0.02).cgColor
-            : p.accent.withAlphaComponent(0.08).cgColor
+        sidebarGlass.layer?.backgroundColor = p.bg.cgColor
         updateFindBarAppearance()
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
@@ -8043,11 +8041,14 @@ extension BrowserController: AddressSuggestionsDelegate {
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
-        guard let field = obj.object as? NSTextField, field === address,
-              let movement = obj.userInfo?["NSTextMovement"] as? NSNumber,
-              movement.intValue == 0x10 else { return }
-        let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
-        queueAddressSubmission(field.stringValue, isCmdEnter: isCmd)
+        guard let field = obj.object as? NSTextField, field === address else { return }
+        if let movement = obj.userInfo?["NSTextMovement"] as? NSNumber,
+           movement.intValue == 0x10 {
+            let isCmd = NSApp.currentEvent?.modifierFlags.contains(.command) ?? false
+            queueAddressSubmission(field.stringValue, isCmdEnter: isCmd)
+        } else {
+            field.attributedStringValue = styledAddress(field.stringValue)
+        }
     }
 
     private func isFieldSubmitCommand(_ selector: Selector) -> Bool {
