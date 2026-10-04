@@ -17,6 +17,11 @@ function developmentConfig() {
     supabaseAnonKey: '', redirectURI: 'com.froydinger.breeze.test://auth-callback' };
 }
 
+function withoutCloudConfig() {
+  return { development: false, cloudDisabled: true, cloudMode: 'coming-soon',
+    aiBaseURL: '', aiClientToken: '', supabaseURL: '', supabaseAnonKey: '', redirectURI: '' };
+}
+
 function readFirstFile(paths) {
   for (const file of paths) {
     try { return fs.readFileSync(file, 'utf8').trim(); }
@@ -56,6 +61,7 @@ function validatePublicKey(key) {
 
 function validateConfig(config) {
   if (config.development) throw new Error('An unconfigured development build cannot pass production configuration validation.');
+  if (config.cloudDisabled) throw new Error('A without-cloud build cannot pass configured Cloud validation.');
   const validated = {
     aiBaseURL: requireOrigin(config.aiBaseURL, AI_ORIGIN, 'BREEZE_CLOUD_AI_BASE_URL'),
     aiClientToken: String(config.aiClientToken || '').trim(),
@@ -73,8 +79,10 @@ function validateConfig(config) {
   return validated;
 }
 
-function loadConfig({ env = process.env, repoRoot = REPO_ROOT, development = false } = {}) {
+function loadConfig({ env = process.env, repoRoot = REPO_ROOT, development = false, withoutCloud = false } = {}) {
+  if (development && withoutCloud) throw new Error('Development and without-cloud modes cannot be combined.');
   if (development) return developmentConfig();
+  if (withoutCloud) return withoutCloudConfig();
   const token = String(env.BREEZE_CLOUD_CLIENT_TOKEN || '').trim() || readFirstFile([
     path.join(repoRoot, 'cloudflare/breeze-chat-worker/.breeze-client-token')
   ]);
@@ -96,6 +104,7 @@ function loadConfig({ env = process.env, repoRoot = REPO_ROOT, development = fal
 
 async function verifyNetwork(config, fetchImpl = globalThis.fetch) {
   if (config.development) throw new Error('Development builds cannot verify or contact Cloud services.');
+  if (config.cloudDisabled) throw new Error('Without-cloud builds cannot verify or contact Cloud services.');
   // Fail closed on redirects so credentials can never follow a redirect to another host.
   async function check(url, headers, expected, label) {
     try {
@@ -115,23 +124,26 @@ async function verifyNetwork(config, fetchImpl = globalThis.fetch) {
 }
 
 async function main(args = process.argv.slice(2)) {
-  const accepted = new Set(['--check', '--verify-network', '--development']);
-  if (args.some(arg => !accepted.has(arg))) throw new Error('Usage: node scripts/build-config.cjs [--check] [--verify-network | --development]');
+  const accepted = new Set(['--check', '--verify-network', '--development', '--without-cloud']);
+  if (args.some(arg => !accepted.has(arg))) throw new Error('Usage: node scripts/build-config.cjs [--check] [--verify-network | --development | --without-cloud]');
   const development = args.includes('--development');
+  const withoutCloud = args.includes('--without-cloud');
+  if (development && withoutCloud) throw new Error('--development cannot be combined with --without-cloud.');
   if (development && args.includes('--verify-network')) throw new Error('--development cannot be combined with --verify-network.');
+  if (withoutCloud && args.includes('--verify-network')) throw new Error('--without-cloud cannot be combined with --verify-network.');
   const checkOnly = args.includes('--check');
   if (!checkOnly) fs.rmSync(OUTPUT, { force: true }); // Never leave a previous build's credential in use after failure.
-  const config = loadConfig({ development });
+  const config = loadConfig({ development, withoutCloud });
   if (args.includes('--verify-network')) await verifyNetwork(config);
   if (!checkOnly) {
     fs.writeFileSync(OUTPUT, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   }
-  console.log(development ? 'Unconfigured Breeze Test configuration created. Cloud and Aero are disabled; no credentials were read.' : args.includes('--verify-network')
+  console.log(withoutCloud ? 'Breeze Windows configuration created. Aero AI and Cloud account/sync are Coming soon; no credentials were read.' : development ? 'Unconfigured Breeze Test configuration created. Cloud and Aero are disabled; no credentials were read.' : args.includes('--verify-network')
     ? 'Breeze Cloud build configuration and service connectivity verified. Values are not logged.'
     : 'Breeze Cloud build configuration validated. Values are not logged.');
 }
 
-module.exports = { developmentConfig, loadConfig, validateConfig, validatePublicKey, verifyNetwork, main };
+module.exports = { developmentConfig, withoutCloudConfig, loadConfig, validateConfig, validatePublicKey, verifyNetwork, main };
 if (require.main === module) {
   main().catch(error => { console.error(`Build configuration error: ${error.message}`); process.exitCode = 1; });
 }

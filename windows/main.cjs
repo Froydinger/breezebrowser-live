@@ -13,11 +13,12 @@ let assistantGeneration=0;
 let passwordMetadata=[],cloudState={configured:false},restoreTabs=[];
 let config={};try{config=JSON.parse(fs.readFileSync(path.join(__dirname,'config.generated.json'),'utf8'));}catch{}
 // Developers may supply existing configuration through the environment, never through the web UI.
+if(!config.development&&!config.cloudDisabled){
 config.aiBaseURL=process.env.BREEZE_CLOUD_AI_BASE_URL||config.aiBaseURL||'';
 config.aiClientToken=process.env.BREEZE_CLOUD_CLIENT_TOKEN||config.aiClientToken||'';
 config.supabaseURL=process.env.BREEZE_CLOUD_SUPABASE_URL||config.supabaseURL||'';
 config.supabaseAnonKey=process.env.BREEZE_CLOUD_SUPABASE_ANON_KEY||config.supabaseAnonKey||'';
-if(config.development)Object.assign(config,{aiBaseURL:'',aiClientToken:'',supabaseURL:'',supabaseAnonKey:''});
+}else{Object.assign(config,{aiBaseURL:'',aiClientToken:'',supabaseURL:'',supabaseAnonKey:''});}
 const profileArg=process.argv.find(a=>a.startsWith('--profile='));
 if(profileArg){const name=profileArg.slice(10);if(/^[a-zA-Z0-9_-]{1,80}$/.test(name))app.setPath('userData',path.join(app.getPath('appData'),name));}
 if(process.argv.includes('--smoke-test'))app.setPath('userData',fs.mkdtempSync(path.join(require('node:os').tmpdir(),'breeze-smoke-')));
@@ -31,7 +32,7 @@ app.on('before-quit',()=>{quitting=true;for(const timer of reminderTimers.values
 function getTab(tabId=activeTabId){return tabs.find(t=>t.id===tabId);}
 function settings(){return store.get('settings');}
 function event(data){if(win&&!win.isDestroyed())win.webContents.send('breeze:event',data);}
-function snapshot(){const tab=getTab();return {version:app.getVersion(),development:!!config.development,buildLabel:config.development?'Unconfigured Windows test build':'Windows',platform:process.platform,chromiumVersion:process.versions.chrome,electronVersion:process.versions.electron,tabs:tabs.map(metadataTab),activeTabId,splitTabId,internalPage:tab?.page??null,pins:store.get('pins'),groups:store.get('groups'),settings:settings(),history:store.get('history'),bookmarks:store.get('bookmarks'),downloads:store.get('downloads'),chats:store.get('chats'),reminders:store.get('reminders'),cloud:{...cloudState,configured:!!cloudState.configured,aeroConfigured:!!(config.aiBaseURL&&config.aiClientToken),account:cloudState.signedIn?{...cloudState,email:cloudState.email}:null},passwords:passwordMetadata,assistant:{...assistant,attachments:assistant.attachments.map(({id,name})=>({id,name}))},restoreTabs,systemDark:nativeTheme.shouldUseDarkColors,maximized:win?.isMaximized()||false};}
+function snapshot(){const tab=getTab();return {version:app.getVersion(),development:!!config.development,cloudDisabled:!!config.cloudDisabled,cloudMode:config.cloudMode||'configured',buildLabel:config.development?'Unconfigured Windows test build':config.cloudDisabled?'Breeze for Windows':'Windows',platform:process.platform,chromiumVersion:process.versions.chrome,electronVersion:process.versions.electron,tabs:tabs.map(metadataTab),activeTabId,splitTabId,internalPage:tab?.page??null,pins:store.get('pins'),groups:store.get('groups'),settings:settings(),history:store.get('history'),bookmarks:store.get('bookmarks'),downloads:store.get('downloads'),chats:store.get('chats'),reminders:store.get('reminders'),cloud:{...cloudState,configured:!!cloudState.configured,aeroConfigured:!!(config.aiBaseURL&&config.aiClientToken),account:cloudState.signedIn?{...cloudState,email:cloudState.email}:null},passwords:passwordMetadata,assistant:{...assistant,attachments:assistant.attachments.map(({id,name})=>({id,name}))},restoreTabs,systemDark:nativeTheme.shouldUseDarkColors,maximized:win?.isMaximized()||false};}
 function broadcast(){if(!win||win.isDestroyed())return;win.webContents.send('breeze:state',snapshot());}
 function toast(text,type='info'){event({type:'toast',text,error:type==='error'});}
 function saveTabs(){if(!store)return;const pending=restoreTabs.filter(r=>webURL(r.url));store.set('openTabs',[...pending,...tabs.filter(t=>webURL(t.url)).map(t=>({id:t.id,url:t.url,title:t.title,groupId:t.groupId||null,pinned:t.pinned||false,sleeping:t.sleeping||false}))].filter((t,i,all)=>all.findIndex(r=>r.url===t.url)===i));}
@@ -190,7 +191,7 @@ async function start(){
  if(settings().restoreTabs==='always'){for(const row of restoreTabs)if(webURL(row.url))createTab(row.url,{activate:false,groupId:row.groupId,pinned:row.pinned});restoreTabs=[];}
  if(!tabs.length)createTab(settings().hasOnboarded?'breeze://newtab':'breeze://onboarding');else activateTab(tabs[0].id);
  for(const row of store.get('reminders'))scheduleReminder(row);
- if(process.platform==='win32'&&app.isPackaged&&!config.development)app.setAsDefaultProtocolClient('com.froydinger.breeze');
+ if(process.platform==='win32'&&app.isPackaged&&!config.development&&!config.cloudDisabled)app.setAsDefaultProtocolClient('com.froydinger.breeze');
  await win.loadURL(APP_URL);win.show();broadcast();
  const callback=process.argv.find(a=>a.match(/^com\.froydinger\.breeze:/));if(callback)handleAuthURL(callback);
  if(process.argv.includes('--smoke-test'))await runSmokeTest();

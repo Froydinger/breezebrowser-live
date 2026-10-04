@@ -1,195 +1,137 @@
-# Breeze for Windows: build and release
+# Breeze for Windows: browser-first release
 
-The Windows port is isolated in `windows/`. Its initial release is **1.0.0**,
-tagged **`windows-v1.0.0`** in `Froydinger/breezebrowser-live`. Do not change the
-native macOS version, Android assets, or native `vX.Y.Z` tags. Never mark a
-Windows release as GitHub Latest.
+The Windows port is isolated in `windows/`. Version **1.0.0** ships as ordinary
+**Breeze** with **Aero AI and Breeze Cloud account/sync marked Coming soon**.
+This is the intentionally authorized browser-first Windows release. It does not
+require, read, transfer, or embed Cloud credentials. Mac and Android releases,
+features, assets, and native `vX.Y.Z` tags remain unchanged.
 
-## Current development build: Cloud setup deferred
+## Build the current Windows release
 
-The `windows-chromium-port` branch builds **Breeze Test**, an explicitly
-unconfigured, isolated browser test installer. It does not need Cloud credentials
-and does not publish a GitHub release or update the download website. Aero and
-Breeze Cloud are disabled in this build; complete the rest of the browser first.
+Use Node.js 22 and the committed npm lockfile:
 
 ```powershell
 cd windows
 npm ci
 npm test
 npm run check
-npm run build:test:win
+npm run build:win:no-cloud
 ```
 
-The test configuration is generated with `scripts/build-config.cjs --development`.
-It contains only `development: true`, empty AI/Supabase URLs and credential fields,
-and the isolated `com.froydinger.breeze.test://auth-callback` URI. Development mode
-does not read Cloud environment variables or credential files. Combining it with
-`--verify-network` is rejected, and production validation rejects the development
-marker. A test build cannot satisfy the configured production release gate.
+The package retains product name `Breeze` and app ID
+`com.froydinger.breeze.windows`, without an account callback protocol. The x64
+NSIS installer is `dist/Breeze-1.0.0-windows-x64.exe`; the unpacked executable is
+`dist/win-unpacked/Breeze.exe`. Automatic electron-builder publication is disabled.
 
-The test package uses product name `Breeze Test`, app ID
-`com.froydinger.breeze.windows.test`, no registered protocol, and installer
-`windows/dist/Breeze-Test-1.0.0-windows-x64.exe`. Its unpacked executable is
-`windows/dist/win-unpacked/Breeze Test.exe`. CI smoke-tests that executable and
-uploads `breeze-test-windows-x64-<commit>` with the EXE and SHA-256, clearly marked
-unconfigured and unsigned. Test installers must never be renamed or advertised
-as the production Breeze release.
+`build-config.cjs --without-cloud` emits only `development: false`,
+`cloudDisabled: true`, `cloudMode: 'coming-soon'`, empty AI/Supabase URLs and
+credential fields, and an empty callback URI. It bypasses environment and file
+credential discovery entirely. It cannot be combined with `--development` or
+`--verify-network`. The app must visibly mark Aero AI and account/sync Coming soon
+and prevent those unavailable actions. Do not imply those features were tested.
 
-## Required existing production configuration
+The separate `--development` / `build:test:win` option remains available for
+isolated Breeze Test builds. Its test identity must never be renamed or promoted
+as the production Breeze installer.
 
-A production release must have working Aero and Breeze Cloud configuration.
-Unconfigured production builds are deliberately rejected. Do not generate replacement credentials or
-put credentials in source, commit messages, command arguments, logs, screenshots,
-or release notes.
+## Build once; promote the exact tested bytes
 
-| Build input | Source |
-| --- | --- |
-| `BREEZE_CLOUD_CLIENT_TOKEN` | Existing Breeze Cloud client token in the environment, or `cloudflare/breeze-chat-worker/.breeze-client-token` |
-| `BREEZE_CLOUD_SUPABASE_ANON_KEY` | Existing Supabase **public** anon/publishable key in the environment, `native/.supabase-anon-key`, or root `.supabase-anon-key` |
-| `BREEZE_CLOUD_AI_BASE_URL` | Existing service, defaults to `https://breeze-chat.jakefroydinger.workers.dev` |
-| `BREEZE_CLOUD_SUPABASE_URL` | Existing native project, defaults to `https://sbvjjseitpahdpewsqqc.supabase.co` |
-| `BREEZE_CLOUD_REDIRECT_URI` | Existing callback, `com.froydinger.breeze://auth-callback` |
+1. Push to **`windows-chromium-port`**. Only this branch builds. The workflow runs
+   npm CI, unit tests, syntax checks, and `build:win:no-cloud` on `windows-latest`.
+   It verifies the empty no-cloud configuration, launches the packaged
+   `Breeze.exe --smoke-test`, and requires exit zero plus a JSON `ok: true`, correct
+   version, and Windows DPAPI round-trip evidence. Smoke tests use an isolated
+   temporary profile and local HTTP fixtures without account or AI requests.
+2. CI uploads immutable artifact **`breeze-windows-x64-<commit SHA>`**, containing
+   the EXE, its `.exe.sha256`, and a release manifest with commit, run ID, filename,
+   checksum, and `coming-soon` mode. A separate smoke artifact retains the result
+   JSON and screenshot. The build branch never publishes a GitHub release.
+3. Review the exact successful run's installer, checksum, screenshot, and browser
+   acceptance checks below. Record its run ID and checksum. Do not rerun/replace
+   the reviewed artifact and assume newly produced bytes are identical.
+4. After manual QA and release authorization, create or fast-forward
+   **`windows-release`** to that exact reviewed commit. A matching
+   **`windows-v1.0.0`** tag is an alternate promotion trigger. No other branch/tag
+   is eligible. Do not change native or Android refs.
+5. The promotion job **does not rebuild** and has no dependency on the skipped
+   build job. With the existing GitHub job token (`actions:read`, `contents:write`),
+   it finds the latest successful port-branch Windows workflow run for the exact
+   commit, requires one unexpired matching artifact, and downloads it through
+   `gh run download`. It verifies the checksum and manifest's source/run/mode.
+   No source checkout, npm install, compilation, or repackaging occurs here.
+6. Promotion creates a draft **`windows-v1.0.0`** release, checks both attached
+   EXE/checksum assets, then publishes with **`--latest=false`**. Existing releases
+   and tags pointing elsewhere are never overwritten. The native Latest release
+   is checked afterward. If a draft/upload is incomplete, inspect it before any
+   recovery; never silently clobber a published asset.
+7. Download the public EXE/checksum and compare with the manually reviewed hash.
+   Update only the canonical lander (`Froydinger/breezebrowser`, `main`,
+   `index.html`) with the additive Windows link, Windows-only Coming soon labels,
+   and unsigned warning. Preserve Mac 6.3.7 links/schema and Android links.
+   Verify deployment and the actual download before claiming the release is live.
 
-The build script accepts only the existing service origins and callback. It
-rejects secret/service-role Supabase keys, wrong-project legacy JWTs, expired
-legacy keys, missing configuration, and obvious placeholders. Supabase access
-continues to rely on the existing server-side RLS policies. Never bundle a
-provider API key or Supabase service-role credential.
+Current versioned URLs:
 
-`scripts/build-config.cjs` writes ignored `config.generated.json` containing
-`aiBaseURL`, `aiClientToken`, `supabaseURL`, `supabaseAnonKey`, and `redirectURI`.
-This file is included in the packaged main process, never exposed through the
-renderer bridge. Desktop application files can be extracted by their owner;
-bundling a client credential does not make it a confidential server secret.
-The existing backend must enforce its usual limits and authorization.
+- [Windows installer](https://github.com/Froydinger/breezebrowser-live/releases/download/windows-v1.0.0/Breeze-1.0.0-windows-x64.exe)
+- [SHA-256 checksum](https://github.com/Froydinger/breezebrowser-live/releases/download/windows-v1.0.0/Breeze-1.0.0-windows-x64.exe.sha256)
 
-Only the production workflow step reads the repository secret `BREEZE_CLOUD_CLIENT_TOKEN`, and the
-repository variable or secret `BREEZE_CLOUD_SUPABASE_ANON_KEY`. These are the
-names expected by the build, not evidence that they have already been set.
-The GitHub connector cannot list Actions secrets; historical workflows do not
-establish their presence. A real configured build/health check is required.
-The generated file is removed after the build and is never uploaded separately.
+Never use `releases/latest/download` for Windows or mark Windows as Latest.
+Artifact retention is 14 days; if the reviewed artifact expires, build and review
+new bytes before promotion. Reusing the source SHA does not establish byte identity.
 
-## Local production build on Windows (deferred)
-
-Use Node.js 22 and the committed npm lockfile. Supply existing configuration
-through the approved environment or files without printing their values.
-
-```powershell
-cd windows
-npm ci
-npm test
-npm run check
-node scripts/build-config.cjs --check --verify-network
-npm run build:win
-```
-
-The connectivity check makes a read-only, authenticated request to the existing
-Aero `/health` route and Supabase `/auth/v1/settings`. It rejects redirects and
-logs only success or a sanitized failure. It does not create an account, change
-server configuration, call a model, or spend an AI request quota.
-
-The NSIS x64 installer is `windows/dist/Breeze-1.0.0-windows-x64.exe`. The workflow
-creates a sibling `Breeze-1.0.0-windows-x64.exe.sha256`. `build:win` has automatic
-electron-builder publication disabled.
-
-## Unsigned Windows distribution
+## Unsigned installer
 
 No Windows code-signing certificate is configured. The installer is **unsigned**;
-Windows SmartScreen or Smart App Control may warn or block it. This is distinct
-from the signed/notarized native Mac app. Do not claim the Windows build is
-signed, notarized, universally installable, or bypass Windows protection on a
-user's behalf. Keep the unsigned notice on the release and download page.
+Windows SmartScreen or Smart App Control may warn or block it. Do not describe it
+as signed/notarized or bypass Windows protections on the user's behalf. Keep this
+warning on the Windows release and download page. Native Mac signing is unchanged.
 
-## Build-only CI, then deliberate release promotion
+## Windows browser acceptance checks
 
-1. Push the tested port to `windows-chromium-port`. The Windows workflow runs
-   `npm ci`, tests, syntax checks, and `npm run build:test:win` on
-   `windows-latest`, then launches `Breeze Test.exe` with `--smoke-test`.
-   That check uses an isolated temporary profile and local HTTP fixtures to test
-   navigation and untrusted-page bridge isolation, without account or AI calls.
-   It creates a clearly named test installer/checksum artifact without reading
-   Cloud secrets, checking Cloud connectivity, or publishing a release.
-2. Review the exact commit's successful CI run and download its artifact. Verify
-   the SHA-256 and successful packaged-app smoke result. Passing unit tests alone
-   does not prove that an installer starts or that real websites work. Record
-   outstanding full Windows installation/live-service acceptance checks below.
-3. Cloud setup and production publication are deferred. Only after existing
-   Cloud configuration is supplied, those checks pass, and release authorization
-   is current, create or fast-forward the
-   dedicated `windows-release` branch to that reviewed commit. This is the
-   publication gate. Its workflow requires real Cloud configuration and live
-   service verification, then rebuilds/tests a production package, verifies the
-   installer/checksum, creates a draft tagged `windows-v1.0.0`, checks both assets,
-   and publishes with `--latest=false` using the existing job `GITHUB_TOKEN`.
-   Existing tags pointing elsewhere and existing releases are never overwritten.
-4. A pushed matching `windows-v1.0.0` tag is an alternate publication trigger.
-   Manual `workflow_dispatch` may build; its `publish` input only works on
-   `windows-release`. The GitHub Actions manual UI/dispatch API requires the
-   workflow to exist on the repository's default branch, so branch push is the
-   initial path and does not require modifying the Mac default branch.
-5. Inspect the published release and download both public assets. Check the EXE's
-   downloaded checksum matches. Confirm the native Latest release remains the
-   native `v6.x` release and existing Mac/Android assets are unchanged. Complete
-   Windows installation and live-service acceptance checks using those exact
-   downloaded bytes before calling the release fully verified.
-6. Update **only the canonical lander** in `Froydinger/breezebrowser`, `main`,
-   `index.html`, with an additive Windows download section and unsigned notice.
-   Preserve Mac 6.3.7 and Android links and Mac schema/version. Do not create a
-   second website in this source repository. Verify deployment and the final
-   public link before saying the Windows release is live.
+- Install, start, quit, and restart on Windows 10/11 x64; check shortcuts, app icon,
+  settings persistence, and uninstall preservation.
+- Visit real HTTPS pages; test navigation, back/forward/reload, tabs, downloads,
+  permission prompts, popup controls, and untrusted-page bridge isolation.
+- Test top/sidebar address-bar layouts, light/dark/system themes, onboarding,
+  history/bookmarks, local password-vault handling, and browser data persistence.
+- Confirm Aero AI and Breeze Cloud sign-in/sync are visibly Coming soon and cannot
+  attempt unavailable network services. No account is required for browsing.
+- Compare the downloaded installer with the exact CI/manual-QA checksum. Record
+  genuine failures and untested behavior; fixtures alone are not live-site QA.
 
-Exact Windows download:
+## Future configured Cloud builds: explicit opt-in only
 
-`https://github.com/Froydinger/breezebrowser-live/releases/download/windows-v1.0.0/Breeze-1.0.0-windows-x64.exe`
+The strict `npm run build:win` path remains available separately. It requires
+existing `BREEZE_CLOUD_CLIENT_TOKEN` and `BREEZE_CLOUD_SUPABASE_ANON_KEY` values;
+without them it fails. Its default service origins remain the existing
+`https://breeze-chat.jakefroydinger.workers.dev` and
+`https://sbvjjseitpahdpewsqqc.supabase.co`, with the original auth callback.
+The current GitHub workflow has **no Cloud secret or variable bindings**.
 
-Checksum:
-
-`https://github.com/Froydinger/breezebrowser-live/releases/download/windows-v1.0.0/Breeze-1.0.0-windows-x64.exe.sha256`
-
-Use versioned links, never `releases/latest/download`. If publication stops after
-creating a draft, inspect that draft and its exact source/assets before resuming;
-do not delete/recreate or clobber a published release to make a retry pass.
-
-## Windows acceptance checks
-
-- Install, start, quit, and restart on supported Windows 10/11 x64; verify the
-  NSIS shortcut, app icon, remembered settings, and uninstall preservation.
-- Open a normal HTTPS page, follow a link, use back/forward/reload, close/reopen
-  tabs, and confirm page isolation, permissions, navigation, and download safety.
-- Check top/sidebar address-bar layouts, light/dark/system themes, onboarding,
-  history/bookmarks, and browser data persistence.
-- Confirm Aero can answer with page context and execute the supported browsing
-  actions; test cancel/repeated submission and error recovery. These production
-  checks remain deferred; an unconfigured test build must instead clearly report
-  that Aero and Cloud are unavailable.
-- Sign in through existing Breeze Cloud using an authorized test account, sync
-  selected categories, sign out, and verify no password vault data is synced.
-- Verify the app handles the existing auth callback, rejects unrelated callbacks,
-  and does not expose Cloud tokens to an untrusted page or renderer response.
-- Record failures and any untested functionality accurately. Do not advertise
-  successful end-to-end validation based only on fixtures or static checks.
+Configured mode rejects secret/service-role keys, wrong-project/expired legacy
+public keys, placeholders, and incorrect service origins. Optional
+`--check --verify-network` verifies existing read-only service routes with
+redirects disabled and sanitized errors. It rejects development and without-cloud
+configurations. Do not generate new credentials or transmit existing credentials
+as part of the current browser-first release. Enabling Cloud later requires its
+own configuration, live-service QA, and appropriately labeled release.
 
 ## Connector publication without shell authentication
 
-The available GitHub connector supports object-based branch updates:
+Use the available GitHub connector to create blobs/tree/commit and create or
+fast-forward the isolated branch, retaining unrelated files. Verify the ref SHA
+and corresponding CI run. Creating/advancing `windows-release` is the promotion
+gate; ordinary work belongs on `windows-chromium-port`. The connector does not
+expose tag creation, workflow dispatch, release mutation, or Actions-secret APIs.
+The promotion job uses only its existing job token; no persistent credential is
+created. Do not misuse branch-name parameters as undocumented tag operations.
 
-1. Read the base commit and tree using `fetch` Git data endpoints.
-2. Create changed blobs (`create_blob`) and a tree with the existing base tree
-   (`create_tree`), preserving every unrelated file.
-3. Create a commit with the observed branch tip as parent (`create_commit`).
-4. Create the isolated branch if absent (`create_branch`) or fast-forward it with
-   `update_ref(force=false)`. Read it back and compare its SHA.
-5. Read `/actions/runs?branch=windows-chromium-port` and the matching commit's jobs.
-   Use the supported artifact download action to inspect the produced installer.
-6. After the release gate, create/advance `windows-release` to the tested commit.
-
-There is no exposed connector action for creating a tag, dispatching a workflow,
-writing a release, or listing/creating Actions secrets. Do not misuse the
-branch-name parameter as an undocumented tag API. The release job handles tag
-and release creation with its existing, job-scoped `contents:write` token.
+The official v4 action refs were verified through GitHub Git data on 2026-10-04:
+checkout `11d5960a326750d5838078e36cf38b85af677262`, setup-node
+`49933ea5288caeca8642d1e84afbd3f7d6820020`, and upload-artifact
+`ea165f8d65b6e75b540449e92b4886f43607fa02`.
 
 References: [GitHub push triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push),
-[GitHub CLI release creation](https://cli.github.com/manual/gh_release_create),
-[GitHub CLI draft publication](https://cli.github.com/manual/gh_release_edit),
-[Supabase public and secret keys](https://supabase.com/docs/guides/getting-started/api-keys).
+[release creation](https://cli.github.com/manual/gh_release_create),
+[draft publication](https://cli.github.com/manual/gh_release_edit),
+[run artifact downloads](https://cli.github.com/manual/gh_run_download).

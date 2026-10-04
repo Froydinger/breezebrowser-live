@@ -12,7 +12,8 @@
     "check": "node --check main.cjs && node --check preload.cjs && node --check renderer/app.js",
     "build:win": "node scripts/build-config.cjs && electron-builder --win nsis --x64 --publish never",
     "build:win:dir": "node scripts/build-config.cjs && electron-builder --win --x64 --dir --publish never",
-    "build:test:win": "node scripts/build-config.cjs --development && electron-builder --config electron-builder.test.cjs --win nsis --x64 --publish never"
+    "build:test:win": "node scripts/build-config.cjs --development && electron-builder --config electron-builder.test.cjs --win nsis --x64 --publish never",
+    "build:win:no-cloud": "node scripts/build-config.cjs --without-cloud && electron-builder --config electron-builder.no-cloud.cjs --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "electron": "44.5.1",

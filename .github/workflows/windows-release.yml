@@ -3,13 +3,7 @@ name: Windows build and release
 on:
   push:
     branches: [windows-chromium-port, windows-release]
-    tags: ['windows-v*']
-  workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish the tested Windows build (windows-release branch only)
-        type: boolean
-        default: false
+    tags: ['windows-v1.0.0']
 
 # Native and Android release channels are deliberately excluded.
 permissions:
@@ -28,12 +22,9 @@ jobs:
   build:
     if: >-
       github.repository == 'Froydinger/breezebrowser-live' &&
-      (github.ref == 'refs/heads/windows-chromium-port' || github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.0')
+      github.ref == 'refs/heads/windows-chromium-port'
     runs-on: windows-latest
     timeout-minutes: 30
-    env:
-      INSTALLER: ${{ github.ref == 'refs/heads/windows-chromium-port' && 'Breeze-Test-1.0.0-windows-x64.exe' || 'Breeze-1.0.0-windows-x64.exe' }}
-      APP_EXE: ${{ github.ref == 'refs/heads/windows-chromium-port' && 'Breeze Test.exe' || 'Breeze.exe' }}
     defaults:
       run:
         shell: pwsh
@@ -60,34 +51,20 @@ jobs:
         run: npm test
       - name: Check application syntax
         run: npm run check
-      - name: Build isolated unconfigured test installer
-        if: github.ref == 'refs/heads/windows-chromium-port'
+      - name: Build Breeze with Aero and Cloud marked Coming soon
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          npm run build:test:win
+          npm run build:win:no-cloud
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $config = Get-Content config.generated.json -Raw | ConvertFrom-Json
-          if ($config.development -ne $true -or $config.aiBaseURL -or $config.aiClientToken -or $config.supabaseURL -or $config.supabaseAnonKey -or $config.redirectURI -ne 'com.froydinger.breeze.test://auth-callback') {
-            throw 'Test installer configuration must be isolated and contain no Cloud credentials.'
+          if ($config.development -ne $false -or $config.cloudDisabled -ne $true -or $config.cloudMode -ne 'coming-soon' -or $config.aiBaseURL -or $config.aiClientToken -or $config.supabaseURL -or $config.supabaseAnonKey -or $config.redirectURI) {
+            throw 'The authorized no-cloud release must contain no Cloud credentials or account callback.'
           }
-      - name: Verify existing Cloud configuration and build production NSIS x64
-        if: github.ref != 'refs/heads/windows-chromium-port'
-        env:
-          BREEZE_CLOUD_AI_BASE_URL: https://breeze-chat.jakefroydinger.workers.dev
-          BREEZE_CLOUD_CLIENT_TOKEN: ${{ secrets.BREEZE_CLOUD_CLIENT_TOKEN }}
-          BREEZE_CLOUD_SUPABASE_URL: https://sbvjjseitpahdpewsqqc.supabase.co
-          BREEZE_CLOUD_SUPABASE_ANON_KEY: ${{ vars.BREEZE_CLOUD_SUPABASE_ANON_KEY || secrets.BREEZE_CLOUD_SUPABASE_ANON_KEY }}
-          BREEZE_CLOUD_REDIRECT_URI: com.froydinger.breeze://auth-callback
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          node scripts/build-config.cjs --check --verify-network
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm run build:win
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke-test the packaged Windows application
         run: |
-          $app = Resolve-Path "dist/win-unpacked/$env:APP_EXE"
+          Remove-Item -LiteralPath 'smoke-result.json' -ErrorAction SilentlyContinue
+          $app = Resolve-Path 'dist/win-unpacked/Breeze.exe'
           $process = Start-Process -FilePath $app -ArgumentList '--smoke-test' -WorkingDirectory $PWD.Path -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Packaged Windows smoke test failed (exit $($process.ExitCode))." }
           if (-not (Test-Path -LiteralPath 'smoke-result.json')) { throw 'Packaged smoke test did not produce its result.' }
@@ -103,18 +80,18 @@ jobs:
           $signature = Get-AuthenticodeSignature -FilePath $installer
           "Installer Authenticode status: $($signature.Status)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           'This Windows release is distributed unsigned. Do not describe it as signed or notarized.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          if ($env:GITHUB_REF -eq 'refs/heads/windows-chromium-port') {
-            'Breeze Test: isolated unconfigured test build. Aero and Breeze Cloud are disabled. Not a production release.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          }
+          'Aero AI and Breeze Cloud account/sync: Coming soon on Windows.' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          @{ sourceSHA = $env:GITHUB_SHA; runID = $env:GITHUB_RUN_ID; installer = $env:INSTALLER; sha256 = $hash; cloudMode = 'coming-soon' } | ConvertTo-Json | Set-Content 'dist/release-manifest.json' -Encoding utf8
       - name: Retain verified installer only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ${{ github.ref == 'refs/heads/windows-chromium-port' && 'breeze-test-windows-x64' || 'breeze-windows-x64' }}-${{ github.sha }}
+          name: breeze-windows-x64-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
           path: |
             windows/dist/${{ env.INSTALLER }}
             windows/dist/${{ env.INSTALLER }}.sha256
+            windows/dist/release-manifest.json
       - name: Retain Windows smoke evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -130,28 +107,48 @@ jobs:
         run: Remove-Item -LiteralPath config.generated.json -ErrorAction SilentlyContinue
 
   publish:
-    needs: build
     if: >-
       github.repository == 'Froydinger/breezebrowser-live' &&
-      ((github.event_name == 'push' && (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.0')) ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/windows-release' && inputs.publish))
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/windows-release' || github.ref == 'refs/tags/windows-v1.0.0')
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     defaults:
       run:
         shell: pwsh
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: breeze-windows-x64-${{ github.sha }}
-          path: dist
+      - name: Download exact previously tested installer without rebuilding
+        id: source
+        run: |
+          $response = gh api "repos/$env:GH_REPO/actions/runs?branch=windows-chromium-port&head_sha=$env:GITHUB_SHA&event=push&status=success&per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not find the tested port-branch workflow run.' }
+          $runs = ($response | ConvertFrom-Json).workflow_runs
+          $run = $runs | Where-Object { $_.head_sha -eq $env:GITHUB_SHA -and $_.head_branch -eq 'windows-chromium-port' -and $_.path -eq '.github/workflows/windows-release.yml' -and $_.status -eq 'completed' -and $_.conclusion -eq 'success' -and $_.event -eq 'push' } | Sort-Object created_at -Descending | Select-Object -First 1
+          if (-not $run) { throw 'No successful Windows port-branch build exists for this exact commit. Build and review it before promotion.' }
+          $artifactName = "breeze-windows-x64-$env:GITHUB_SHA"
+          $artifactResponse = gh api "repos/$env:GH_REPO/actions/runs/$($run.id)/artifacts?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the tested run artifacts.' }
+          $artifacts = @(($artifactResponse | ConvertFrom-Json).artifacts | Where-Object { $_.name -eq $artifactName -and -not $_.expired })
+          if ($artifacts.Count -ne 1) { throw 'Expected exactly one unexpired immutable installer artifact.' }
+          gh run download $run.id --repo $env:GH_REPO --name $artifactName --dir dist
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the exact tested installer artifact.' }
+          "run_id=$($run.id)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "Promoting unchanged installer bytes from $($run.html_url), artifact $($artifacts[0].id)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
       - name: Verify downloaded release bytes
+        env:
+          SOURCE_RUN_ID: ${{ steps.source.outputs.run_id }}
         run: |
           $checksum = (Get-Content "dist/$env:INSTALLER.sha256" -Raw).Trim()
           $actual = (Get-FileHash "dist/$env:INSTALLER" -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($checksum -ne "$actual  $env:INSTALLER") { throw 'Installer SHA-256 mismatch.' }
+          $manifest = Get-Content 'dist/release-manifest.json' -Raw | ConvertFrom-Json
+          if ($manifest.sourceSHA -ne $env:GITHUB_SHA -or $manifest.runID -ne $env:SOURCE_RUN_ID -or $manifest.installer -ne $env:INSTALLER -or $manifest.sha256 -ne $actual -or $manifest.cloudMode -ne 'coming-soon') { throw 'The artifact manifest does not match the reviewed no-cloud build.' }
       - name: Publish to the dedicated Windows channel
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,7 +165,8 @@ jobs:
           $notes = @"
           Breeze $env:RELEASE_VERSION for Windows 10/11 x64.
 
-          Dedicated Windows release. Mac and Android release channels are unchanged.
+          Dedicated Windows release. Aero AI and Breeze Cloud account/sync are Coming soon on Windows.
+          Ordinary browsing does not require a Cloud account. Mac and Android release channels are unchanged.
           This installer is unsigned. Windows SmartScreen may warn or block installation.
           Verify the installer against the attached SHA-256 checksum.
 

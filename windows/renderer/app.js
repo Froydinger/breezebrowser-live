@@ -176,8 +176,9 @@
   function render() {
     updateTheme(); updateClock(); renderBuildNotice(); renderToolbar(); renderSidebar(); renderPage(); renderAssistant(); renderRestorePrompt(); scheduleLayout();
   }
-  function aeroUnavailable() { return state.cloud.aeroConfigured === false || (state.development && !state.cloud.aeroConfigured); }
-  function aeroUnavailableReason() { return state.development ? 'Aero isn’t configured in this Windows test build.' : 'Aero isn’t configured in this build.'; }
+  function cloudComingSoon() { return !state.development && (state.cloudMode === 'coming-soon' || state.cloudDisabled === true); }
+  function aeroUnavailable() { return cloudComingSoon() || state.cloud.aeroConfigured === false || (state.development && !state.cloud.aeroConfigured); }
+  function aeroUnavailableReason() { return cloudComingSoon() ? 'Aero AI is coming soon to Breeze for Windows.' : state.development ? 'Aero isn’t configured in this Windows test build.' : 'Aero isn’t configured in this build.'; }
   function renderBuildNotice() {
     const development = Boolean(state.development);
     $('app').classList.toggle('test-build', development); $('build-notice').hidden = !development;
@@ -190,6 +191,7 @@
   }
   function renderToolbar() {
     const tab = activeTab(); const internal = currentPage();
+    $('aero-toggle').title = cloudComingSoon() ? 'Aero AI — Coming soon' : 'Ask Aero (Ctrl+J)'; $('aero-toggle').setAttribute('aria-label', $('aero-toggle').title);
     $('go-back').disabled = !tab?.canGoBack;
     $('go-forward').disabled = !tab?.canGoForward;
     $('reload').disabled = !tab || Boolean(internal);
@@ -306,13 +308,13 @@
   }
   function pageSignature(page) {
     switch (page) {
-      case 'newtab': return JSON.stringify([state.development, state.cloud.aeroConfigured, state.settings.showGreeting, state.settings.newTabSuggestions, state.history.map((item) => [item.url, item.title])]);
-      case 'settings': return JSON.stringify([settingsSection, state.settings, state.cloud, state.reminders, state.version]);
+      case 'newtab': return JSON.stringify([state.development, state.cloudMode, state.cloudDisabled, state.cloud.aeroConfigured, state.settings.showGreeting, state.settings.newTabSuggestions, state.history.map((item) => [item.url, item.title])]);
+      case 'settings': return JSON.stringify([settingsSection, state.settings, state.cloud, state.reminders, state.version, state.development, state.cloudMode, state.cloudDisabled]);
       case 'history': return JSON.stringify([historySection, state.history, state.chats]);
       case 'bookmarks': return JSON.stringify(state.bookmarks);
       case 'downloads': return JSON.stringify(state.downloads);
       case 'passwords': return JSON.stringify(state.passwords);
-      default: return state.version;
+      default: return JSON.stringify([state.version, state.development, state.cloudMode, state.cloudDisabled]);
     }
   }
   function renderPage(force = false) {
@@ -370,6 +372,7 @@
       action.disabled = unavailable && command !== 'reminder'; if (action.disabled) action.title = aeroUnavailableReason(); action.append(node('span', '', title), icon(name)); actions.append(action);
     });
     column.append(form, help, actions);
+    if (cloudComingSoon()) column.append(node('p', 'coming-soon-status', 'Aero AI — Coming soon'));
     const topSites = getTopSites();
     if (topSites.length) {
       const favorites = node('section', 'favorites');
@@ -437,8 +440,8 @@
         settingRow('24-hour clock', 'Use a 24-hour clock in the sidebar.', toggleSetting('clock24'))
       ));
     } else if (settingsSection === 'search') {
-      section.append(node('p', 'section-intro', 'Type an address or search in the address bar. On a new tab, Enter asks Aero and Shift+Enter searches the web.'), card(
-        settingRow('Search engine', 'Used for address-bar searches and Aero’s web search.', selectSetting('searchEngine', [['google', 'Google'], ['bing', 'Bing'], ['duckduckgo', 'DuckDuckGo'], ['brave', 'Brave'], ['spectra', 'Spectra']]))
+      section.append(node('p', 'section-intro', aeroUnavailable() ? 'Type an address or search in the address bar or on a new tab. Press Enter to explore the web.' : 'Type an address or search in the address bar. On a new tab, Enter asks Aero and Shift+Enter searches the web.'), card(
+        settingRow('Search engine', aeroUnavailable() ? 'Used for address-bar and new-tab searches.' : 'Used for address-bar searches and Aero’s web search.', selectSetting('searchEngine', [['google', 'Google'], ['bing', 'Bing'], ['duckduckgo', 'DuckDuckGo'], ['brave', 'Brave'], ['spectra', 'Spectra']]))
       ));
     } else if (settingsSection === 'tabs') {
       section.append(node('p', 'section-intro', 'Keep what matters close. Right-click any tab for groups, pinning, mute, and sleep.'), card(
@@ -456,6 +459,9 @@
       ));
     } else if (settingsSection === 'cloud') renderCloudSettings(section);
     else if (settingsSection === 'aero') {
+      if (cloudComingSoon()) {
+        const body = node('div', 'card-body'); body.append(node('h3', '', 'Aero AI — Coming soon'), node('p', 'section-intro', 'Aero’s assistant, research, fact-checking, and page-understanding tools are coming to Breeze for Windows in a future update.'), node('p', 'status-line', 'Browse, search, and set reminders now. No account is needed.')); section.append(card(body)); layout.append(rail, section); page.append(layout); return page;
+      }
       const info = node('div', 'card-body');
       info.append(node('p', 'status-line', state.cloud.aeroConfigured ? 'Breeze Cloud is configured for Aero.' : 'Aero is not configured in this build.'));
       const note = node('p', 'section-intro', 'Aero uses Breeze Cloud. Your request and the current page’s relevant context are sent when you ask. Additional context below is optional.');
@@ -475,22 +481,25 @@
         settingRow('Browsing history', 'Review and clear saved browsing history.', button('View history', 'secondary-button', () => openPage('history'))),
         settingRow('Website data & permissions', 'Clear cookies, cache, and site permissions. You’ll be signed out of websites.', button('Clear website data', 'secondary-button', () => run('browser:clearData')))
       ));
-      const body = node('div', 'card-body'); body.append(node('p', 'section-intro', 'Cloud sync is off until you enable individual categories. Website logins, cookies, and the password vault stay on this device. Aero requests are processed by Breeze Cloud and its AI provider.')); section.append(card(body));
+      const body = node('div', 'card-body'); body.append(node('p', 'section-intro', cloudComingSoon() ? 'Breeze Cloud accounts, cross-device sync, and Aero AI are coming soon. Browsing history, bookmarks, website logins, cookies, and your password vault are stored on this device.' : 'Cloud sync is off until you enable individual categories. Website logins, cookies, and the password vault stay on this device. Aero requests are processed by Breeze Cloud and its AI provider.')); section.append(card(body));
     } else if (settingsSection === 'reminders') {
       section.append(node('p', 'section-intro', 'Reminders are delivered while Breeze is running. Don’t use reminders for emergencies or safety-critical needs.'), button('Set a reminder', 'primary-button', reminderDialog), node('br'), node('br'));
-      if (!state.reminders.length) section.append(emptyState('bell', 'Nothing to remember yet', 'Add a reminder here, or ask Aero to remind you.'));
+      if (!state.reminders.length) section.append(emptyState('bell', 'Nothing to remember yet', aeroUnavailable() ? 'Add a reminder here or from the new-tab page.' : 'Add a reminder here, or ask Aero to remind you.'));
       else { const list = node('div', 'item-list'); state.reminders.forEach((item) => {
         const row = node('div', 'list-item'); const copy = node('div', 'item-main'); copy.append(node('span', 'item-title', item.text || item.title), node('span', 'item-meta', `${dateText(item.dueAt || item.fireAt, true)}${item.fired || item.completed ? ' · Completed' : ''}`));
         row.append(icon('bell'), copy, iconButton('Remove reminder', 'close', () => run('reminder:remove', { id: item.id }))); list.append(row);
       }); section.append(list); }
     } else {
-      const about = node('div', 'card-body'); about.append(node('h3', '', 'Breeze for Windows'), node('p', 'status-line', `Version ${state.version || 'unavailable'} · Chromium`), node('p', 'section-intro', 'The Breeze experience, powered by Chromium on Windows and Aero through Breeze Cloud.'), button('What’s new', 'secondary-button', () => openPage('updates')), button('Keyboard shortcuts', 'quiet-button', shortcutsDialog)); section.append(card(about));
-      const platform = node('div', 'card-body'); platform.append(node('h3', '', 'Windows edition'), node('p', 'section-intro', 'This Windows release is unsigned. Passwords use Windows DPAPI encryption and explicit, site-matched filling. Apple Vision OCR, macOS dictation, and Apple FairPlay playback are not available. Images attached to Aero are sent as image context.'), node('p', 'section-intro', 'Updates are installed manually from a versioned Windows release. This edition does not use the macOS signed auto-updater.'), button('Check Windows releases', 'secondary-button', () => run('browser:update'))); section.append(card(platform));
+      const about = node('div', 'card-body'); about.append(node('h3', '', 'Breeze for Windows'), node('p', 'status-line', `Version ${state.version || 'unavailable'} · ${cloudComingSoon() ? 'Windows preview · ' : ''}Chromium`), node('p', 'section-intro', cloudComingSoon() ? 'The Breeze browsing experience, powered by Chromium on Windows. Aero AI and Breeze Cloud accounts and sync are coming soon.' : 'The Breeze experience, powered by Chromium on Windows and Aero through Breeze Cloud.'), button('What’s new', 'secondary-button', () => openPage('updates')), button('Keyboard shortcuts', 'quiet-button', shortcutsDialog)); section.append(card(about));
+      const platform = node('div', 'card-body'); platform.append(node('h3', '', 'Windows edition'), node('p', 'section-intro', cloudComingSoon() ? 'This Windows preview is unsigned. Passwords use Windows DPAPI encryption and explicit, site-matched filling. Apple Vision OCR, macOS dictation, and Apple FairPlay playback are not available.' : 'This Windows release is unsigned. Passwords use Windows DPAPI encryption and explicit, site-matched filling. Apple Vision OCR, macOS dictation, and Apple FairPlay playback are not available. Images attached to Aero are sent as image context.'), node('p', 'section-intro', 'Updates are installed manually from a versioned Windows release. This edition does not use the macOS signed auto-updater.'), button('Check Windows releases', 'secondary-button', () => run('browser:update'))); section.append(card(platform));
     }
     layout.append(rail, section); page.append(layout); return page;
   }
   function renderCloudSettings(section) {
     const cloud = state.cloud || {};
+    if (cloudComingSoon()) {
+      const body = node('div', 'card-body'); body.append(node('h3', '', 'Breeze Cloud — Coming soon'), node('p', 'section-intro', 'Accounts and cross-device sync are coming in a future Windows update. For now, enjoy Breeze without signing in.'), node('p', 'status-line', 'Your tabs, bookmarks, history, local password vault, and reminders are available on this device. No email address or password is needed.')); section.append(card(body)); return;
+    }
     if (state.development && !cloud.configured) {
       const body = node('div', 'card-body'); body.append(node('h3', '', 'Breeze Cloud isn’t configured'), node('p', 'section-intro', 'This Windows test build is focused on the browser. Email and Google sign-in, account creation, and cloud sync are unavailable. No account information is needed.'), node('p', 'status-line', 'Tabs, bookmarks, history, downloads, local passwords, split view, and reminders work without a Breeze Cloud account.')); section.append(card(body)); return;
     }
@@ -605,19 +614,19 @@
   }
   function onboardingPage() {
     const page = node('section', 'onboarding'); const logo = node('img'); logo.src = 'assets/icon.png'; logo.alt = 'Breeze';
-    page.append(logo, node('h1', '', state.development ? 'Welcome to Breeze Test.' : 'Welcome to Breeze.'), node('p', '', 'A little less noise. A little more possibility. Your browser, with a helpful companion along for the ride.'));
+    page.append(logo, node('h1', '', state.development ? 'Welcome to Breeze Test.' : cloudComingSoon() ? 'Breeze for Windows.' : 'Welcome to Breeze.'), node('p', '', cloudComingSoon() ? 'A little less noise. A little more possibility. A clean browser built around your tabs, your favorite sites, and the way you explore.' : 'A little less noise. A little more possibility. Your browser, with a helpful companion along for the ride.'));
     const features = node('div', 'onboarding-features');
-    [['sidebar', 'Room to think', 'Your tabs and favorite sites, right where you need them.'], ['search', state.development && aeroUnavailable() ? 'Aero, later' : 'Meet Aero', state.development && aeroUnavailable() ? 'Aero isn’t configured in this browser-focused test build.' : 'Ask questions, explore sources, and make sense of the web.'], ['shield', 'Your browsing, your choice', 'Keep your data local, or choose what to sync.']].forEach(([name, title, description]) => { const feature = node('div', 'onboarding-feature'); feature.append(icon(name), node('h2', '', title), node('p', '', description)); features.append(feature); });
+    [['sidebar', 'Room to think', 'Your tabs and favorite sites, right where you need them.'], ['search', cloudComingSoon() ? 'Aero AI — Coming soon' : state.development && aeroUnavailable() ? 'Aero, later' : 'Meet Aero', cloudComingSoon() ? 'AI assistance and research are on the way. Browse and search normally today.' : state.development && aeroUnavailable() ? 'Aero isn’t configured in this browser-focused test build.' : 'Ask questions, explore sources, and make sense of the web.'], ['shield', cloudComingSoon() ? 'Browse without an account' : 'Your browsing, your choice', cloudComingSoon() ? 'Your saved browsing data stays on this device. Cloud sync is coming soon.' : 'Keep your data local, or choose what to sync.']].forEach(([name, title, description]) => { const feature = node('div', 'onboarding-feature'); feature.append(icon(name), node('h2', '', title), node('p', '', description)); features.append(feature); });
     const actions = node('div', 'button-row');
     const finish = async (settings) => { const result = await run('settings:update', { hasOnboarded: true }); if (result !== null) { if (settings) settingsSection = 'cloud'; openPage(settings ? 'settings' : 'newtab'); } };
-    actions.append(button('Start exploring', 'primary-button', () => finish(false))); if (!state.development || state.cloud.configured) actions.append(button('Set up Breeze Cloud', 'secondary-button', () => finish(true)));
-    page.append(features, actions, node('p', 'legal', state.development && !state.cloud.configured ? 'Windows test build. Aero and Breeze Cloud aren’t configured. Your browsing data stays in this test profile.' : 'Breeze Cloud is optional. Aero requests send relevant context to Breeze Cloud; sync stays off until you choose to enable it.'));
+    actions.append(button('Start exploring', 'primary-button', () => finish(false))); if (!cloudComingSoon() && (!state.development || state.cloud.configured)) actions.append(button('Set up Breeze Cloud', 'secondary-button', () => finish(true)));
+    page.append(features, actions, node('p', 'legal', cloudComingSoon() ? 'No account needed. Aero AI and Breeze Cloud accounts and sync are coming soon.' : state.development && !state.cloud.configured ? 'Windows test build. Aero and Breeze Cloud aren’t configured. Your browsing data stays in this test profile.' : 'Breeze Cloud is optional. Aero requests send relevant context to Breeze Cloud; sync stays off until you choose to enable it.'));
     return page;
   }
   function updatesPage() {
     const page = pageBase('What’s new', 'A familiar Breeze. A new home.');
     const body = node('div', 'card-body'); body.append(node('p', 'release-version', `Breeze ${state.version || ''} for Windows`), node('h2', '', 'Hello, Windows.'));
-    const list = node('ul', 'release-notes'); ['Breeze’s clean canvas, pinned sites, vertical tabs, and tab groups.', 'Chromium-powered pages with split view, downloads, bookmarks, and browsing history.', 'Aero with Breeze Cloud, page context, research tasks, and reminders.', 'Optional Breeze Cloud account and category-by-category sync.', 'An encrypted, device-local password vault.'].forEach((text) => list.append(node('li', '', text)));
+    const list = node('ul', 'release-notes'); ['Breeze’s clean canvas, pinned sites, vertical tabs, and tab groups.', 'Chromium-powered pages with split view, downloads, bookmarks, and browsing history.', cloudComingSoon() ? 'Local reminders, available from the new-tab page and Settings.' : 'Aero with Breeze Cloud, page context, research tasks, and reminders.', cloudComingSoon() ? 'Coming soon: Aero AI, Breeze Cloud accounts, and cross-device sync.' : 'Optional Breeze Cloud account and category-by-category sync.', 'An encrypted, device-local password vault.'].forEach((text) => list.append(node('li', '', text)));
     body.append(list, node('p', 'status-line', 'This unsigned Windows release uses Chromium. Apple Vision OCR, native macOS dictation, and Apple FairPlay playback are not included. Updates are installed manually from a versioned Windows release.')); page.append(card(body)); return page;
   }
   function openAssistant(id) { localAssistantFullscreen = false; return run('assistant:open', id ? { id, visible: true } : { visible: true }); }
@@ -635,7 +644,7 @@
     const fullscreen = Boolean(assistant.fullscreen || localAssistantFullscreen);
     $('app').classList.toggle('assistant-fullscreen', Boolean(assistant.visible && fullscreen));
     $('assistant-expand').title = fullscreen ? 'Return to sidebar' : 'Expand Aero';
-    const fingerprint = JSON.stringify([assistant.messages, assistant.running, assistant.chatId, assistant.visible, unavailable]);
+    const fingerprint = JSON.stringify([assistant.messages, assistant.running, assistant.chatId, assistant.visible, unavailable, cloudComingSoon()]);
     if (fingerprint !== assistantFingerprint) {
       assistantFingerprint = fingerprint;
       const container = $('assistant-messages');
@@ -645,7 +654,7 @@
       const messages = Array.isArray(assistant.messages) ? assistant.messages : [];
       if (!messages.length) {
         const empty = node('div', 'assistant-empty'); const logo = node('img'); logo.src = 'assets/nav-icon.png'; logo.alt = '';
-        empty.append(logo, node('h2', '', unavailable ? 'Aero isn’t configured' : 'A little help from Aero.'), node('p', '', unavailable ? (state.development ? 'This test build is focused on browsing. Aero and its research tasks will be available once Breeze Cloud is configured.' : aeroUnavailableReason()) : 'Ask a question, understand a page, or explore something new.'));
+        empty.append(logo, node('h2', '', cloudComingSoon() ? 'Aero AI — Coming soon' : unavailable ? 'Aero isn’t configured' : 'A little help from Aero.'), node('p', '', unavailable ? (cloudComingSoon() ? 'Aero’s assistant and research tools are on the way. Your browser is ready to explore the web without an account.' : state.development ? 'This test build is focused on browsing. Aero and its research tasks will be available once Breeze Cloud is configured.' : aeroUnavailableReason()) : 'Ask a question, understand a page, or explore something new.'));
         if (!unavailable && activeTab() && !isInternalURL(activeTab().url)) empty.append(button('Summarize this page', 'quiet-button', () => sendAssistant('/summarize')));
         if (!unavailable) empty.append(button('Research a topic', 'quiet-button', () => { $('assistant-input').value = '/research '; $('assistant-input').focus(); }));
         container.append(empty);
@@ -661,12 +670,14 @@
     $('assistant-status').textContent = unavailable ? aeroUnavailableReason() : assistant.error || assistant.status || (assistant.running ? 'Aero is working…' : '');
     $('assistant-status').classList.toggle('error-text', Boolean(assistant.error));
     $('assistant-send').replaceChildren(icon(assistant.running ? 'stop' : 'send'));
-    $('assistant-send').disabled = unavailable && !assistant.running; $('assistant-input').disabled = unavailable; $('assistant-input').placeholder = unavailable ? 'Aero isn’t configured' : 'Ask anything…';
+    $('assistant-send').disabled = unavailable && !assistant.running; $('assistant-input').disabled = unavailable; $('assistant-input').placeholder = cloudComingSoon() ? 'Aero AI — Coming soon' : unavailable ? 'Aero isn’t configured' : 'Ask anything…';
+    $('assistant-new').disabled = unavailable; $('assistant-new').title = unavailable ? aeroUnavailableReason() : 'New chat';
+    document.querySelector('.assistant-note').textContent = cloudComingSoon() ? 'Browse and search without an account.' : 'Aero can make mistakes. Check important information.';
     $('assistant-send').title = unavailable && !assistant.running ? aeroUnavailableReason() : assistant.running ? 'Stop response' : 'Send'; $('assistant-send').setAttribute('aria-label', $('assistant-send').title);
     $('assistant-attach').disabled = unavailable || Boolean(assistant.running); $('assistant-attach').title = unavailable ? aeroUnavailableReason() : 'Attach image';
     const context = $('assistant-context'); context.replaceChildren();
     const tab = activeTab();
-    if (tab && !isInternalURL(tab.url)) { const pill = node('span', 'context-pill'); pill.title = 'The current page is included when you ask Aero.'; pill.append(icon('globe'), node('span', '', tab.title || hostName(tab.url))); context.append(pill); }
+    if (!unavailable && tab && !isInternalURL(tab.url)) { const pill = node('span', 'context-pill'); pill.title = 'The current page is included when you ask Aero.'; pill.append(icon('globe'), node('span', '', tab.title || hostName(tab.url))); context.append(pill); }
     for (const id of [...mentionedTabs]) {
       const mentioned = state.tabs.find((item) => item.id === id);
       if (!mentioned) { mentionedTabs.delete(id); continue; }
@@ -710,6 +721,7 @@
     });
   }
   function updatePalette(input) {
+    if (aeroUnavailable()) return closePalette();
     const value = input.value;
     const slash = value.match(/^\/([a-z]*)$/i);
     const mention = value.match(/(?:^|\s)@([^@\n]*)$/);
@@ -780,8 +792,8 @@
   function workspaceMenu() {
     openMenu([
       { label: 'New tab', icon: 'plus', shortcut: 'Ctrl+T', fn: () => run('tab:new') },
-      { label: 'Ask Aero', icon: 'compose', shortcut: 'Ctrl+J', fn: () => openAssistant() },
-      { label: 'Breeze Cloud', icon: 'cloud', fn: () => { settingsSection = 'cloud'; openPage('settings'); } },
+      { label: cloudComingSoon() ? 'Aero AI — Coming soon' : 'Ask Aero', icon: 'compose', shortcut: 'Ctrl+J', fn: () => openAssistant() },
+      { label: cloudComingSoon() ? 'Breeze Cloud — Coming soon' : 'Breeze Cloud', icon: 'cloud', fn: () => { settingsSection = 'cloud'; openPage('settings'); } },
       null,
       { label: 'Bookmarks', icon: 'bookmark', fn: () => openPage('bookmarks') },
       { label: 'History', icon: 'history', fn: () => openPage('history') },
@@ -878,7 +890,7 @@
   }
   function shortcutsDialog() {
     const list = node('div', 'shortcut-list');
-    [['New tab', 'Ctrl+T'], ['Close tab', 'Ctrl+W'], ['Focus address', 'Ctrl+L'], ['Ask Aero', 'Ctrl+J'], ['Toggle sidebar', 'Ctrl+Shift+S'], ['Find in page', 'Ctrl+F'], ['Bookmark page', 'Ctrl+D'], ['History', 'Ctrl+H'], ['Downloads', 'Ctrl+Shift+J'], ['Next tab', 'Ctrl+Tab'], ['Previous tab', 'Ctrl+Shift+Tab'], ['Reload page', 'Ctrl+R'], ['Back / forward', 'Alt+← / →'], ['Ask from a new tab', 'Enter'], ['Search from a new tab', 'Shift+Enter']].forEach(([title, key]) => list.append(node('span', '', title), node('kbd', '', key)));
+    [['New tab', 'Ctrl+T'], ['Close tab', 'Ctrl+W'], ['Focus address', 'Ctrl+L'], ['Ask Aero', 'Ctrl+J'], ['Toggle sidebar', 'Ctrl+Shift+S'], ['Find in page', 'Ctrl+F'], ['Bookmark page', 'Ctrl+D'], ['History', 'Ctrl+H'], ['Downloads', 'Ctrl+Shift+J'], ['Next tab', 'Ctrl+Tab'], ['Previous tab', 'Ctrl+Shift+Tab'], ['Reload page', 'Ctrl+R'], ['Back / forward', 'Alt+← / →'], [aeroUnavailable() ? 'Search from a new tab' : 'Ask from a new tab', 'Enter'], ['Search from a new tab', 'Shift+Enter']].forEach(([title, key]) => list.append(node('span', '', title), node('kbd', '', key)));
     openDialog('Keyboard shortcuts', list, 'Done', async () => true);
   }
   function toggleSidebar() { $('app').classList.toggle('sidebar-hidden'); scheduleLayout(); }
