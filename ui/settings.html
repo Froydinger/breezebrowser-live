@@ -648,7 +648,11 @@
         <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
           <div>
             <div class="row-label">Aero privacy</div>
-            <div class="row-hint">The current page is included so Aero can answer what you are looking at. Broader context starts off and can be added here.</div>
+            <div class="row-hint">You control what is sent to Aero. When you ask, your message, conversation, attachments, and relevant page context may be sent through Breeze Cloud to OpenAI. The switches below allow Aero to request recent history, bookmarks, and other tab titles/domains when needed; they do not send everything with every message. Turn off any category or disable Aero entirely. Browsing alone does not send your pages to Aero.</div>
+          </div>
+          <div class="row">
+            <div><div class="row-label">Enable Aero</div><div class="row-hint">Turn off all Aero requests and controls. The Breeze logo opens Settings instead.</div></div>
+            <label class="toggle"><input type="checkbox" id="aeroEnabled" /><span class="knob"></span></label>
           </div>
           <div class="row">
             <div>
@@ -1245,10 +1249,11 @@
       const set2 = (id, val) => { const el = document.getElementById(id); if (el && el !== ae) el.value = val || ''; };
       set2('userName', settings.userName);
       set2('aiInstructions', settings.aiInstructions);
+      document.getElementById('aeroEnabled').checked = settings.aeroEnabled !== false;
       document.getElementById('aiUseChatHistory').checked = settings.aiUseChatHistory !== false;
-      document.getElementById('aiIncludeHistory').checked = !!settings.aiIncludeHistory;
-      document.getElementById('aiIncludeBookmarks').checked = !!settings.aiIncludeBookmarks;
-      document.getElementById('aiIncludeOpenTabs').checked = !!settings.aiIncludeOpenTabs;
+      document.getElementById('aiIncludeHistory').checked = settings.aiIncludeHistory !== false;
+      document.getElementById('aiIncludeBookmarks').checked = settings.aiIncludeBookmarks !== false;
+      document.getElementById('aiIncludeOpenTabs').checked = settings.aiIncludeOpenTabs !== false;
       const cloudStatus = document.getElementById('aiCloudStatus');
       if (cloudStatus) cloudStatus.textContent = settings.aiCloudEnabled ? 'Connected' : 'Not configured';
 
@@ -1481,6 +1486,7 @@
     document.getElementById('whatsnew-row').addEventListener('click', () => { location.href = 'updates.html'; });
     document.getElementById('restoreTabs').addEventListener('change', (e) => set('restoreTabs', e.target.value));
     document.getElementById('passwords-row').addEventListener('click', () => { location.href = 'passwords.html'; });
+    document.getElementById('aeroEnabled').addEventListener('change', (e) => set('aeroEnabled', e.target.checked));
     document.getElementById('aiUseChatHistory').addEventListener('change', (e) => set('aiUseChatHistory', e.target.checked));
     document.getElementById('aiIncludeHistory').addEventListener('change', (e) => set('aiIncludeHistory', e.target.checked));
     document.getElementById('aiIncludeBookmarks').addEventListener('change', (e) => set('aiIncludeBookmarks', e.target.checked));

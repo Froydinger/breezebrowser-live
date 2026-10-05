@@ -61,9 +61,11 @@ final class Store {
         "tabSleepHours": 1,
         "maxLiveTabs": 12,         // 0 = no cap; see enforceLiveTabBudget
         "aiInstructions": "",
-        "aiIncludeHistory": false,
-        "aiIncludeBookmarks": false,
-        "aiIncludeOpenTabs": false,
+        "aeroEnabled": true,
+        "aeroPrivacyExplained": false,
+        "aiIncludeHistory": true,
+        "aiIncludeBookmarks": true,
+        "aiIncludeOpenTabs": true,
         "aiUseChatHistory": true,
         // Kept for settings compatibility with older profiles; Breeze Cloud readiness
         // is derived from the build configuration, not a local key.

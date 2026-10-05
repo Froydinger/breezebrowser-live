@@ -188,6 +188,9 @@ final class NewTabView: GradientBackgroundView {
     let field = NSTextField()
     var onSubmit: ((String, Bool) -> Void)?
     var onAttach: (() -> Void)?
+    private let camera = HoverButton(symbol: "camera", size: 32, point: 18)
+    private let microphone = HoverButton(symbol: "mic", size: 32, point: 18)
+    private let send = HoverButton(symbol: "paperplane", size: 38, point: 18)
     private var actionButtons: [NSButton] = []
     private var timer: Timer?
 
@@ -256,17 +259,14 @@ final class NewTabView: GradientBackgroundView {
         fieldWrap.layer?.cornerRadius = 27
         fieldWrap.translatesAutoresizingMaskIntoConstraints = false
         fieldWrap.addSubview(field)
-        let camera = HoverButton(symbol: "camera", size: 32, point: 18)
         camera.toolTip = "Attach a photo to Aero"
         camera.onTap = { [weak self] in self?.onAttach?() }
-        let microphone = HoverButton(symbol: "mic", size: 32, point: 18)
         microphone.toolTip = "Dictate"
         microphone.onTap = { [weak self] in
             guard let self else { return }
             self.window?.makeFirstResponder(self.field)
             NSApp.sendAction(Selector(("startDictation:")), to: nil, from: self.field)
         }
-        let send = HoverButton(symbol: "paperplane", size: 38, point: 18)
         send.toolTip = "Ask Aero"
         send.wantsLayer = true
         send.layer?.cornerRadius = 19
@@ -467,6 +467,14 @@ final class NewTabView: GradientBackgroundView {
 
     @objc func applyTheme() {
         let p = Theme.shared.palette
+        let enabled = Store.shared.settings["aeroEnabled"] as? Bool != false
+        camera.isHidden = !enabled
+        microphone.isHidden = !enabled
+        actionButtons.forEach { $0.isHidden = !enabled }
+        shortcutHelp.isHidden = !enabled
+        if !enabled { inputHint.isHidden = true }
+        field.placeholderString = enabled ? "Ask Aero, or enter a URL" : "Search or enter a URL"
+        send.toolTip = enabled ? "Ask Aero" : "Search"
         needsDisplay = true
         let appAppearance = NSAppearance(named: p.isDark ? .darkAqua : .aqua)
         appearance = appAppearance
@@ -510,7 +518,7 @@ final class NewTabView: GradientBackgroundView {
         if !suggestions.arrangedSubviews.isEmpty { reloadSuggestions() }
         field.textColor = p.text
         field.placeholderAttributedString = NSAttributedString(
-            string: "Ask Aero, or enter a URL",
+            string: enabled ? "Ask Aero, or enter a URL" : "Search or enter a URL",
             attributes: [
                 .foregroundColor: softColor,
                 .font: field.font ?? NSFont.systemFont(ofSize: 16)

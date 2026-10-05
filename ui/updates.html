@@ -227,6 +227,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.10', icon: 'sparkles', title: 'Aero, Your Choice', hotfix: false, major: false, items: [
+        ['Clear privacy controls', 'A startup explanation shows what Aero may receive and how you control it. Context permissions default on for new profiles; existing choices stay yours.'],
+        ['Turn Aero off', 'Disable Aero in Settings to stop AI requests and hide new-tab AI controls. The Breeze toolbar logo opens Settings instead.']
+      ] },
       { v: '6.3.9', icon: 'sparkles', title: 'Creator Tools, Unstuck', hotfix: true, major: false, items: [
         ['YouTube progress', 'Creator Tools shows progress immediately and bounds transcript and page-reading waits.'],
         ['Stop when you want', 'Stopping during video preparation cancels the pending analysis.'],

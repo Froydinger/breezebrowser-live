@@ -873,7 +873,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         ])
 
         breezeCorner.isBordered = false
-        breezeCorner.image = navLogo()
+        breezeCorner.image = aeroEnabled ? navLogo() : breezeLogo()
         breezeCorner.imageScaling = .scaleProportionallyDown
         breezeCorner.target = self; breezeCorner.action = #selector(openAssistant)
     }
@@ -3361,6 +3361,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
 
+        if !aeroEnabled {
+            if let url = URL(string: q), ["https", "http", "breeze"].contains(url.scheme ?? "") { navigate(q) }
+            else { navigate(searchURL(for: q)) }
+            return
+        }
         // A leading "/task" command runs a Aero Task instead of navigating/searching.
         if let (task, prompt) = BreezeTask.parse(q) {
             suggestionsPopover.hide()
@@ -3398,7 +3403,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // Conversational / task input → AI. From the new-tab page, turn the current
         // tab into a full-window chat tab. From a web page's address bar, open the
         // side assistant so the page stays visible.
-        if fromNewTab && newTabMode == "search" {
+        if !aeroEnabled || (fromNewTab && newTabMode == "search") {
             navigate(searchURL(for: q))
             return
         }
@@ -3708,8 +3713,31 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
-    @objc func openAssistant() { toggleAssistant() }
+    var aeroEnabled: Bool { Store.shared.settings["aeroEnabled"] as? Bool != false }
+    @objc func openAssistant() {
+        if aeroEnabled { toggleAssistant() } else { openInternal(.settings) }
+    }
+    func explainAeroPrivacyIfNeeded() {
+        guard !Store.shared.bool("aeroPrivacyExplained") else { return }
+        Store.shared.settings["aeroPrivacyExplained"] = true
+        Store.shared.saveSettings()
+        let alert = NSAlert()
+        alert.messageText = "You control what Aero sees"
+        alert.informativeText = "Aero is on by default. When you ask, your message, conversation, attachments, and relevant page context may be sent through Breeze Cloud to OpenAI. Recent history, bookmarks, and other tab titles/domains are available when needed, not sent with every message. Browsing alone does not send pages to Aero. Change each permission in Settings → Aero privacy, or turn Aero off entirely."
+        alert.addButton(withTitle: "Continue with Aero")
+        alert.addButton(withTitle: "Privacy settings")
+        alert.addButton(withTitle: "Turn Aero off")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            if response == .alertSecondButtonReturn { self.openInternal(.settings) }
+            if response == .alertThirdButtonReturn {
+                Store.shared.settings["aeroEnabled"] = false; Store.shared.saveSettings()
+                self.applySettingsChange(changedKey: "aeroEnabled")
+            }
+        }
+    }
     func toggleAssistant() {
+        guard aeroEnabled else { openInternal(.settings); return }
         if current?.isChatTab == true { return }
         // On a blank new-tab screen you don't open an empty sidebar — you "Ask
         // Breeze" from the new-tab bar, which starts a page-disconnected chat.
@@ -3727,6 +3755,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func setAssistant(_ open: Bool) {
+        if open && !aeroEnabled { return }
         assistantOpen = open
         if !open { assistant.stopTipRotation() }   // don't rotate tips while Aero is hidden
         // If assistant is currently embedded in a chat tab, don't animate the sidebar panel
@@ -4036,6 +4065,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var creatorPreparationID: UUID?
 
     func runCreatorTools() {
+        guard aeroEnabled else { openInternal(.settings); return }
         guard creatorPreparationTask == nil, !llm.isRunning else { return }
         guard let t = current, isYouTubeVideo(t), let url = t.webView.url else {
             assistant.addAI("Open a YouTube video, then choose Creator Tools or type /youtube.", chips: [])
@@ -4138,6 +4168,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Run a Task. Page-based Tasks (summarize / youtube) act on the current tab;
     /// prompt-based Tasks (research / fact-check) frame the user's text for Aero.
     func runTask(_ task: BreezeTask, prompt: String) {
+        guard aeroEnabled else { openInternal(.settings); return }
         if task.slug != "youtube" && current?.isNewTab == true {
             newFullscreenChat()
         } else if current?.isChatTab != true && !assistantOpen {
@@ -4239,6 +4270,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// AI), this always starts an independent full-window chat conversation. Any
     /// previous chat is preserved in History → Breeze AI chats.
     func newFullscreenChat() {
+        guard aeroEnabled else { openInternal(.settings); return }
         if let i = tabs.firstIndex(where: { $0.isChatTab }) {
             assistant.prepareForFullscreenReparent()
             active = i
@@ -4256,6 +4288,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func sendToAI(_ text: String, displayText: String? = nil, includePageContext: Bool = true) {
+        guard aeroEnabled else { openInternal(.settings); return }
         // Cloud not configured → warn instead of firing a doomed request.
         if !llm.ready {
             assistant.addUser(displayText ?? text)
@@ -4721,7 +4754,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @MainActor func aiBrowserContext(_ kind: String) async -> String {
         var out: [AIContext] = []
-        // Broader context is opt-in. Current page and explicit @-mentions are always
+        // Broader context is controlled by the user and requested on demand. Current page and explicit @-mentions are always
         // available; history/bookmarks/other tabs only go out when enabled in Settings.
         let recentHistory = Store.shared.history.prefix(15)
         if kind == "history" && Store.shared.bool("aiIncludeHistory"), !recentHistory.isEmpty {
@@ -4772,6 +4805,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     // MARK: - Image attachments (Apple Vision OCR + labels) ----------------
 
     func aiAttachImage() {
+        guard aeroEnabled else { openInternal(.settings); return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg, .tiff, .heic, .gif, .bmp, .image]
         panel.allowsMultipleSelection = true
@@ -7168,6 +7202,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         let forceOnboard = ProcessInfo.processInfo.environment["BREEZE_ONBOARD"] != nil
         Store.shared.settings["lastSeenVersion"] = current; Store.shared.saveSettings()
 
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.explainAeroPrivacyIfNeeded() }
         // Fresh install (or a build that predates onboarding) → show the native
         // welcome flow instead of What's New. `BREEZE_ONBOARD=1` forces it for testing.
         if forceOnboard || !hasOnboarded {
@@ -7519,6 +7554,12 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func applySettingsChange(changedKey: String? = nil) {
+        if !aeroEnabled {
+            assistant.onStop?()
+            if assistantOpen { setAssistant(false) }
+            if current?.isChatTab == true { openNewTab() }
+        }
+        breezeCorner.toolTip = aeroEnabled ? "Open Aero" : "Breeze Settings"
         applyThemeFromSettings()                  // posts Theme.didChange → chrome restyles
         if changedKey == nil || changedKey == "pinSize" {
             pinSize = PinSize(rawValue: Store.shared.string("pinSize")) ?? .large
@@ -7672,7 +7713,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         updateFindBarAppearance()
         adblockPill.layer?.backgroundColor = p.surface.cgColor
         adblockCount.textColor = p.textSoft
-        breezeCorner.image = navLogo()
+        breezeCorner.image = aeroEnabled ? navLogo() : breezeLogo()
         window.backgroundColor = p.bg
         root.needsDisplay = true
     }

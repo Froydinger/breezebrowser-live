@@ -42,6 +42,10 @@ final class CloudLLM: NSObject {
 
     func send(_ text: String, history: [[String: String]], contexts: [AIContext], images: [Data] = [],
               completion: @escaping (Result<(String, [String]), Error>) -> Void) {
+        guard Store.shared.settings["aeroEnabled"] as? Bool != false else {
+            completion(.failure(Self.error("Aero is turned off in Settings.")))
+            return
+        }
         guard usingCloud else {
             completion(.failure(Self.error("Aero is not configured in this build.")))
             return
@@ -89,6 +93,7 @@ final class CloudLLM: NSObject {
     var isRunning: Bool { currentTask != nil && !(currentTask?.isCancelled ?? true) }
 
     private func agentRequest(_ body: [String: Any], requestID: String) async throws -> [String: Any] {
+        if Store.shared.settings["aeroEnabled"] as? Bool == false && !["cancel", "close"].contains(body["operation"] as? String ?? "") { throw Self.error("Aero is turned off in Settings.") }
         guard let url = endpoint(path: "/v1/desktop/agents") else { throw Self.error("Aero is not configured.") }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
