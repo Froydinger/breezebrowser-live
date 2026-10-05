@@ -227,6 +227,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.9', icon: 'sparkles', title: 'Creator Tools, Unstuck', hotfix: true, major: false, items: [
+        ['YouTube progress', 'Creator Tools shows progress immediately and bounds transcript and page-reading waits.'],
+        ['Stop when you want', 'Stopping during video preparation cancels the pending analysis.'],
+        ['More resilient Aero', 'Temporary server errors while reading an existing AI session are retried without starting duplicate work.']
+      ] },
       { v: '6.3.8', icon: 'sparkles', title: 'Aero, Ready to Research', hotfix: false, major: true, items: [
         '<b>Search with sources</b> — Aero searches the web first and gives you clickable sources, with progress as it works.',
         '<b>Research, wrapped.</b> — Research opens its own summary with Aero beside it for follow-up questions. New-tab chats open the full chat view.',

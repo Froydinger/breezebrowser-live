@@ -445,6 +445,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onStop = { [weak self] in
             guard let self else { return }
             self.llm.cancelCurrent()
+            self.creatorPreparationTask?.cancel()
+            self.creatorPreparationTask = nil
+            self.creatorPreparationID = nil
             self.forceResearchSummary = false
             self.aiPendingTaskMode = nil
             self.hideRainbowGlow()
@@ -3939,10 +3942,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         return "";
         """#
         return await withCheckedContinuation { cont in
-            t.webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
-                if case .success(let v) = result { cont.resume(returning: (v as? String) ?? "") }
-                else { cont.resume(returning: "") }
+            var resolved = false
+            let finish: (String) -> Void = { value in
+                guard !resolved else { return }; resolved = true
+                cont.resume(returning: value)
             }
+            t.webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
+                if case .success(let v) = result { finish((v as? String) ?? "") }
+                else { finish("") }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 40) { finish("") }
         }
     }
 
@@ -3961,9 +3970,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         guard !videoID.isEmpty else { return "" }
 
         let apiKey: String = await withCheckedContinuation { continuation in
-            t.webView.evaluateJavaScript("window.ytcfg && (window.ytcfg.get ? window.ytcfg.get('INNERTUBE_API_KEY') : window.ytcfg.data_ && window.ytcfg.data_.INNERTUBE_API_KEY) || ''") { value, _ in
-                continuation.resume(returning: value as? String ?? "")
+            var resolved = false
+            let finish: (String) -> Void = { value in
+                guard !resolved else { return }; resolved = true
+                continuation.resume(returning: value)
             }
+            t.webView.evaluateJavaScript("window.ytcfg && (window.ytcfg.get ? window.ytcfg.get('INNERTUBE_API_KEY') : window.ytcfg.data_ && window.ytcfg.data_.INNERTUBE_API_KEY) || ''") { value, _ in
+                finish(value as? String ?? "")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { finish("") }
         }
         guard !apiKey.isEmpty,
               let playerURL = URL(string: "https://www.youtube.com/youtubei/v1/player?key=\(apiKey)") else { return "" }
@@ -3977,6 +3992,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 "videoId": videoID
             ]
             var request = URLRequest(url: playerURL)
+            request.timeoutInterval = 15
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("3", forHTTPHeaderField: "X-Youtube-Client-Name")
@@ -3998,6 +4014,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             guard let captionURL = components.url else { return "" }
 
             var captionRequest = URLRequest(url: captionURL)
+            captionRequest.timeoutInterval = 15
             captionRequest.setValue(pageURL.absoluteString, forHTTPHeaderField: "Referer")
             let (captionData, captionResponse) = try await URLSession.shared.data(for: captionRequest)
             guard (captionResponse as? HTTPURLResponse)?.statusCode == 200,
@@ -4015,9 +4032,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
 
+    private var creatorPreparationTask: Task<Void, Never>?
+    private var creatorPreparationID: UUID?
+
     func runCreatorTools() {
+        guard creatorPreparationTask == nil, !llm.isRunning else { return }
         guard let t = current, isYouTubeVideo(t), let url = t.webView.url else {
-            NSSound.beep()
+            assistant.addAI("Open a YouTube video, then choose Creator Tools or type /youtube.", chips: [])
             updateCreatorToolsAvailability()
             return
         }
@@ -4025,13 +4046,36 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.setImageMode(false)
         pendingCreatorVideoTab = t        // summary will open split next to this video
         let title = t.title.isEmpty == false ? t.title : "this YouTube video"
-        Task { [weak self] in
+        let preparationID = UUID()
+        creatorPreparationID = preparationID
+        assistant.setInputEnabled(false, placeholder: "Reading video transcript…")
+        assistant.setRunning(true)
+        assistant.showTaskLoader("Reading video transcript…")
+        creatorPreparationTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if self.creatorPreparationID == preparationID {
+                    self.creatorPreparationTask = nil
+                    self.creatorPreparationID = nil
+                }
+            }
             let transcript = await self.youTubeTranscript(of: t)
+            guard !Task.isCancelled else { return }
             self.ailog("YouTube transcript characters: \(transcript.count)")
             // The analysis covers packaging (title, thumbnail, views) — give it eyes:
             // on-device OCR of what's on screen, sent as text.
-            let seen = await self.screenRead(t, screens: 1)
+            self.assistant.showTaskLoader("Inspecting video page…")
+            let seen = await self.screenLines(t).joined(separator: "\n")
+            guard !Task.isCancelled else { return }
+            guard t.webView.url == url else {
+                self.pendingCreatorVideoTab = nil
+                self.assistant.setRunning(false)
+                self.assistant.setInputEnabled(true)
+                self.assistant.hideTaskLoader()
+                self.assistant.addAI("The video changed while I was reading it. Run Creator Tools again on the video you want analyzed.", chips: [])
+                return
+            }
+            self.aiPendingTaskMode = "youtube"
             let tBlock = transcript.isEmpty
                 ? "(No captions/transcript available for this video — analyze from the page metadata.)"
                 : "Video transcript (the actual spoken content — use this as your primary source):\n\(String(transcript.prefix(14000)))"
@@ -4094,7 +4138,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Run a Task. Page-based Tasks (summarize / youtube) act on the current tab;
     /// prompt-based Tasks (research / fact-check) frame the user's text for Aero.
     func runTask(_ task: BreezeTask, prompt: String) {
-        if current?.isNewTab == true {
+        if task.slug != "youtube" && current?.isNewTab == true {
             newFullscreenChat()
         } else if current?.isChatTab != true && !assistantOpen {
             setAssistant(true)
@@ -5137,7 +5181,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         var rect = NSRect(origin: .zero, size: img.size)
         guard let cg = img.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return [] }
         return await withCheckedContinuation { c in
-            DispatchQueue.global(qos: .userInitiated).async { c.resume(returning: VisionOCR.readScreen(cg)) }
+            var resolved = false
+            let finish: ([String]) -> Void = { lines in
+                guard !resolved else { return }; resolved = true
+                c.resume(returning: lines)
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let lines = VisionOCR.readScreen(cg)
+                DispatchQueue.main.async { finish(lines) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { finish([]) }
         }
     }
 

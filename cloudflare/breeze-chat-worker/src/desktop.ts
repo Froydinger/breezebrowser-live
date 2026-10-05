@@ -33,11 +33,21 @@ export async function desktopAgent(req: Request, env: Env, helpers: {
   if (!key) return json({ error: "provider_not_configured" }, 503);
   if (!owner || !requestID || owner.length > 128 || requestID.length > 128) return json({ error: "invalid_client" }, 400);
   async function api(path: string, method = "GET", payload?: unknown): Promise<RecordValue> {
-    const response = await fetch(`https://api.openai.com/v1/agents${path}`, {
+    const perform = () => fetch(`https://api.openai.com/v1/agents${path}`, {
       method, headers: { Authorization: `Bearer ${key}`, "OpenAI-Beta": "agents=v1", "Content-Type": "application/json",
         ...(method === "POST" ? { "Idempotency-Key": `${requestID}:${body.operation || "start"}` } : {}) },
       body: payload === undefined ? undefined : JSON.stringify(payload), signal: req.signal,
     });
+    let response = await perform();
+    // Retry only reads of the existing session. Never recreate a run or repeat
+    // a browser action because a result-fetch temporarily failed.
+    for (let attempt = 0; method === "GET" && [500, 502, 503, 504].includes(response.status) && attempt < 3; attempt++) {
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      await response.body?.cancel();
+      await new Promise(resolve => setTimeout(resolve, Math.min(5000, retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt)));
+      if (req.signal.aborted) throw new Error("Request cancelled");
+      response = await perform();
+    }
     if (!response.ok) {
       // Never return provider bodies containing user inputs or credentials.
       const detail: RecordValue = await response.json().catch(() => ({}));
