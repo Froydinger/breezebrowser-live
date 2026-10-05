@@ -83,7 +83,7 @@ final class Store {
 
     private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        var folderName = "Breeze"
+        var folderName = Bundle.main.bundleIdentifier?.hasSuffix(".test") == true ? "BreezeTest" : "Breeze"
         if let idx = CommandLine.arguments.firstIndex(of: "--profile"), idx + 1 < CommandLine.arguments.count {
             folderName = CommandLine.arguments[idx + 1]
         } else if let env = ProcessInfo.processInfo.environment["BREEZE_PROFILE"] {

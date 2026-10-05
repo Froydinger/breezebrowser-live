@@ -78,6 +78,14 @@ Skip any step only if the user explicitly says so.
 
 ## AI architecture
 
+**Mac Agents in 6.3.8 supersedes the legacy text-loop behavior below.** See
+`cloudflare/breeze-chat-worker/DESKTOP-AGENTS.md`: GPT-6 Luna, built-in web
+search first, typed browser tools, context on demand, streamed progress, and
+sources in chat. Earlier desktop releases and Android keep their existing routes.
+Do not restore automatic context gathering. Research mode opens Research, wrapped.;
+ordinary web searches stay in chat.
+
+
 - One backend only: Breeze Cloud via `CloudLLM.swift`. Provider routing lives
   server-side. Do NOT add a local model, BYOK setup, bundled runtime, model
   picker, or fallback backend.

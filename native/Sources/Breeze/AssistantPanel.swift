@@ -1340,6 +1340,7 @@ private final class MessageBubbleView: NSView {
 /// status label. It only exists between send and done, so there's no idle GPU cost.
 private final class TaskLoaderView: NSView {
     private let label = NSTextField(labelWithString: "")
+    private var stages: [String] = []
     private let dotsLayer = CALayer()
     private var dots: [CALayer] = []
 
@@ -1347,13 +1348,15 @@ private final class TaskLoaderView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 17
-        layer?.backgroundColor = NSColor(white: 0.122, alpha: 0.96).cgColor
+        let palette = Theme.shared.palette
+        layer?.backgroundColor = palette.surfaceActive.cgColor
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
+        layer?.borderColor = palette.accent.withAlphaComponent(0.25).cgColor
 
         label.stringValue = text
         label.font = .systemFont(ofSize: 13.5, weight: .medium)
-        label.textColor = NSColor.white.withAlphaComponent(0.92)
+        label.textColor = palette.text
+        label.maximumNumberOfLines = 2
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -1367,7 +1370,7 @@ private final class TaskLoaderView: NSView {
             let d = CALayer()
             d.frame = CGRect(x: CGFloat(i) * gap, y: 0, width: r * 2, height: r * 2)
             d.cornerRadius = r
-            d.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
+            d.backgroundColor = palette.accent.cgColor
             dotsLayer.addSublayer(d)
             dots.append(d)
         }
@@ -1387,7 +1390,16 @@ private final class TaskLoaderView: NSView {
     }
     required init?(coder: NSCoder) { nil }
 
-    func setLabel(_ s: String) { label.stringValue = s }
+    func setLabel(_ s: String) {
+        if s != "Thinking…", stages.last != s {
+            stages.append(s)
+            if stages.count > 3 { stages.removeFirst() }
+        }
+        if stages.count > 1 {
+            let completed = stages.dropLast().map { "✓ " + $0.replacingOccurrences(of: "…", with: "") }.joined(separator: " · ")
+            label.stringValue = completed + "\n" + (stages.last ?? s)
+        } else { label.stringValue = stages.last ?? s }
+    }
 
     func startAnimating() {
         for (i, d) in dots.enumerated() {

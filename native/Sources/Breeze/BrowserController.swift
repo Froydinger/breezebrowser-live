@@ -445,6 +445,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         assistant.onStop = { [weak self] in
             guard let self else { return }
             self.llm.cancelCurrent()
+            self.forceResearchSummary = false
+            self.aiPendingTaskMode = nil
             self.hideRainbowGlow()
             self.assistant.setRunning(false)
             self.assistant.setInputEnabled(true)
@@ -469,7 +471,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         llm.onStatus = { [weak self] s in
             guard let self else { return }
             self.assistant.setModelStatus(s)                 // empty-state line
-            self.assistant.setStatus(self.llm.ready ? nil : s)   // also show progress during a chat
+            self.assistant.setStatus(self.llm.isRunning || !self.llm.ready ? s : nil)
             self.broadcastToInternalPages()
         }
 
@@ -844,9 +846,9 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         actions.translatesAutoresizingMaskIntoConstraints = false
         addressWrap.addSubview(actions)
         NSLayoutConstraint.activate([
-            copylink.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 6),
+            copylink.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 1),
             copylink.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
-            address.leadingAnchor.constraint(equalTo: copylink.trailingAnchor, constant: 6),
+            address.leadingAnchor.constraint(equalTo: copylink.trailingAnchor, constant: 11),
             address.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
             address.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6),
             actions.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -6),
@@ -4092,7 +4094,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Run a Task. Page-based Tasks (summarize / youtube) act on the current tab;
     /// prompt-based Tasks (research / fact-check) frame the user's text for Aero.
     func runTask(_ task: BreezeTask, prompt: String) {
-        if !assistantOpen { setAssistant(true) }
+        if current?.isNewTab == true {
+            newFullscreenChat()
+        } else if current?.isChatTab != true && !assistantOpen {
+            setAssistant(true)
+        }
         assistant.setImageMode(false)
         switch task.slug {
         case "youtube":
@@ -4215,12 +4221,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
         ailog("sendToAI (Breeze Cloud, \(text.count) characters)")
         aiVisitedSources.removeAll()
-        if let tab = current,
-           let url = tab.webView.url,
-           ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            let label = tab.title.isEmpty ? (url.host ?? url.absoluteString) : tab.title
-            aiVisitedSources.append((label, url.absoluteString))
-        }
         assistant.addUser(displayText ?? text)
         assistant.setInputEnabled(false, placeholder: "Thinking…")
         let working = text.range(of: "research", options: .caseInsensitive) != nil ? "Researching…" : "Thinking…"
@@ -4257,13 +4257,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     }
                     let openedSummary = self.openResearchSummaryIfNeeded(query: text, answer: textAns, chips: toolChips)
                     if openedSummary {
-                        self.assistant.addAI("I opened your research summary. It has the main takeaways and sources from what I found.", chips: chips)
+                        self.assistant.addAI("Your research summary is open.\n\n" + textAns, chips: chips)
                     } else {
                         self.assistant.addAI(textAns, chips: chips)
                     }
                     self.broadcastToInternalPages()   // refresh the usage/cost readout on any open Settings page
                     self.saveAgentSnapshotAndWalkthrough(query: text, answer: textAns)
                 case .failure(let e):
+                    self.forceResearchSummary = false
+                    self.pendingCreatorVideoTab = nil
                     self.assistant.addAI("Sorry — \(e.localizedDescription)", chips: [])
                 }
             }
@@ -4279,7 +4281,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // on plain lookups like "find pizza near me", which used to hijack the page.
         let force = forceResearchSummary
         forceResearchSummary = false
-        let researchy = force || q.contains("research")
+        let researchy = force || (q.contains("research") && !q.contains("without opening") && !q.contains("do not open") && !q.contains("keep everything here") && !q.contains("keep it in chat"))
         let transactional = q.contains("fill ") || q.contains("type ") || q.contains("click ") ||
             q.contains("email ") || q.contains("log in") || q.contains("sign in") || q.contains("submit")
         guard researchy && !transactional && answer.count > (force ? 120 : 180) else { return false }
@@ -4299,6 +4301,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         showActive()
         tab.webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         refreshSidebar()
+        if !assistantOpen { setAssistant(true) }
+        assistant.focusInput()
         return true
     }
 
@@ -4661,9 +4665,6 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     @MainActor func gatherContexts() async -> [AIContext] {
         var out: [AIContext] = []
-        if let t = current, !t.isNewTab, !t.isChatTab {
-            out.append(AIContext(label: ctxLabel(t), text: await readPageText(of: t), isCurrent: true))
-        }
         for e in aiExtras {
             if let t = e.tab, tabs.contains(where: { $0.id == t.id }), t.id != current?.id {
                 out.append(AIContext(label: e.label, text: await readPageText(of: t)))
@@ -4671,10 +4672,15 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 out.append(AIContext(label: e.label, text: txt))
             }
         }
+        return out
+    }
+
+    @MainActor func aiBrowserContext(_ kind: String) async -> String {
+        var out: [AIContext] = []
         // Broader context is opt-in. Current page and explicit @-mentions are always
         // available; history/bookmarks/other tabs only go out when enabled in Settings.
         let recentHistory = Store.shared.history.prefix(15)
-        if Store.shared.bool("aiIncludeHistory"), !recentHistory.isEmpty {
+        if kind == "history" && Store.shared.bool("aiIncludeHistory"), !recentHistory.isEmpty {
             let lines = recentHistory.compactMap { h -> String? in
                 guard let url = h["url"] as? String, let title = h["title"] as? String else { return nil }
                 return "• \(title) (\(url))"
@@ -4682,7 +4688,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             out.append(AIContext(label: "Recent history", text: "Recent browsing history:\n" + lines.joined(separator: "\n")))
         }
         let bookmarks = Store.shared.bookmarks.prefix(20)
-        if Store.shared.bool("aiIncludeBookmarks"), !bookmarks.isEmpty {
+        if kind == "bookmarks" && Store.shared.bool("aiIncludeBookmarks"), !bookmarks.isEmpty {
             let lines = bookmarks.compactMap { b -> String? in
                 guard let url = b["url"] as? String, let title = b["title"] as? String else { return nil }
                 return "• \(title) (\(url))"
@@ -4690,11 +4696,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             out.append(AIContext(label: "Bookmarks", text: "User's bookmarks:\n" + lines.joined(separator: "\n")))
         }
         let openTabs = tabs.filter { !$0.isNewTab && !$0.isChatTab && $0.id != current?.id }
-        if Store.shared.bool("aiIncludeOpenTabs"), !openTabs.isEmpty {
+        if kind == "tabs" && Store.shared.bool("aiIncludeOpenTabs"), !openTabs.isEmpty {
             let lines = openTabs.map { "• \($0.title) (\(hostOf($0.webView.url)))" }
             out.append(AIContext(label: "Open tabs", text: "Other open tabs:\n" + lines.joined(separator: "\n")))
         }
-        return out
+        return out.isEmpty ? "Access disabled in Settings or no matching context available." : out.map { $0.text }.joined(separator: "\n")
     }
 
     func aiAtMention() {
@@ -5116,7 +5122,16 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// Snapshot what `t` is rendering and OCR it on a background queue.
     @MainActor func screenLines(_ t: Tab) async -> [String] {
         let img: NSImage? = await withCheckedContinuation { c in
-            t.webView.takeSnapshot(with: nil) { i, _ in c.resume(returning: i) }
+            // Video-backed WebKit views can leave snapshot callbacks pending.
+            // Resolve once, including when a late callback arrives after timeout.
+            var resolved = false
+            let finish: (NSImage?) -> Void = { image in
+                guard !resolved else { return }
+                resolved = true
+                c.resume(returning: image)
+            }
+            t.webView.takeSnapshot(with: nil) { i, _ in finish(i) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { finish(nil) }
         }
         guard let img else { return [] }
         var rect = NSRect(origin: .zero, size: img.size)

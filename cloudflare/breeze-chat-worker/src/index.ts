@@ -1,3 +1,4 @@
+import { desktopAgent } from "./desktop";
 import { proxyMobileResponses } from "./mobile";
 import { proxyMobileTranscription } from "./transcription";
 
@@ -267,6 +268,10 @@ export default {
     const path = new URL(req.url).pathname;
     if (req.method === "GET" && path === "/health") return json({ ok: true });
     if (req.method !== "POST") return json({ error: "not_found" }, 404);
+    if (path === "/v1/desktop/agents") return desktopAgent(req, env, {
+      json,
+      quota: async () => { const { quotaResp, quota } = await checkQuota(req, env, "chat"); return quotaResp.ok ? null : json(quota, quotaResp.status); },
+    });
     if (path === "/v1/chat/completions") return proxyChat(req, env);
     if (path === "/v1/realtime/token") return proxyRealtimeToken(req, env);
     if (path === "/v1/mobile/responses") {

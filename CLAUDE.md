@@ -89,6 +89,14 @@ native releases are now just normal GitHub "latest". Everything here is native.
 
 ## AI architecture (native) — read before touching the assistant
 
+**Mac Agents in 6.3.8 supersedes the legacy text-loop behavior below.** See
+`cloudflare/breeze-chat-worker/DESKTOP-AGENTS.md`: GPT-6 Luna, built-in web
+search first, typed browser tools, context on demand, streamed progress, and
+sources in chat. Earlier desktop releases and Android keep their existing routes.
+Do not restore automatic context gathering. Research mode opens Research, wrapped.;
+ordinary web searches stay in chat.
+
+
 - **One backend: Breeze Cloud only.** `CloudLLM.swift` talks to the Cloudflare
   Worker configured by `BREEZE_CLOUD_AI_BASE_URL` and
   `BREEZE_CLOUD_CLIENT_TOKEN` at build time. Do NOT add a local model

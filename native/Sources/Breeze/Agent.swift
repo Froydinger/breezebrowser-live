@@ -8,6 +8,7 @@ import Foundation
 
 /// Browser capabilities the model can call on the main actor.
 protocol BrowserAITools: AnyObject {
+    @MainActor func aiBrowserContext(_ kind: String) async -> String
     @MainActor func aiOpenURL(_ url: String) async -> String
     @MainActor func aiReadCurrentPage() async -> String
     @MainActor func aiSearchWeb(_ query: String) async -> String

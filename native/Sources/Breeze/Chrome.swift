@@ -358,12 +358,12 @@ final class SplitPane: NSView {
         addressWrap.addSubview(copyLink)
         addressWrap.addSubview(address)
         addressWrap.addSubview(actions)
-        addressAfterCopyC = address.leadingAnchor.constraint(equalTo: copyLink.trailingAnchor, constant: 5)
+        addressAfterCopyC = address.leadingAnchor.constraint(equalTo: copyLink.trailingAnchor, constant: 10)
         addressAtStartC = address.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 10)
         addressBeforeActionsC = address.trailingAnchor.constraint(equalTo: actions.leadingAnchor, constant: -6)
         addressAtEndC = address.trailingAnchor.constraint(equalTo: addressWrap.trailingAnchor, constant: -10)
         NSLayoutConstraint.activate([
-            copyLink.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 5),
+            copyLink.leadingAnchor.constraint(equalTo: addressWrap.leadingAnchor, constant: 0),
             copyLink.centerYAnchor.constraint(equalTo: addressWrap.centerYAnchor),
             addressAfterCopyC,
             addressBeforeActionsC,
