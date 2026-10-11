@@ -227,6 +227,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.11', icon: 'shapes', title: 'Back from Picture in Picture', hotfix: true, major: false, items: [
+        ['Smoother video return', 'Keep the active page attached while Picture in Picture returns, so playback and page controls stay responsive.'],
+        ['Reliable PiP toggle', 'Recognize WebKit’s floating video mode and return the correct video to the page.']
+      ] },
       { v: '6.3.10', icon: 'sparkles', title: 'Aero, Your Choice', hotfix: false, major: false, items: [
         ['Clear privacy controls', 'A startup explanation shows what Aero may receive and how you control it. Context permissions default on for new profiles; existing choices stay yours.'],
         ['Turn Aero off', 'Disable Aero in Settings to stop AI requests and hide new-tab AI controls. The Breeze toolbar logo opens Settings instead.']

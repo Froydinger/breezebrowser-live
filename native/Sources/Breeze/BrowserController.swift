@@ -1497,8 +1497,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
             pinsTopC.constant = 44
 
-            primary.removeFromSuperview()
-            webContainer.addSubview(primary); primary.pin(to: webContainer)
+            // PiP enter/leave can refresh chrome while WebKit is returning its
+            // video surface. Keep an already-attached view in the same window:
+            // detaching it here disrupts the renderer and its input routing.
+            if primary.superview !== webContainer {
+                primary.removeFromSuperview()
+                webContainer.addSubview(primary)
+                primary.pin(to: webContainer)
+            }
         }
         updateWebViewDisplay()
         syncChrome()
@@ -6253,12 +6259,13 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// rejects with NotSupportedError on macOS.
     func pip(for webView: WKWebView?, toggle: Bool) {
         guard let webView else { return }
-        let onAlready = toggle ? "await document.exitPictureInPicture(); return 'exited';"
+        let onAlready = toggle ? "if (document.pictureInPictureElement && document.exitPictureInPicture) { await document.exitPictureInPicture(); } else if (v.webkitSetPresentationMode) { v.webkitSetPresentationMode('inline'); } return 'exited';"
                                : "return 'already-pip';"
         let body = """
-        const v = document.querySelector('video');
+        const videos = Array.from(document.querySelectorAll('video'));
+        const v = document.pictureInPictureElement || videos.find(v => v.webkitPresentationMode === 'picture-in-picture') || videos.find(v => !v.paused) || videos[0];
         if (!v) return 'no-video';
-        if (document.pictureInPictureElement) { \(onAlready) }
+        if (document.pictureInPictureElement || v.webkitPresentationMode === 'picture-in-picture') { \(onAlready) }
         if (v.disablePictureInPicture || !document.pictureInPictureEnabled) return 'unsupported';
         try { await v.requestPictureInPicture(); return 'ok'; }
         catch (e) { return 'error: ' + (e && e.name ? e.name : String(e)); }
