@@ -1,6 +1,7 @@
 // Small reusable AppKit widgets styled to match ui/style.css.
 
 import Cocoa
+import QuartzCore
 
 final class PassthroughVisualEffectView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -691,5 +692,101 @@ final class CommandTile: NSView {
         layer?.borderColor = p.text.withAlphaComponent(p.isDark ? 0.07 : 0.06).cgColor
         let soft = p.text.withAlphaComponent(p.isDark ? 0.42 : 0.45)
         [timeLabel, dateLabel, dot].forEach { $0.textColor = soft }
+    }
+}
+
+
+/// A purely visual loading surface. The complete subtree is transparent to
+/// hit-testing and never joins the keyboard responder chain.
+final class InitialPageLoadingView: NSView {
+    private let mark = NSImageView()
+    private let caption = NSTextField(labelWithString: "A little Breeze…")
+    private let subtitle = NSTextField(labelWithString: "Opening your page")
+    private let halo = CAShapeLayer()
+    private var generation: UUID?
+    private(set) var isDismissing = false
+    private var dismissGeneration = UUID()
+    override var acceptsFirstResponder: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.progressIndicator)
+        setAccessibilityLabel("Opening page")
+        layer?.addSublayer(halo)
+        mark.image = breezeLogo()
+        mark.imageScaling = .scaleProportionallyUpOrDown
+        mark.setAccessibilityElement(false)
+        caption.font = .systemFont(ofSize: 23, weight: .semibold)
+        subtitle.font = .systemFont(ofSize: 13, weight: .regular)
+        let stack = NSStackView(views: [mark, caption, subtitle])
+        stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -12),
+            mark.widthAnchor.constraint(equalToConstant: 68),
+            mark.heightAnchor.constraint(equalToConstant: 68)
+        ])
+        applyTheme()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func applyTheme() {
+        let p = Theme.shared.palette
+        layer?.backgroundColor = p.bg.cgColor
+        caption.textColor = p.text
+        subtitle.textColor = p.textSoft
+        halo.strokeColor = p.accent.withAlphaComponent(p.isDark ? 0.28 : 0.18).cgColor
+        halo.fillColor = p.accent.withAlphaComponent(p.isDark ? 0.045 : 0.035).cgColor
+        halo.lineWidth = 1.5
+    }
+    override func layout() {
+        super.layout()
+        halo.frame = bounds
+        let size: CGFloat = 132
+        halo.path = CGPath(ellipseIn: CGRect(x: bounds.midX-size/2, y: bounds.midY+13,
+                                           width: size,height: size),transform:nil)
+    }
+    func show(generation: UUID) {
+        dismissGeneration = UUID()
+        isDismissing = false
+        alphaValue = 1; isHidden = false
+        applyTheme()
+        guard self.generation != generation else { return }
+        self.generation = generation
+        halo.removeAllAnimations(); mark.layer?.removeAllAnimations()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        mark.wantsLayer = true
+        let drift = CABasicAnimation(keyPath: "transform.translation.y")
+        drift.fromValue = -3; drift.toValue = 3; drift.duration = 1.4
+        drift.autoreverses = true; drift.repeatCount = .infinity
+        drift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        mark.layer?.add(drift,forKey:"breezeDrift")
+        let glow = CABasicAnimation(keyPath:"opacity")
+        glow.fromValue = 0.35; glow.toValue = 1; glow.duration = 1.4
+        glow.autoreverses = true; glow.repeatCount = .infinity
+        halo.add(glow,forKey:"breezeGlow")
+    }
+    func dismiss(animated: Bool) {
+        generation = nil
+        isDismissing = animated
+        let token = UUID(); dismissGeneration = token
+        halo.removeAllAnimations(); mark.layer?.removeAllAnimations()
+        guard animated, superview != nil,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            isDismissing = false
+            removeFromSuperview(); alphaValue = 1; return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            self.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            guard let self, self.dismissGeneration == token else { return }
+            self.isDismissing = false
+            self.removeFromSuperview(); self.alphaValue = 1
+        }
     }
 }

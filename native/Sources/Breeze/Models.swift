@@ -719,7 +719,10 @@ let breezeKeyboardJS = """
   }
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Backspace' || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (editable(e.target || document.activeElement)) return;
+    // Shadow DOM retargets event.target to its non-editable host. Preserve
+    // native deletion when any node on the original event path is an editor.
+    var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (editable(e.target) || editable(document.activeElement) || path.some(editable)) return;
     // Bubble phase, not capture. This used to run BEFORE the page's own handlers
     // and mark the event handled, so an app that deletes the selected item on
     // Delete (Suno, file managers, editors) saw a pre-cancelled event and did
@@ -1053,4 +1056,31 @@ final class Favicons {
             }
         }.resume()
     }
+}
+
+
+/// Tracks only the first page requested from a native New Tab. Navigation
+/// identity and generation checks prevent stale callbacks clearing a newer load.
+struct InitialPageLoadTracker {
+    struct Ticket {
+        let generation = UUID()
+        var navigation: ObjectIdentifier?
+    }
+    private(set) var tickets: [UUID: Ticket] = [:]
+    mutating func begin(_ tab: UUID) { tickets[tab] = Ticket() }
+    mutating func bind(_ tab: UUID, navigation: AnyObject?) {
+        guard tickets[tab] != nil else { return }
+        tickets[tab]?.navigation = navigation.map(ObjectIdentifier.init)
+    }
+    func contains(_ tab: UUID) -> Bool { tickets[tab] != nil }
+    func matches(_ tab: UUID, generation: UUID) -> Bool {
+        tickets[tab]?.generation == generation
+    }
+    @discardableResult mutating func complete(_ tab: UUID, navigation: AnyObject?) -> Bool {
+        guard let ticket = tickets[tab] else { return false }
+        if let expected = ticket.navigation, navigation.map(ObjectIdentifier.init) != expected { return false }
+        tickets[tab] = nil
+        return true
+    }
+    mutating func remove(_ tab: UUID) { tickets[tab] = nil }
 }

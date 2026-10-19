@@ -227,6 +227,11 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.12', icon: 'shapes', title: 'A clearer way forward', hotfix: true, major: false, items: [
+        'New tabs open above background Picture in Picture pages, so the selected page is the page you see.',
+        'Backspace works in more rich text editors while preserving normal typing and shortcuts.',
+        'A gentle Breeze loading surface makes the first page from a new tab feel immediate, with reduced-motion support.'
+      ]},
       { v: '6.3.11', icon: 'shapes', title: 'Back from Picture in Picture', hotfix: true, major: false, items: [
         ['Smoother video return', 'Keep the active page attached while Picture in Picture returns, so playback and page controls stay responsive.'],
         ['Reliable PiP toggle', 'Recognize WebKit’s floating video mode and return the correct video to the page.']

@@ -132,6 +132,47 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     private var siteFullscreenFrameObserver: NSObjectProtocol?
     private var siteFullscreenSyncScheduled = false
     private var pipFocusGuardObserver: NSObjectProtocol?
+    private var initialPageLoads = InitialPageLoadTracker()
+    private lazy var initialPageLoadingView = InitialPageLoadingView(frame: .zero)
+    private var initialPageLoadingTab: UUID?
+
+    private func syncInitialPageLoadingView() {
+        guard let tab = current, !tab.isChatTab, !siteFullscreenActive,
+              let ticket = initialPageLoads.tickets[tab.id] else {
+            if initialPageLoadingTab != current?.id || !initialPageLoadingView.isDismissing {
+                initialPageLoadingView.dismiss(animated: false)
+                initialPageLoadingTab = nil
+            }
+            return
+        }
+        initialPageLoadingTab = tab.id
+        if initialPageLoadingView.superview !== webContainer {
+            initialPageLoadingView.removeFromSuperview()
+            webContainer.addSubview(initialPageLoadingView)
+            initialPageLoadingView.pin(to: webContainer)
+        } else {
+            webContainer.addSubview(initialPageLoadingView, positioned: .above, relativeTo: nil)
+        }
+        initialPageLoadingView.show(generation: ticket.generation)
+    }
+
+    private func finishInitialPageLoading(_ webView: WKWebView, navigation: WKNavigation?, animated: Bool) {
+        guard let tab = tabs.first(where: { $0.webView === webView }),
+              initialPageLoads.complete(tab.id, navigation: navigation) else { return }
+        if current?.id == tab.id { initialPageLoadingView.dismiss(animated: animated) }
+    }
+
+    private func finishInitialPageLoadingAfterPaint(_ webView: WKWebView, navigation: WKNavigation?) {
+        guard let tab = tabs.first(where: { $0.webView === webView }),
+              tab.id != startupTabID,
+              let ticket = initialPageLoads.tickets[tab.id] else { return }
+        webView.callAsyncJavaScript("await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true;",
+                                   arguments: [:], in: nil, in: .page) { [weak self, weak webView] result in
+            guard let self, let webView, case .success = result,
+                  self.initialPageLoads.matches(tab.id, generation: ticket.generation) else { return }
+            self.finishInitialPageLoading(webView, navigation: navigation, animated: true)
+        }
+    }
     /// The http→https attempt currently in flight for a web view, so a site
     /// that answers the upgrade with a downgrade redirect or a failure can be
     /// let back down to plain http instead of ping-ponging.
@@ -1287,6 +1328,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func showActive() {
+        if initialPageLoadingTab != current?.id || siteFullscreenActive {
+            initialPageLoadingView.dismiss(animated: false)
+            initialPageLoadingTab = nil
+        }
         guard !siteFullscreenActive else { return }
         // Apple removes a fullscreen WKWebView from our hierarchy until its
         // fullscreenState returns to notInFullscreen. Never touch its ownership.
@@ -1313,6 +1358,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 tab.webView.isHidden = false
                 tab.webView.alphaValue = 1
             }
+        }
+        if let tab = current, initialPageLoadingTab == tab.id, !siteFullscreenActive,
+           !tab.isChatTab,
+           (initialPageLoads.contains(tab.id) || initialPageLoadingView.isDismissing) {
+            expectedBackgroundViews.insert(initialPageLoadingView)
         }
         let isNewTabActive = current?.isNewTab == true
         for subview in webContainer.subviews {
@@ -1505,8 +1555,14 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                 webContainer.addSubview(primary)
                 primary.pin(to: webContainer)
             }
+            // A new-tab webview may already be mounted below retained PiP media.
+            // Raise it without detaching WebKit's renderer or changing constraints.
+            if webContainer.subviews.last !== primary {
+                webContainer.addSubview(primary, positioned: .above, relativeTo: nil)
+            }
         }
         updateWebViewDisplay()
+        syncInitialPageLoadingView()
         syncChrome()
         alignTrafficLights()  // split view seats them 4pt lower
         leftPane.needsLayout = true
@@ -1554,6 +1610,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         refreshSidebar()
         syncChrome()
         updateWebViewDisplay()
+        syncInitialPageLoadingView()
     }
 
     func wireSplitPane(_ pane: SplitPane, tab: Tab) {
@@ -2462,6 +2519,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
 
     private func tearDownClosedTab(_ t: Tab, blankPage: Bool = true) {
         resignWebContentIfNeeded(t.webView)
+        initialPageLoads.remove(t.id)
+        if current?.id == t.id { initialPageLoadingView.dismiss(animated: false) }
         titleObs[t.id] = nil
         urlObs[t.id] = nil
         fullscreenObs[t.id] = nil
@@ -2493,6 +2552,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     func beginWindowClosure() {
         guard !isClosing else { return }
         isClosing = true
+        initialPageLoadingView.dismiss(animated: false)
+        initialPageLoadingTab = nil
         window.makeFirstResponder(nil)
         NotificationCenter.default.removeObserver(self)
         for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
@@ -3176,6 +3237,11 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         // fallback that retries a host which turns out to be http-only. Upgrading
         // here first hid the http scheme from it and stranded such addresses.
         let url = rawURL
+        if ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+           t.isNewTab || initialPageLoads.contains(t.id) {
+            initialPageLoads.begin(t.id)
+            syncInitialPageLoadingView()
+        }
         if t.id == startupTabID && !startupRendererReady {
             pendingStartupNavigation = (url, t.id, focus)
             warmStartupRenderer()
@@ -3235,7 +3301,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             displayNavigationWebViews.insert(ObjectIdentifier(t.webView))
             t.sleeping = false
             t.sleptURL = nil
-            t.webView.load(request)
+            initialPageLoads.bind(t.id, navigation: t.webView.load(request))
             address.attributedStringValue = styledAddress(url.absoluteString)
             scheduleStartupNavigationRecovery(for: t)
             return
@@ -3255,7 +3321,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         showActive()
         t.webView.isHidden = false
         t.webView.alphaValue = 1
-        t.webView.load(request)
+        initialPageLoads.bind(t.id, navigation: t.webView.load(request))
         if focus { window.makeFirstResponder(t.webView) }
     }
 
@@ -3270,7 +3336,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
             tab.webView.stopLoading()
             var retry = request
             retry.cachePolicy = .reloadIgnoringLocalCacheData
-            tab.webView.load(retry)
+            self.initialPageLoads.bind(tab.id, navigation: tab.webView.load(retry))
             self.scheduleStartupNavigationFailure(for: tab, request: request)
         }
     }
@@ -6474,7 +6540,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
                     httpsUpgradeAttempts[host] = Date()
                     pendingHTTPSUpgrades[key] = (http: url, https: upgraded)
                     armHTTPSUpgradeWatchdog(for: w)
-                    w.load(URLRequest(url: upgraded))
+                    let navigation = w.load(URLRequest(url: upgraded))
+                    if let tab = tabs.first(where: { $0.webView === w }) {
+                        initialPageLoads.bind(tab.id, navigation: navigation)
+                    }
                     decisionHandler(.cancel)
                     return
                 }
@@ -6502,6 +6571,10 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         if shouldDownloadResponse(navigationResponse.response,
                                   isMainFrame: navigationResponse.isForMainFrame) {
             displayNavigationWebViews.remove(ObjectIdentifier(w))
+            if let tab = tabs.first(where: { $0.webView === w }) {
+                initialPageLoads.remove(tab.id)
+                if current?.id == tab.id { initialPageLoadingView.dismiss(animated: false) }
+            }
             decisionHandler(.download)
             return
         }
@@ -7730,6 +7803,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     @objc private func themeDidChange() {
         guard !isClosing else { return }
         applyChromeTheme()
+        initialPageLoadingView.applyTheme()
         activityBanner.applyTheme()
         broadcastToInternalPages()
     }
@@ -7748,6 +7822,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     /// through the normal wake path when it is next selected.
     func webViewWebContentProcessDidTerminate(_ w: WKWebView) {
         guard let t = tabs.first(where: { $0.webView === w }) else { return }
+        initialPageLoads.remove(t.id)
+        if current?.id == t.id { initialPageLoadingView.dismiss(animated: false) }
         let onScreen = t.id == current?.id && window.isVisible && !window.isMiniaturized
         if onScreen {
             w.reload()
@@ -7762,6 +7838,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
     }
 
     func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
+        finishInitialPageLoading(w, navigation: n, animated: true)
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         finishStartupNavigationIfNeeded(w)
         if current?.webView === w { updateLoadBar(for: w) }
@@ -7806,6 +7883,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError error: Error) {
+        finishInitialPageLoading(w, navigation: n, animated: false)
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFailProvisionalNavigation: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
         if fellBackToPlainHTTP(for: w, error: error) { return }
@@ -7820,6 +7898,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         }
     }
     func webView(_ w: WKWebView, didFail n: WKNavigation!, withError error: Error) {
+        finishInitialPageLoading(w, navigation: n, animated: false)
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         print("Breeze Navigation didFail: \(error.localizedDescription) (URL: \(w.url?.absoluteString ?? "none"))")
         if !isIgnorableNavigationFailure(error) {
@@ -7976,6 +8055,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKUIDelegate, NST
         w.loadHTMLString(html, baseURL: failing.deletingLastPathComponent())
     }
     func webView(_ w: WKWebView, didCommit n: WKNavigation!) {
+        finishInitialPageLoadingAfterPaint(w, navigation: n)
         displayNavigationWebViews.remove(ObjectIdentifier(w))
         pendingHTTPSUpgrades[ObjectIdentifier(w)] = nil
         cancelHTTPSUpgradeWatchdog(for: w)
