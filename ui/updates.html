@@ -227,6 +227,10 @@
     const ic = (name) => `<svg viewBox="0 0 24 24">${ICONS[name] || ICONS.shapes}</svg>`;
 
     const RELEASES = [
+      { v: '6.3.13', icon: 'shapes', title: 'A centered Breeze', hotfix: true, major: false, items: [
+        'The loading logo now stays centered in the page viewport.',
+        'Removed the stray outlined circle while preserving the logo’s gentle loading motion.'
+      ]},
       { v: '6.3.12', icon: 'shapes', title: 'A clearer way forward', hotfix: true, major: false, items: [
         'New tabs open above background Picture in Picture pages, so the selected page is the page you see.',
         'Backspace works in more rich text editors while preserving normal typing and shortcuts.',

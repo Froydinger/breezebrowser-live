@@ -702,7 +702,6 @@ final class InitialPageLoadingView: NSView {
     private let mark = NSImageView()
     private let caption = NSTextField(labelWithString: "A little Breeze…")
     private let subtitle = NSTextField(labelWithString: "Opening your page")
-    private let halo = CAShapeLayer()
     private var generation: UUID?
     private(set) var isDismissing = false
     private var dismissGeneration = UUID()
@@ -715,21 +714,27 @@ final class InitialPageLoadingView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.progressIndicator)
         setAccessibilityLabel("Opening page")
-        layer?.addSublayer(halo)
         mark.image = breezeLogo()
         mark.imageScaling = .scaleProportionallyUpOrDown
         mark.setAccessibilityElement(false)
+        mark.translatesAutoresizingMaskIntoConstraints = false
         caption.font = .systemFont(ofSize: 23, weight: .semibold)
         subtitle.font = .systemFont(ofSize: 13, weight: .regular)
-        let stack = NSStackView(views: [mark, caption, subtitle])
-        stack.orientation = .vertical; stack.alignment = .centerX; stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        [caption, subtitle].forEach {
+            $0.alignment = .center
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            addSubview($0)
+        }
+        addSubview(mark)
         NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -12),
+            mark.centerXAnchor.constraint(equalTo: centerXAnchor),
+            mark.centerYAnchor.constraint(equalTo: centerYAnchor),
             mark.widthAnchor.constraint(equalToConstant: 68),
-            mark.heightAnchor.constraint(equalToConstant: 68)
+            mark.heightAnchor.constraint(equalToConstant: 68),
+            caption.centerXAnchor.constraint(equalTo: centerXAnchor),
+            caption.centerYAnchor.constraint(equalTo: mark.centerYAnchor, constant: -60),
+            subtitle.centerXAnchor.constraint(equalTo: centerXAnchor),
+            subtitle.centerYAnchor.constraint(equalTo: caption.centerYAnchor, constant: -34)
         ])
         applyTheme()
     }
@@ -739,16 +744,6 @@ final class InitialPageLoadingView: NSView {
         layer?.backgroundColor = p.bg.cgColor
         caption.textColor = p.text
         subtitle.textColor = p.textSoft
-        halo.strokeColor = p.accent.withAlphaComponent(p.isDark ? 0.28 : 0.18).cgColor
-        halo.fillColor = p.accent.withAlphaComponent(p.isDark ? 0.045 : 0.035).cgColor
-        halo.lineWidth = 1.5
-    }
-    override func layout() {
-        super.layout()
-        halo.frame = bounds
-        let size: CGFloat = 132
-        halo.path = CGPath(ellipseIn: CGRect(x: bounds.midX-size/2, y: bounds.midY+13,
-                                           width: size,height: size),transform:nil)
     }
     func show(generation: UUID) {
         dismissGeneration = UUID()
@@ -757,7 +752,7 @@ final class InitialPageLoadingView: NSView {
         applyTheme()
         guard self.generation != generation else { return }
         self.generation = generation
-        halo.removeAllAnimations(); mark.layer?.removeAllAnimations()
+        mark.layer?.removeAllAnimations()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         mark.wantsLayer = true
         let drift = CABasicAnimation(keyPath: "transform.translation.y")
@@ -765,16 +760,12 @@ final class InitialPageLoadingView: NSView {
         drift.autoreverses = true; drift.repeatCount = .infinity
         drift.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         mark.layer?.add(drift,forKey:"breezeDrift")
-        let glow = CABasicAnimation(keyPath:"opacity")
-        glow.fromValue = 0.35; glow.toValue = 1; glow.duration = 1.4
-        glow.autoreverses = true; glow.repeatCount = .infinity
-        halo.add(glow,forKey:"breezeGlow")
     }
     func dismiss(animated: Bool) {
         generation = nil
         isDismissing = animated
         let token = UUID(); dismissGeneration = token
-        halo.removeAllAnimations(); mark.layer?.removeAllAnimations()
+        mark.layer?.removeAllAnimations()
         guard animated, superview != nil,
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             isDismissing = false
